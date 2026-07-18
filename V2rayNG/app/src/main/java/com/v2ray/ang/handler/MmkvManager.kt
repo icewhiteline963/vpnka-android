@@ -7,6 +7,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import com.tencent.mmkv.MMKV
+import com.v2ray.ang.AppConfig.CACHE_SUBSCRIPTION_ID
 import com.v2ray.ang.AppConfig.DEFAULT_SUBSCRIPTION_ID
 import com.v2ray.ang.AppConfig.PREF_IS_BOOTED
 import com.v2ray.ang.AppConfig.PREF_ROUTING_RULESET
@@ -857,8 +858,11 @@ object MmkvManager {
         val alreadyOurs = decodeSubscriptions()
             .any { it.subscription.url == VPNKA_TRIAL_SUB_URL }
         if (!alreadyOurs) {
+            // Own the guid instead of letting encodeSubscription mint one, so
+            // we can point the group selector at it below.
+            val guid = Utils.getUuid()
             encodeSubscription(
-                "",
+                guid,
                 SubscriptionItem(
                     remarks = "VPNka · пробный доступ",
                     url = VPNKA_TRIAL_SUB_URL,
@@ -866,6 +870,12 @@ object MmkvManager {
                     autoUpdate = true,
                 ),
             )
+            // Open the app on our group. Upstream otherwise lands on
+            // "Default" — its internal bucket for servers that belong to no
+            // subscription — which on a fresh install is empty, so the first
+            // thing a new user sees is an empty list next to the servers they
+            // actually have.
+            encodeSettings(CACHE_SUBSCRIPTION_ID, guid)
         }
         return true
     }

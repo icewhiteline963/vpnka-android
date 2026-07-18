@@ -6,7 +6,6 @@ import com.v2ray.ang.BuildConfig
 import com.v2ray.ang.dto.CheckUpdateResult
 import com.v2ray.ang.dto.GitHubRelease
 import com.v2ray.ang.dto.UrlContentRequest
-import com.v2ray.ang.extension.concatUrl
 import com.v2ray.ang.util.HttpUtil
 import com.v2ray.ang.util.JsonUtil
 import com.v2ray.ang.util.LogUtil
@@ -18,7 +17,10 @@ object UpdateCheckerManager {
         val url = if (includePreRelease) {
             AppConfig.APP_API_URL
         } else {
-            AppConfig.APP_API_URL.concatUrl("latest")
+            // A separate constant, not APP_API_URL + "/latest": on our
+            // mirror these are two static files, and one can't be both a
+            // file and a directory.
+            AppConfig.APP_API_LATEST_URL
         }
 
         val proxyUsername = SettingsManager.getSocksUsername()

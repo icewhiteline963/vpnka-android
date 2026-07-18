@@ -124,8 +124,15 @@ object AppConfig {
     const val GITHUB_RAW_URL = "https://raw.githubusercontent.com"
     const val GITHUB_DOWNLOAD_URL = "$GITHUB_URL/%s/releases/latest/download"
     const val ANDROID_PACKAGE_NAME_LIST_URL = "$GITHUB_RAW_URL/2dust/androidpackagenamelist/master/proxy.txt"
-    const val APP_URL = "$GITHUB_URL/2dust/v2rayNG"
-    const val APP_API_URL = "https://api.github.com/repos/2dust/v2rayNG/releases"
+    const val APP_URL = "$GITHUB_URL/icewhiteline963/vpnka-android"
+
+    // Update manifests are served from our own mirror, not GitHub's API.
+    // GitHub is throttled by RU ISPs — that's why dl.vpnka.io exists in the
+    // first place — so an updater pointed at api.github.com would time out
+    // for exactly the users this app is built for. Same two shapes GitHub
+    // returns, so the parsing below is untouched.
+    const val APP_API_URL = "https://dl.vpnka.io/app/releases.json"
+    const val APP_API_LATEST_URL = "https://dl.vpnka.io/app/latest.json"
     const val APP_ISSUES_URL = "$APP_URL/issues"
     const val APP_WIKI_MODE = "$APP_URL/wiki/Mode"
     const val APP_PRIVACY_POLICY = "$GITHUB_RAW_URL/2dust/v2rayNG/master/CR.md"
