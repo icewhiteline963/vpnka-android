@@ -816,5 +816,51 @@ object MmkvManager {
 
     private const val KEY_VPNKA_INSTALL_ID = "vpnka_install_id"
 
+    /**
+     * URL the app ships with as its default subscription.
+     *
+     * Backed by `/qr/app`, which mints a 24h trial on first fetch and then
+     * keeps returning the same one — keyed by the install id we send in the
+     * `Hwid` header. A mint-per-hit URL would strand a throwaway trial user
+     * in the panel on every refresh and swap the config under the user.
+     */
+    const val VPNKA_TRIAL_SUB_URL = "https://get.vpnka.io/qr/app"
+
+    private const val KEY_VPNKA_DEFAULT_SUB_SEEDED = "vpnka_default_sub_seeded"
+
+    /**
+     * Give a brand-new install the trial subscription, so the app is usable
+     * before the user has heard of our Telegram bot.
+     *
+     * Returns true only on the launch that actually seeds it — the caller
+     * uses that to kick off the first fetch. Guarded by its own flag rather
+     * than by "is the list empty": a user who tries the trial and then
+     * deletes it has said no, and re-adding it on the next launch would be
+     * us arguing with them.
+     *
+     * @return true if this call added the subscription.
+     */
+    fun seedDefaultSubscriptionIfNeeded(): Boolean {
+        if (settingsStorage.decodeBool(KEY_VPNKA_DEFAULT_SUB_SEEDED, false)) {
+            return false
+        }
+        settingsStorage.encode(KEY_VPNKA_DEFAULT_SUB_SEEDED, true)
+        // Someone restoring a backup already has their real subscription;
+        // don't shove a trial in beside it.
+        if (decodeSubsList().isNotEmpty()) {
+            return false
+        }
+        encodeSubscription(
+            "",
+            SubscriptionItem(
+                remarks = "VPNka · пробный доступ",
+                url = VPNKA_TRIAL_SUB_URL,
+                enabled = true,
+                autoUpdate = true,
+            ),
+        )
+        return true
+    }
+
     //endregion
 }

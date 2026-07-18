@@ -203,6 +203,16 @@ class MainActivity : HelperBaseComponentActivity() {
         mainViewModel.initialize()
 
         checkAndRequestPermission(PermissionType.POST_NOTIFICATIONS) {}
+
+        // First launch on a fresh install: AngApplication has just added the
+        // trial subscription, but an entry with no servers behind it is an
+        // empty screen. Fetch it now so the user's first sight of the app is
+        // a working server list. Reuses the normal update path, so it shows
+        // the same spinner and toasts as a manual refresh.
+        if (AngApplication.vpnkaSeededTrialThisLaunch) {
+            AngApplication.vpnkaSeededTrialThisLaunch = false
+            importConfigViaSub()
+        }
     }
 
     @Composable
@@ -267,6 +277,15 @@ class MainActivity : HelperBaseComponentActivity() {
                     this,
                     "${Utils.decode(AppConfig.APP_PROMOTION_URL)}?t=${System.currentTimeMillis()}"
                 )
+                return
+            }
+            // The trial the app ships with lasts a day; the real month comes
+            // from the bot, where there's a Telegram account to attach it to
+            // (and our existing abuse checks). `?start=app` tells the bot the
+            // user arrived from here, so it can offer the return link that
+            // drops the new subscription straight back into this app.
+            "vpnka_month" -> {
+                Utils.openUri(this, "https://t.me/vpnka_io_bot?start=app")
                 return
             }
             else -> return
@@ -1046,6 +1065,19 @@ fun MainScreen(
                             )
                         }
                     }
+                    // First item on purpose: the shipped trial runs out after
+                    // a day, and this is where the user goes to keep working.
+                    // Buried three items down it would be found after the
+                    // connection had already stopped.
+                    DrawerMenuItem(
+                        icon = painterResource(R.drawable.ic_promotion_24dp),
+                        label = stringResource(R.string.vpnka_get_month),
+                        onClick = {
+                            scope.launch { drawerState.close() }
+                            onNavigate("vpnka_month")
+                        }
+                    )
+                    AppDivider(modifier = Modifier.padding(vertical = 4.dp))
                     listOf(
                         Triple(
                             R.drawable.ic_subscriptions_24dp,

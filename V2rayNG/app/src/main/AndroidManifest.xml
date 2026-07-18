@@ -187,6 +187,12 @@
                 <category android:name="android.intent.category.DEFAULT" />
 
                 <data android:scheme="v2rayng" />
+                <!-- Our own scheme, so the bot's "вернуться в приложение"
+                     link lands here specifically. A v2rayng:// link would
+                     make Android show a chooser on any phone that also has
+                     the original v2rayNG installed — and this app is built
+                     to sit next to it. -->
+                <data android:scheme="vpnka" />
                 <data android:host="install-config" />
                 <data android:host="install-sub" />
             </intent-filter>
