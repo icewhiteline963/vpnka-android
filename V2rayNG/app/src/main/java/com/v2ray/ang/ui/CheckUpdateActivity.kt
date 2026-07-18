@@ -15,6 +15,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -37,10 +38,10 @@ import com.v2ray.ang.dto.CheckUpdateResult
 import com.v2ray.ang.extension.toast
 import com.v2ray.ang.extension.toastError
 import com.v2ray.ang.extension.toastSuccess
+import com.v2ray.ang.handler.ApkUpdateInstaller
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.UpdateCheckerManager
 import com.v2ray.ang.util.LogUtil
-import com.v2ray.ang.util.Utils
 import kotlinx.coroutines.launch
 
 class CheckUpdateActivity : BaseComponentActivity() {
@@ -67,6 +68,10 @@ fun CheckUpdateScreen(onBackClick: () -> Unit) {
     }
     var showUpdateDialog by remember { mutableStateOf(false) }
     var updateResult by remember { mutableStateOf<CheckUpdateResult?>(null) }
+    // Downloading an APK over a Russian mobile link is tens of seconds of
+    // apparent nothing. Without visible progress people tap again, or leave.
+    var downloading by remember { mutableStateOf(false) }
+    var downloadPercent by remember { mutableIntStateOf(-1) }
 
     val versionText = "v${BuildConfig.VERSION_NAME} (${CoreNativeManager.getLibVersion()})"
 
@@ -131,6 +136,23 @@ fun CheckUpdateScreen(onBackClick: () -> Unit) {
         }
     }
 
+    if (downloading) {
+        AlertDialog(
+            // No dismiss: the download is already running and cancelling the
+            // dialog wouldn't stop it, so an X here would just lie.
+            onDismissRequest = {},
+            title = { Text(stringResource(R.string.vpnka_update_downloading)) },
+            text = {
+                Text(
+                    if (downloadPercent >= 0) "$downloadPercent%"
+                    else stringResource(R.string.vpnka_update_downloading_wait)
+                )
+            },
+            confirmButton = {},
+            containerColor = MaterialTheme.colorScheme.surface,
+        )
+    }
+
     if (showUpdateDialog && updateResult != null) {
         val result = updateResult!!
         AlertDialog(
@@ -140,7 +162,40 @@ fun CheckUpdateScreen(onBackClick: () -> Unit) {
             confirmButton = {
                 TextButton(onClick = {
                     showUpdateDialog = false
-                    result.downloadUrl?.let { Utils.openUri(context, it) }
+                    val url = result.downloadUrl
+                    if (url == null) {
+                        context.toastError(R.string.toast_failure)
+                        return@TextButton
+                    }
+                    if (!ApkUpdateInstaller.canInstall(context)) {
+                        // Per-app permission since Oreo, and only the user can
+                        // grant it — so send them to the exact screen rather
+                        // than failing silently at the end of a download.
+                        context.toast(R.string.vpnka_update_allow_install)
+                        context.startActivity(
+                            ApkUpdateInstaller.installPermissionIntent(context)
+                        )
+                        return@TextButton
+                    }
+                    downloading = true
+                    downloadPercent = -1
+                    scope.launch {
+                        try {
+                            val apk = ApkUpdateInstaller.download(context, url) { p ->
+                                downloadPercent = p
+                            }
+                            ApkUpdateInstaller.promptInstall(context, apk)
+                        } catch (e: Exception) {
+                            // Show what actually went wrong: "не удалось" with
+                            // no reason is the kind of message people just
+                            // retry forever.
+                            context.toastError(
+                                e.message ?: "Не удалось скачать обновление"
+                            )
+                        } finally {
+                            downloading = false
+                        }
+                    }
                 }) {
                     Text(stringResource(R.string.update_now))
                 }
