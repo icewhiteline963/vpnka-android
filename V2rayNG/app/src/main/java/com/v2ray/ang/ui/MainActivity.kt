@@ -50,6 +50,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.DropdownMenu
+import androidx.activity.compose.BackHandler
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -218,6 +220,54 @@ class MainActivity : HelperBaseComponentActivity() {
 
     @Composable
     override fun ScreenContent() {
+        // Our one-button screen is what the app opens on; upstream's full
+        // server UI lives behind the long-press escape hatch below. Wrapping
+        // rather than editing MainScreen keeps their releases mergeable as-is.
+        var showServers by rememberSaveable { mutableStateOf(false) }
+        val uiState by mainViewModel.uiState.collectAsStateWithLifecycle()
+        val servers by mainViewModel
+            .serversForGroup(uiState.selectedGroupId)
+            .collectAsStateWithLifecycle()
+
+        if (!showServers) {
+            val options = servers.map {
+                VpnkaServerOption(
+                    guid = it.guid,
+                    name = it.profile.remarks.ifBlank { "Сервер" },
+                    delay = it.testDelayString,
+                )
+            }
+
+            // Land on «Авто» rather than whatever the import happened to
+            // select last: it's the balancer, and it's the right answer for
+            // almost everyone. Only when nothing is selected yet — never
+            // override a choice the user made.
+            LaunchedEffect(options) {
+                if (uiState.selectedGuid.isNullOrBlank() && options.isNotEmpty()) {
+                    val auto = options.firstOrNull { it.name.contains("Авто") }
+                    setSelectServer((auto ?: options.first()).guid)
+                }
+            }
+
+            VpnkaHomeScreen(
+                isRunning = uiState.isRunning,
+                isLoading = uiState.isLoading,
+                isTesting = uiState.isTesting,
+                servers = options,
+                selectedGuid = uiState.selectedGuid,
+                onToggle = ::handleFabAction,
+                onSelectServer = ::setSelectServer,
+                onSpeedTest = mainViewModel::testAllRealPing,
+                onCheckUpdate = { navigateTo("check_update") },
+                onOpenAdvanced = { showServers = true },
+            )
+            return
+        }
+
+        // Hardware back returns to the simple screen instead of leaving the
+        // app — otherwise the advanced view is a one-way door.
+        BackHandler { showServers = false }
+
         MainScreen(
             mainViewModel = mainViewModel,
             onFabClick = ::handleFabAction,
