@@ -15,12 +15,13 @@ class AngApplication : Application() {
         lateinit var application: AngApplication
 
         /**
-         * True for the one launch that seeded the trial subscription.
-         * MainActivity reads it to fetch that subscription immediately, so
-         * a first-time user lands on a populated server list instead of an
-         * empty screen with a subscription they'd have to update by hand.
+         * True when this launch found nothing to connect to and wants the
+         * trial fetched. MainActivity reads it and pulls the subscription,
+         * so the user lands on a populated server list instead of an empty
+         * screen. Set on every such launch, not just the first — a fetch
+         * that failed for want of network must get another try.
          */
-        var vpnkaSeededTrialThisLaunch: Boolean = false
+        var vpnkaNeedsTrialFetch: Boolean = false
     }
 
     /**
@@ -53,9 +54,9 @@ class AngApplication : Application() {
         // Initialize theme state from MMKV
         ThemeManager.refresh()
 
-        // Hand a brand-new install the 24h trial subscription. MMKV writes
-        // only — the actual fetch happens in MainActivity, off the main
-        // thread; doing network here would block app startup.
-        vpnkaSeededTrialThisLaunch = MmkvManager.seedDefaultSubscriptionIfNeeded()
+        // Make sure an install with no servers has our 24h trial to fall
+        // back on. MMKV writes only — the fetch happens in MainActivity, off
+        // the main thread; network here would block app startup.
+        vpnkaNeedsTrialFetch = MmkvManager.ensureTrialSubscription()
     }
 }

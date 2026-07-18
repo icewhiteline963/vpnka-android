@@ -205,13 +205,13 @@ class MainActivity : HelperBaseComponentActivity() {
 
         checkAndRequestPermission(PermissionType.POST_NOTIFICATIONS) {}
 
-        // First launch on a fresh install: AngApplication has just added the
-        // trial subscription, but an entry with no servers behind it is an
-        // empty screen. Fetch it now so the user's first sight of the app is
-        // a working server list. Reuses the normal update path, so it shows
-        // the same spinner and toasts as a manual refresh.
-        if (AngApplication.vpnkaSeededTrialThisLaunch) {
-            AngApplication.vpnkaSeededTrialThisLaunch = false
+        // Nothing to connect to: AngApplication has ensured the trial
+        // subscription exists, but an entry with no servers behind it is
+        // still an empty screen. Fetch it now so the user's first sight of
+        // the app is a working server list. Reuses the normal update path,
+        // so it shows the same spinner and toasts as a manual refresh.
+        if (AngApplication.vpnkaNeedsTrialFetch) {
+            AngApplication.vpnkaNeedsTrialFetch = false
             importConfigViaSub()
         }
     }

@@ -826,39 +826,47 @@ object MmkvManager {
      */
     const val VPNKA_TRIAL_SUB_URL = "https://get.vpnka.io/qr/app"
 
-    private const val KEY_VPNKA_DEFAULT_SUB_SEEDED = "vpnka_default_sub_seeded"
-
     /**
-     * Give a brand-new install the trial subscription, so the app is usable
-     * before the user has heard of our Telegram bot.
+     * Give an install with nothing to connect to the trial subscription, so
+     * the app is usable before the user has heard of our Telegram bot.
      *
-     * Returns true only on the launch that actually seeds it — the caller
-     * uses that to kick off the first fetch. Guarded by its own flag rather
-     * than by "is the list empty": a user who tries the trial and then
-     * deletes it has said no, and re-adding it on the next launch would be
-     * us arguing with them.
+     * The condition is "no servers configured", not "first ever launch".
+     * A one-shot flag looked tidier and was wrong in practice: an install
+     * carrying a leftover empty subscription group — say from an earlier
+     * build, or an import that failed — would be counted as "user already
+     * has something" and left staring at an empty app forever. Checking for
+     * actual servers means the app heals itself on the next launch instead.
      *
-     * @return true if this call added the subscription.
+     * Re-seeding can't be farmed for free VPN: `/qr/app` keys the grant to
+     * the install id we send in `Hwid` and returns the same one until it
+     * expires, so deleting and re-adding the subscription gets the same 24h
+     * back, not a new one. The abuse gate lives on the server, which is why
+     * the client can afford to be this forgiving.
+     *
+     * @return true when the app has nothing to connect to and the caller
+     *         should fetch — including the case where our subscription was
+     *         already added but its download never succeeded. Returning
+     *         false only once servers exist keeps a failed first fetch from
+     *         stranding the user on an empty list forever.
      */
-    fun seedDefaultSubscriptionIfNeeded(): Boolean {
-        if (settingsStorage.decodeBool(KEY_VPNKA_DEFAULT_SUB_SEEDED, false)) {
+    fun ensureTrialSubscription(): Boolean {
+        // A real, working setup: their month, or a restored backup. Leave it.
+        if (decodeAllServerList().isNotEmpty()) {
             return false
         }
-        settingsStorage.encode(KEY_VPNKA_DEFAULT_SUB_SEEDED, true)
-        // Someone restoring a backup already has their real subscription;
-        // don't shove a trial in beside it.
-        if (decodeSubsList().isNotEmpty()) {
-            return false
+        val alreadyOurs = decodeSubscriptions()
+            .any { it.subscription.url == VPNKA_TRIAL_SUB_URL }
+        if (!alreadyOurs) {
+            encodeSubscription(
+                "",
+                SubscriptionItem(
+                    remarks = "VPNka · пробный доступ",
+                    url = VPNKA_TRIAL_SUB_URL,
+                    enabled = true,
+                    autoUpdate = true,
+                ),
+            )
         }
-        encodeSubscription(
-            "",
-            SubscriptionItem(
-                remarks = "VPNka · пробный доступ",
-                url = VPNKA_TRIAL_SUB_URL,
-                enabled = true,
-                autoUpdate = true,
-            ),
-        )
         return true
     }
 
