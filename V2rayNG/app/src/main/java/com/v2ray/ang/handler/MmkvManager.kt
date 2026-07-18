@@ -783,4 +783,38 @@ object MmkvManager {
     }
 
     //endregion
+
+    //region VPNka install id
+
+    /**
+     * Stable per-install id, sent as the `Hwid` header when refreshing a
+     * subscription so the VPNka backend can count devices reliably.
+     *
+     * Why a random UUID and not a device identifier: ANDROID_ID or anything
+     * hardware-derived is a privacy problem and a Play-policy problem, and we
+     * don't need it — the backend only has to recognise *this install* across
+     * refreshes, not identify the phone.
+     *
+     * Why it matters: without this header the backend falls back to hashing
+     * User-Agent plus IP prefix, which changes every time the user moves
+     * between Wi-Fi and mobile data. Each change looked like a brand-new
+     * device and burned a device slot — on a 1-device plan that locked people
+     * out of their own subscription. A value that survives network changes and
+     * app updates is the whole point.
+     *
+     * Generated once, then persisted; callers can treat it as constant.
+     */
+    fun getOrCreateInstallId(): String {
+        settingsStorage.decodeString(KEY_VPNKA_INSTALL_ID)?.takeIf { it.isNotBlank() }
+            ?.let { return it }
+        // Hyphen-free so it stays well within the backend's 128-char cap and
+        // can't be confused with any structured id we might add later.
+        val id = java.util.UUID.randomUUID().toString().replace("-", "")
+        settingsStorage.encode(KEY_VPNKA_INSTALL_ID, id)
+        return id
+    }
+
+    private const val KEY_VPNKA_INSTALL_ID = "vpnka_install_id"
+
+    //endregion
 }

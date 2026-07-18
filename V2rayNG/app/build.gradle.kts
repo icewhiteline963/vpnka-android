@@ -6,11 +6,17 @@ plugins {
 }
 
 android {
+    // VPNka fork: `namespace` deliberately stays upstream's. It only decides
+    // where R and BuildConfig are generated, and the whole source tree imports
+    // them as com.v2ray.ang.* — renaming it would break hundreds of imports for
+    // no gain. What makes this install alongside the original v2rayNG (and any
+    // other fork) is applicationId below, which is the package identity Android
+    // actually keys on.
     namespace = "com.v2ray.ang"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.v2ray.ang"
+        applicationId = "io.vpnka.android"
         minSdk = 24
         targetSdk = 37
         versionCode = 736
@@ -92,7 +98,7 @@ android {
                 .map { it as com.android.build.gradle.internal.api.ApkVariantOutputImpl }
                 .forEach { output ->
                     val abi = output.getFilter("ABI") ?: "universal"
-                    output.outputFileName = "v2rayNG_${variant.versionName}-fdroid_${abi}.apk"
+                    output.outputFileName = "vpnka_${variant.versionName}-fdroid_${abi}.apk"
                     if (versionCodes.containsKey(abi)) {
                         output.versionCodeOverride =
                             (100 * variant.versionCode + versionCodes[abi]!!).plus(5000000)
@@ -112,7 +118,7 @@ android {
                     else
                         "universal"
 
-                    output.outputFileName = "v2rayNG_${variant.versionName}_${abi}.apk"
+                    output.outputFileName = "vpnka_${variant.versionName}_${abi}.apk"
                     if (versionCodes.containsKey(abi)) {
                         output.versionCodeOverride =
                             (1000000 * versionCodes[abi]!!).plus(variant.versionCode)

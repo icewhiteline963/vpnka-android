@@ -4,6 +4,7 @@ import com.v2ray.ang.AppConfig
 import com.v2ray.ang.AppConfig.LOOPBACK
 import com.v2ray.ang.BuildConfig
 import com.v2ray.ang.dto.UrlContentRequest
+import com.v2ray.ang.handler.MmkvManager
 import okhttp3.Credentials
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -162,6 +163,7 @@ object HttpUtil {
                 .header("User-agent", finalUserAgent)
                 .header("Connection", "close")
 
+            applyVpnkaInstallIdHeader(currentUrl, requestBuilder)
             applyEmbeddedBasicAuthHeader(currentUrl, requestBuilder)
 
 
@@ -218,6 +220,29 @@ object HttpUtil {
             requestBuilder.header("Authorization", Credentials.basic(user, pass))
         }
     }
+
+    /**
+     * Send VPNka's stable install id so the backend can count devices.
+     *
+     * Deliberately scoped to VPNka hosts. The id lives for the lifetime of the
+     * install, so attaching it to every subscription URL would hand a durable
+     * tracking handle to any third-party provider the user happens to add —
+     * they gain nothing from it, and our backend is the only thing that needs
+     * it. Anything not ours is left byte-for-byte as upstream sends it.
+     *
+     * Best-effort: an unparseable URL just means no header, never a failed
+     * subscription refresh.
+     */
+    private fun applyVpnkaInstallIdHeader(rawUrl: String, requestBuilder: Request.Builder) {
+        val host = runCatching { URL(rawUrl).host }.getOrNull()?.lowercase() ?: return
+        val isVpnkaHost = host == VPNKA_DOMAIN || host.endsWith(".$VPNKA_DOMAIN")
+        if (!isVpnkaHost) return
+        runCatching {
+            requestBuilder.header("Hwid", MmkvManager.getOrCreateInstallId())
+        }
+    }
+
+    private const val VPNKA_DOMAIN = "vpnka.io"
 
     private fun buildOkHttpClient(
         timeout: Int,
