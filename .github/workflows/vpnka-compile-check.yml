@@ -99,6 +99,18 @@ jobs:
           ./gradlew assemblePlaystoreDebug --no-daemon --stacktrace
 
       - name: Unit tests
+        # UtilsTest is excluded because upstream ships it broken: test_isIpAddress
+        # and test_IsIpInCidr fail on a pristine 2dust/v2rayNG checkout too
+        # (verified on the upstream-baseline branch — same 2 of 19 failing with
+        # none of our changes present). They exercise Utils' IP parsing against
+        # the plain JVM, which doesn't behave like Android's.
+        #
+        # Listing what we run, rather than making the step non-blocking: a step
+        # that's allowed to fail gets ignored, and HttpUtilTest is the one that
+        # covers the file this fork actually modifies. Drop the filters once
+        # upstream fixes UtilsTest.
         run: |
           cd ${{ github.workspace }}/V2rayNG
-          ./gradlew testPlaystoreDebugUnitTest --no-daemon
+          ./gradlew testPlaystoreDebugUnitTest --no-daemon \
+            --tests 'com.v2ray.ang.HttpUtilTest' \
+            --tests 'com.v2ray.ang.fmt.ShadowsocksFmtTest'
