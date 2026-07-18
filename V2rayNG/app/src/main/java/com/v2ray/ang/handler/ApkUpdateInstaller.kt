@@ -45,6 +45,42 @@ object ApkUpdateInstaller {
 
     class UpdateError(message: String) : Exception(message)
 
+    /** Version whose APK is sitting in the cache, ready to install. */
+    private const val KEY_READY_VERSION = "vpnka_update_ready_version"
+
+    private fun cacheFile(context: Context): File =
+        File(File(context.cacheDir, "update"), "vpnka-update.apk")
+
+    /**
+     * An already-downloaded update, or null.
+     *
+     * This is what turns "tap, then wait out 32 MB" into "tap, install" —
+     * the prefetcher does the waiting in the background, on Wi-Fi, before
+     * the user ever opens the update screen.
+     */
+    fun readyUpdate(context: Context): Pair<String, File>? {
+        val version = MmkvManager.decodeSettingsString(KEY_READY_VERSION)
+            ?.takeIf { it.isNotBlank() } ?: return null
+        val file = cacheFile(context)
+        if (!file.exists() || file.length() == 0L) {
+            // Cache was cleared under us (Android does this freely) — forget
+            // the claim rather than offering an install that would fail.
+            MmkvManager.encodeSettings(KEY_READY_VERSION, "")
+            return null
+        }
+        return version to file
+    }
+
+    fun markReady(version: String) {
+        MmkvManager.encodeSettings(KEY_READY_VERSION, version)
+    }
+
+    /** After a successful install, or when the file is stale. */
+    fun clearReady(context: Context) {
+        MmkvManager.encodeSettings(KEY_READY_VERSION, "")
+        runCatching { cacheFile(context).delete() }
+    }
+
     /**
      * True when Android will let us launch the installer at all.
      *
@@ -83,9 +119,9 @@ object ApkUpdateInstaller {
 
         // Its own directory so the cleanup below can't touch anything else
         // that happens to live in the cache.
-        val dir = File(context.cacheDir, "update").apply { mkdirs() }
-        dir.listFiles()?.forEach { it.delete() }
-        val target = File(dir, "vpnka-update.apk")
+        val target = cacheFile(context)
+        target.parentFile?.mkdirs()
+        target.parentFile?.listFiles()?.forEach { it.delete() }
 
         val client = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)

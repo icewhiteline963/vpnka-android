@@ -177,6 +177,14 @@ fun CheckUpdateScreen(onBackClick: () -> Unit) {
                         )
                         return@TextButton
                     }
+                    // Already staged by the background prefetcher: skip
+                    // straight to the installer. This is the whole point of
+                    // prefetching — the wait happened on Wi-Fi, hours ago.
+                    val staged = ApkUpdateInstaller.readyUpdate(context)
+                    if (staged != null && staged.first == result.latestVersion) {
+                        ApkUpdateInstaller.promptInstall(context, staged.second)
+                        return@TextButton
+                    }
                     downloading = true
                     downloadPercent = -1
                     scope.launch {
@@ -184,6 +192,10 @@ fun CheckUpdateScreen(onBackClick: () -> Unit) {
                             val apk = ApkUpdateInstaller.download(context, url) { p ->
                                 downloadPercent = p
                             }
+                            // Remember it: if the user dismisses Android's
+                            // install prompt and comes back, they shouldn't
+                            // pay for the download twice.
+                            result.latestVersion?.let { ApkUpdateInstaller.markReady(it) }
                             ApkUpdateInstaller.promptInstall(context, apk)
                         } catch (e: Exception) {
                             // Show what actually went wrong: "не удалось" with

@@ -9,6 +9,7 @@ import com.v2ray.ang.AppConfig.ANG_PACKAGE
 import com.v2ray.ang.compose.ThemeManager
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsManager
+import com.v2ray.ang.handler.UpdatePrefetcher
 
 class AngApplication : Application() {
     companion object {
@@ -58,5 +59,10 @@ class AngApplication : Application() {
         // back on. MMKV writes only — the fetch happens in MainActivity, off
         // the main thread; network here would block app startup.
         vpnkaNeedsTrialFetch = MmkvManager.ensureTrialSubscription()
+
+        // Pull a new version down in the background so installing it later is
+        // a single tap. Wi-Fi only — see UpdatePrefetcher for why that matters
+        // more for us than for most apps.
+        UpdatePrefetcher.schedule(this)
     }
 }
