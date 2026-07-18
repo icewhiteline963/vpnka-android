@@ -26,6 +26,11 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: 'recursive'
+          # fetch-depth 0 is load-bearing, not boilerplate: the next steps ask
+          # the AndroidLibXrayLite submodule for `git describe --tags` to pick
+          # the matching libv2ray.aar. A shallow clone carries no tags, so that
+          # returns empty and the download fails with "input a valid tag".
+          fetch-depth: '0'
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
