@@ -19,14 +19,14 @@ android {
         applicationId = "io.vpnka.android"
         minSdk = 24
         targetSdk = 37
-        versionCode = 741
+        versionCode = 742
         // Upstream's version plus a fourth segment for our own builds, so we
         // can ship a fix without waiting for a v2rayNG release. Digits and
         // dots only: UpdateCheckerManager.compareVersions calls toInt() on
         // every segment, so a tag like "2.2.6-vpnka1" would throw and take
         // the whole update check down with it.
         // On merging upstream: take their number, re-append our segment.
-        versionName = "2.4.0.0"
+        versionName = "2.4.1.0"
 
         val abiFilterList = (properties["ABI_FILTERS"] as? String)?.split(';')
         splits {
