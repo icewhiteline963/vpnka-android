@@ -336,7 +336,7 @@ fun VpnkaSettingsScreen(
     batteryExempt: Boolean,
     onFixBattery: () -> Unit,
     onRoutingSettings: () -> Unit,
-    onOpenAdvanced: () -> Unit,
+    onCheckUpdate: () -> Unit,
     onBack: () -> Unit,
 ) {
     VpnkaPage(title = "Настройки", onBack = onBack) {
@@ -364,10 +364,11 @@ fun VpnkaSettingsScreen(
             subtitle = "Какие сайты идут напрямую, минуя VPN",
             onClick = onRoutingSettings,
         )
+
         VpnkaSettingsRow(
-            title = "Расширенный режим",
-            subtitle = "Полный интерфейс: подписки, импорт, журнал",
-            onClick = onOpenAdvanced,
+            title = "Проверить обновление",
+            subtitle = "Скачать и установить свежую версию",
+            onClick = onCheckUpdate,
         )
 
         Spacer(Modifier.weight(1f))

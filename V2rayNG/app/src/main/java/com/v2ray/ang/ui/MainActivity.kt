@@ -261,6 +261,7 @@ class MainActivity : HelperBaseComponentActivity() {
         var showSupport by rememberSaveable { mutableStateOf(false) }
         var showTopUp by rememberSaveable { mutableStateOf(false) }
         var showRecovery by rememberSaveable { mutableStateOf(false) }
+        var showServerPicker by rememberSaveable { mutableStateOf(false) }
         var supportMessages by remember {
             mutableStateOf<List<VpnkaAccount.SupportMessage>>(emptyList())
         }
@@ -440,12 +441,14 @@ class MainActivity : HelperBaseComponentActivity() {
         // `enabled` is what hands back to the system on the main screen,
         // where leaving the app is the right answer.
         val anyOverlay = showSupport || showTopUp || showRecovery ||
-            showShop || showSubscription || showSettings || showServers
+            showServerPicker || showShop || showSubscription ||
+            showSettings || showServers
         BackHandler(enabled = anyOverlay) {
             when {
                 showSupport -> showSupport = false
                 showTopUp -> showTopUp = false
                 showRecovery -> showRecovery = false
+                showServerPicker -> showServerPicker = false
                 showShop -> showShop = false
                 showSubscription -> showSubscription = false
                 // The advanced view is reached through settings, and going
@@ -609,13 +612,46 @@ class MainActivity : HelperBaseComponentActivity() {
             return
         }
 
+        if (showServerPicker && !showServers) {
+            val pickerOptions = servers.map {
+                VpnkaServerOption(
+                    guid = it.guid,
+                    name = it.profile.remarks.ifBlank { "Сервер" },
+                    delay = it.testDelayString,
+                )
+            }
+            VpnkaServersScreen(
+                servers = pickerOptions,
+                selectedGuid = uiState.selectedGuid,
+                subscriptions = subs.map { (guid, name) -> VpnkaSubOption(guid, name) },
+                selectedSubGuid = selectedSub,
+                isLoading = uiState.isLoading,
+                isTesting = uiState.isTesting,
+                onSelectServer = {
+                    setSelectServer(it)
+                    showServerPicker = false
+                },
+                onSelectSubscription = { guid ->
+                    MmkvManager.selectSubscription(guid)
+                    selectedSub = guid
+                    // A different plan means a different set of servers, so
+                    // the list has to be refetched rather than reused.
+                    importConfigViaSub()
+                },
+                onRefresh = ::importConfigViaSub,
+                onSpeedTest = mainViewModel::testAllRealPing,
+                onBack = { showServerPicker = false },
+            )
+            return
+        }
+
         if (showSettings && !showServers) {
             VpnkaSettingsScreen(
                 onPerAppProxy = { navigateTo("per_app_proxy") },
                 batteryExempt = PowerSaveHelper.isExempt(this),
                 onFixBattery = { PowerSaveHelper.openExemptionRequest(this) },
                 onRoutingSettings = { navigateTo("routing_setting") },
-                onOpenAdvanced = { showServers = true },
+                onCheckUpdate = { navigateTo("check_update") },
                 onBack = { showSettings = false },
             )
             return
@@ -673,7 +709,7 @@ class MainActivity : HelperBaseComponentActivity() {
                 onToggle = ::handleFabAction,
                 onOpenProfile = { showSubscription = true },
                 onOpenSettings = { showSettings = true },
-                onChangeServer = { showServers = true },
+                onChangeServer = { showServerPicker = true },
             )
             return
         }

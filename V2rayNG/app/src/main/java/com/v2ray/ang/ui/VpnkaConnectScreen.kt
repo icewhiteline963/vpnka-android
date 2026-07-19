@@ -699,3 +699,138 @@ fun VpnkaSecondaryButton(
         )
     }
 }
+
+/**
+ * «Сервер» — everything about which exit carries the traffic.
+ *
+ * The design handoff shows a «Сменить ›» link and stops there. It used to
+ * open v2rayNG's own server UI, which is dense, English in places, and looks
+ * like a different application — and it was also the only route to
+ * refreshing the list or testing latency, so the redesign quietly took both
+ * away.
+ *
+ * Grouping them here rather than in settings is deliberate: refreshing the
+ * list and measuring pings are things you do *because* you are choosing a
+ * server, not app preferences you set once.
+ */
+@Composable
+fun VpnkaServersScreen(
+    servers: List<VpnkaServerOption>,
+    selectedGuid: String?,
+    subscriptions: List<VpnkaSubOption>,
+    selectedSubGuid: String?,
+    isLoading: Boolean,
+    isTesting: Boolean,
+    onSelectServer: (String) -> Unit,
+    onSelectSubscription: (String) -> Unit,
+    onRefresh: () -> Unit,
+    onSpeedTest: () -> Unit,
+    onBack: () -> Unit,
+) {
+    VpnkaPage(title = "Сервер", onBack = onBack) {
+        // Only when there is a real choice — a picker with one entry is noise.
+        if (subscriptions.size > 1) {
+            Text(
+                text = "ПОДПИСКА",
+                fontFamily = VpnkaFonts.manrope700,
+                fontWeight = VpnkaWeight.Bold,
+                fontSize = 11.sp,
+                letterSpacing = 1.sp,
+                color = VpnkaColors.TextFaint,
+            )
+            Spacer(Modifier.height(8.dp))
+            subscriptions.forEach { sub ->
+                VpnkaChoiceRow(
+                    title = sub.name,
+                    subtitle = null,
+                    selected = sub.guid == selectedSubGuid,
+                    onClick = { onSelectSubscription(sub.guid) },
+                )
+                Spacer(Modifier.height(6.dp))
+            }
+            Spacer(Modifier.height(16.dp))
+        }
+
+        Text(
+            text = "СЕРВЕРЫ",
+            fontFamily = VpnkaFonts.manrope700,
+            fontWeight = VpnkaWeight.Bold,
+            fontSize = 11.sp,
+            letterSpacing = 1.sp,
+            color = VpnkaColors.TextFaint,
+        )
+        Spacer(Modifier.height(8.dp))
+
+        androidx.compose.foundation.lazy.LazyColumn(
+            modifier = Modifier.weight(1f),
+        ) {
+            androidx.compose.foundation.lazy.items(servers) { server ->
+                VpnkaChoiceRow(
+                    title = server.name,
+                    subtitle = server.delay.takeIf { it.isNotBlank() },
+                    selected = server.guid == selectedGuid,
+                    onClick = { onSelectServer(server.guid) },
+                )
+                Spacer(Modifier.height(6.dp))
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        VpnkaPrimaryButton(
+            text = if (isLoading) "Обновляем…" else "Обновить список серверов",
+            enabled = !isLoading,
+            onClick = onRefresh,
+        )
+        Spacer(Modifier.height(8.dp))
+        VpnkaSecondaryButton(
+            text = if (isTesting) "Проверяем…" else "Тест скорости",
+            onClick = onSpeedTest,
+        )
+    }
+}
+
+@Composable
+private fun VpnkaChoiceRow(
+    title: String,
+    subtitle: String?,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(
+                if (selected) VpnkaColors.CardServer else VpnkaColors.CardSpeed
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontFamily = VpnkaFonts.nunito800,
+                fontWeight = VpnkaWeight.Extra,
+                fontSize = 15.sp,
+                color = VpnkaColors.TextStrong,
+            )
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    fontFamily = VpnkaFonts.manrope600,
+                    fontWeight = VpnkaWeight.Semi,
+                    fontSize = 12.sp,
+                    color = VpnkaColors.TextFaint,
+                )
+            }
+        }
+        if (selected) {
+            Text(
+                text = "✓",
+                fontSize = 18.sp,
+                color = VpnkaColors.Accent,
+            )
+        }
+    }
+}
