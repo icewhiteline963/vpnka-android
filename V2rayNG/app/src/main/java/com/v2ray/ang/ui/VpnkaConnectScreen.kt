@@ -176,7 +176,13 @@ fun VpnkaConnectScreen(
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxWidth(),
+                    .fillMaxWidth()
+                    // Lifted off centre: the rows along the bottom have grown
+                    // and were crowding the button. Padding rather than an
+                    // offset, so the centring still happens inside whatever
+                    // space is left instead of pushing content off a short
+                    // screen.
+                    .padding(bottom = 60.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
@@ -1059,20 +1065,31 @@ fun VpnkaPlansScreen(
 fun VpnkaPlansListScreen(
     plans: List<VpnkaAccount.Plan>,
     activeToken: String?,
+    trialHoursLeft: Int?,
+    onGetFreeMonth: () -> Unit,
     onOpenPlan: (VpnkaAccount.Plan) -> Unit,
     onBuy: () -> Unit,
     onBack: () -> Unit,
 ) {
     VpnkaPage(title = "Мои подписки", onBack = onBack) {
         if (plans.isEmpty()) {
-            // No purchase yet means the shipped free month is what carries
-            // the traffic. Naming it, and marking it live, beats «пока нет
-            // ни одной подписки» — which read as though nothing worked while
-            // the connection was in fact running on it.
+            // No plan on the account means the traffic is running on the
+            // shipped 24-hour trial — not on a free month, which is what
+            // this row used to claim while the row above it, taken from the
+            // real subscription, said «пробный доступ · 24 часа». Two names
+            // for one thing, and the wrong one was here.
+            //
+            // The trial exists to buy time for exactly one action, so the
+            // row says what that action is and performs it when tapped.
             VpnkaPlanRowActive(
-                title = "Бесплатный месяц",
-                subtitle = "сейчас используется",
-                onClick = {},
+                title = "Пробный доступ · 24 часа",
+                subtitle = buildString {
+                    if (trialHoursLeft != null) {
+                        append("осталось $trialHoursLeft ${pluralHours(trialHoursLeft)} · ")
+                    }
+                    append("нажмите, чтобы получить месяц бесплатно")
+                },
+                onClick = onGetFreeMonth,
             )
             Spacer(Modifier.height(16.dp))
         } else {

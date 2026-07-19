@@ -690,12 +690,7 @@ class MainActivity : HelperBaseComponentActivity() {
                 onTopUp = { showTopUp = true },
                 onShowRecovery = { showRecovery = true },
                 onOpenSettings = { showSettings = true },
-                onLinkTelegram = {
-                    lifecycleScope.launch {
-                        val url = VpnkaAccount.telegramLinkUrl()
-                        if (url != null) Utils.openUri(this@MainActivity, url)
-                    }
-                },
+                onLinkTelegram = { openTelegramLink() },
                 onRetry = { subReload++ },
                 onBack = { showSubscription = false },
             )
@@ -754,6 +749,11 @@ class MainActivity : HelperBaseComponentActivity() {
             VpnkaPlansListScreen(
                 plans = subInfo?.subscriptions.orEmpty(),
                 activeToken = MmkvManager.vpnkaTokenForGuid(selectedSub),
+                trialHoursLeft = subInfo?.trialHoursLeft,
+                // Same door as «Подключить Telegram»: the month is granted
+                // by the bot on arrival, and the link carries the token that
+                // ties it to this install.
+                onGetFreeMonth = { openTelegramLink() },
                 onOpenPlan = { openedPlan = it },
                 onBuy = {
                     showPlansList = false
@@ -1247,6 +1247,20 @@ class MainActivity : HelperBaseComponentActivity() {
             toast(R.string.toast_action_not_allowed); return
         }
         mainViewModel.removeServerAndRefresh(guid)
+    }
+
+    /**
+     * Open the bot on the link that identifies this install.
+     *
+     * One method rather than a copy at each call site: linking an account,
+     * claiming the free month and renewing are the same trip through the
+     * same token, and three copies would drift.
+     */
+    private fun openTelegramLink() {
+        lifecycleScope.launch {
+            val url = VpnkaAccount.telegramLinkUrl()
+            if (url != null) Utils.openUri(this@MainActivity, url)
+        }
     }
 
     private fun setSelectServer(guid: String) {

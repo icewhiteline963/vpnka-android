@@ -549,16 +549,13 @@ fun VpnkaSubscriptionScreen(
         // they lead to the Telegram sign-in rather than to a shop that
         // cannot complete — the destination is the missing step, not a
         // refusal at the end of one.
-        VpnkaMenuRow(
-            "Купить подписку",
-            if (signedIn) onRenew else ({ showSignIn = true }),
-            subtitle = if (signedIn) null else "Сначала вход — покупка привязывается к аккаунту",
-        )
-        VpnkaMenuRow(
-            "Пополнить баланс",
-            if (signedIn) onTopUp else ({ showSignIn = true }),
-            subtitle = if (signedIn) null else "Сначала вход — баланс хранится в аккаунте",
-        )
+        // Both need an account to charge, and until Telegram is attached
+        // there isn't one worth charging — the rows above are the way in.
+        // Offering a shop that cannot complete is worse than not offering it.
+        if (telegramLinked) {
+            VpnkaMenuRow("Купить подписку", onRenew)
+            VpnkaMenuRow("Пополнить баланс", onTopUp)
+        }
         VpnkaMenuRow("Связаться с оператором", onSupport)
         VpnkaMenuRow("Настройки приложения", onOpenSettings)
         // Only worth showing to someone who has an account to recover.
