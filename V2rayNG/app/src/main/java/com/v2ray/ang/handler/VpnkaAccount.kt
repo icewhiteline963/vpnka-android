@@ -42,6 +42,11 @@ object VpnkaAccount {
         @SerializedName("frozen") val frozen: Boolean = false,
         @SerializedName("subscriptions") val subscriptions: List<Plan>? = null,
         @SerializedName("subscription_token") val subscriptionToken: String? = null,
+        // Only present when there is no purchase: how much of the shipped
+        // 24h trial is left. The grant is anonymous and keyed by install id,
+        // so the server can only answer this when the app says which install
+        // is asking.
+        @SerializedName("trial_hours_left") val trialHoursLeft: Int? = null,
     )
 
     data class Plan(
@@ -237,6 +242,8 @@ object VpnkaAccount {
                 Request.Builder()
                     .url("$BASE/app/profile")
                     .header("Authorization", "Bearer $token")
+                    // Identifies which install's trial to report on.
+                    .header("Hwid", MmkvManager.getOrCreateInstallId())
                     .get()
                     .build()
             ).execute().use { resp ->

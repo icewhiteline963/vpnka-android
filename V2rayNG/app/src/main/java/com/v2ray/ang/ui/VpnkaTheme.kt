@@ -27,6 +27,10 @@ object VpnkaColors {
     // Connected.
     val Green = Color(0xFF2FAE4F)
 
+    // The trial countdown, and nothing else. Reserved so it keeps meaning
+    // "this is about to stop working" rather than becoming another accent.
+    val Warning = Color(0xFFD32F2F)
+
     // Text, darkest first.
     val TextStrong = Color(0xFF5C3D10)
     val TextBrand = Color(0xFF7A4A12)

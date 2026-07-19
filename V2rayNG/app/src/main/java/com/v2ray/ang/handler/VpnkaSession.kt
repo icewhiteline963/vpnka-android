@@ -27,52 +27,47 @@ object VpnkaSession {
         return (nowMs - startedAtMs) / 1000L
     }
 
-    data class Speed(val downMbps: Double, val upMbps: Double)
+    data class Traffic(val downBytes: Long, val upBytes: Long)
+
+    private var downTotal = 0L
+    private var upTotal = 0L
 
     /**
-     * Megabits per second since the previous call, or null if we can't say.
+     * Bytes carried by the tunnel this session, both ways.
      *
-     * Reading the core's counters **resets** them — that is how the speed
-     * notification computes a rate — so this must be the only thing polling
-     * while the screen is open. If the user has switched on the speed
-     * notification (off by default), the two pollers split the same bytes
-     * and both read low; that is a known trade rather than a bug to hunt.
+     * Accumulated rather than read: querying the core's counters **resets**
+     * them, so each call returns only what moved since the last one and the
+     * running total has to be kept here.
      *
-     * The first call after connecting returns null: with no previous sample
-     * there is no interval to divide by, and a number derived from
-     * "everything since the tunnel started" would read as a spike.
+     * Totals rather than a rate, because a rate is honestly zero whenever
+     * the user isn't actively downloading — which reads as a broken counter
+     * on a screen someone opens to check that the VPN is working. Bytes only
+     * ever go up.
      */
-    fun sampleSpeed(nowMs: Long): Speed? {
-        val previous = lastSampleAtMs
+    fun sampleTraffic(nowMs: Long, isRunning: Boolean): Traffic {
+        if (!isRunning) {
+            downTotal = 0L
+            upTotal = 0L
+            lastSampleAtMs = 0L
+            return Traffic(0L, 0L)
+        }
         lastSampleAtMs = nowMs
-        if (previous == 0L) return null
 
-        val seconds = (nowMs - previous) / 1000.0
-        if (seconds <= 0.0) return null
-
-        var up = 0L
-        var down = 0L
         try {
             CoreServiceManager.queryAllOutboundTrafficStats().forEach { stat ->
                 // Proxy tags only. Direct traffic bypasses the tunnel — it is
-                // the user's own connection, and counting it would show speed
-                // the VPN isn't providing.
+                // the user's own connection, and counting it would credit the
+                // VPN with data it never carried.
                 if (stat.tag.startsWith(AppConfig.TAG_PROXY)) {
                     when (stat.direction) {
-                        AppConfig.UPLINK -> up += stat.value
-                        AppConfig.DOWNLINK -> down += stat.value
+                        AppConfig.UPLINK -> upTotal += stat.value
+                        AppConfig.DOWNLINK -> downTotal += stat.value
                     }
                 }
             }
         } catch (e: Exception) {
             LogUtil.w(AppConfig.TAG, "traffic sample failed: ${e.message}")
-            return null
         }
-
-        // Bytes → megabits.
-        return Speed(
-            downMbps = down * 8.0 / 1_000_000.0 / seconds,
-            upMbps = up * 8.0 / 1_000_000.0 / seconds,
-        )
+        return Traffic(downTotal, upTotal)
     }
 }

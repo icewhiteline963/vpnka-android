@@ -339,18 +339,8 @@ fun VpnkaSettingsScreen(
     onOpenAdvanced: () -> Unit,
     onBack: () -> Unit,
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-    ) {
-        Spacer(Modifier.height(16.dp))
-        Text(
-            text = "Настройки",
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Light,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
+    VpnkaPage(title = "Настройки", onBack = onBack) {
+        Column(modifier = Modifier.fillMaxSize()) {
         Spacer(Modifier.height(24.dp))
 
         // First row when it's not granted: this is the setting behind most
@@ -381,7 +371,7 @@ fun VpnkaSettingsScreen(
         )
 
         Spacer(Modifier.weight(1f))
-        TextButton(onClick = onBack) { Text("← Назад") }
+        }
     }
 }
 
@@ -444,20 +434,12 @@ fun VpnkaSubscriptionScreen(
     onRetry: () -> Unit,
     onBack: () -> Unit,
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(24.dp),
-    ) {
-        Spacer(Modifier.height(16.dp))
-        Text(
-            text = "Профиль",
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Light,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Spacer(Modifier.height(20.dp))
+    VpnkaPage(title = "Профиль", onBack = onBack) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState()),
+        ) {
 
         if (!signedIn) {
             VpnkaSignIn(
@@ -548,8 +530,7 @@ fun VpnkaSubscriptionScreen(
             )
         }
 
-        Spacer(Modifier.height(24.dp))
-        TextButton(onClick = onBack) { Text("← Назад") }
+        }
     }
 }
 
@@ -696,20 +677,12 @@ fun VpnkaShopScreen(
     onRetry: () -> Unit,
     onBack: () -> Unit,
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(24.dp),
-    ) {
-        Spacer(Modifier.height(16.dp))
-        Text(
-            text = "Купить подписку",
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Light,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Spacer(Modifier.height(20.dp))
+    VpnkaPage(title = "Купить подписку", onBack = onBack) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState()),
+        ) {
 
         when {
             loading -> CircularProgressIndicator(modifier = Modifier.size(32.dp))
@@ -740,8 +713,7 @@ fun VpnkaShopScreen(
             }
         }
 
-        Spacer(Modifier.height(24.dp))
-        TextButton(onClick = onBack) { Text("← Назад") }
+        }
     }
 }
 
@@ -820,18 +792,8 @@ fun VpnkaSupportScreen(
 ) {
     var draft by remember { mutableStateOf("") }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 20.dp, vertical = 16.dp),
-    ) {
-        Text(
-            text = "Поддержка",
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Light,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Spacer(Modifier.height(16.dp))
+    VpnkaPage(title = "Поддержка", onBack = onBack) {
+        Column(modifier = Modifier.fillMaxSize()) {
 
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             when {
@@ -871,7 +833,7 @@ fun VpnkaSupportScreen(
             modifier = Modifier.fillMaxWidth(),
         ) { Text(if (sending) "Отправляем…" else "Отправить") }
 
-        TextButton(onClick = onBack) { Text("← Назад") }
+        }
     }
 }
 
@@ -916,20 +878,12 @@ fun VpnkaTopUpScreen(
     onTopUp: (Int) -> Unit,
     onBack: () -> Unit,
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(24.dp),
-    ) {
-        Spacer(Modifier.height(16.dp))
-        Text(
-            text = "Пополнить баланс",
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Light,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Spacer(Modifier.height(8.dp))
+    VpnkaPage(title = "Пополнить баланс", onBack = onBack) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState()),
+        ) {
         Text(
             text = "Оплата картой или через СБП. С баланса подписка покупается " +
                 "в одно нажатие.",
@@ -952,8 +906,7 @@ fun VpnkaTopUpScreen(
             Text(error, fontSize = 13.sp, color = MaterialTheme.colorScheme.error)
         }
 
-        Spacer(Modifier.height(24.dp))
-        TextButton(onClick = onBack) { Text("← Назад") }
+        }
     }
 }
 
@@ -967,20 +920,12 @@ fun VpnkaTopUpScreen(
  */
 @Composable
 fun VpnkaRecoveryScreen(code: String?, onBack: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(24.dp),
-    ) {
-        Spacer(Modifier.height(16.dp))
-        Text(
-            text = "Код восстановления",
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Light,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
-        Spacer(Modifier.height(16.dp))
+    VpnkaPage(title = "Код восстановления", onBack = onBack) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState()),
+        ) {
 
         if (code == null) {
             Text(
@@ -1017,7 +962,6 @@ fun VpnkaRecoveryScreen(code: String?, onBack: () -> Unit) {
             )
         }
 
-        Spacer(Modifier.height(24.dp))
-        TextButton(onClick = onBack) { Text("← Назад") }
+        }
     }
 }

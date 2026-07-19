@@ -372,24 +372,24 @@ class MainActivity : HelperBaseComponentActivity() {
         // behind a closed screen would quietly eat the numbers the speed
         // notification is trying to show.
         var sessionSeconds by remember { mutableLongStateOf(0L) }
-        var downMbps by remember { mutableStateOf<Double?>(null) }
-        var upMbps by remember { mutableStateOf<Double?>(null) }
+        var downBytes by remember { mutableLongStateOf(0L) }
+        var upBytes by remember { mutableLongStateOf(0L) }
 
         LaunchedEffect(uiState.isRunning) {
             if (!uiState.isRunning) {
                 sessionSeconds = 0L
-                downMbps = null
-                upMbps = null
+                downBytes = 0L
+                upBytes = 0L
                 VpnkaSession.elapsedSeconds(false, System.currentTimeMillis())
+                VpnkaSession.sampleTraffic(System.currentTimeMillis(), false)
                 return@LaunchedEffect
             }
             while (true) {
                 val now = System.currentTimeMillis()
                 sessionSeconds = VpnkaSession.elapsedSeconds(true, now)
-                VpnkaSession.sampleSpeed(now)?.let {
-                    downMbps = it.downMbps
-                    upMbps = it.upMbps
-                }
+                val traffic = VpnkaSession.sampleTraffic(now, true)
+                downBytes = traffic.downBytes
+                upBytes = traffic.upBytes
                 kotlinx.coroutines.delay(1000)
             }
         }
@@ -428,8 +428,38 @@ class MainActivity : HelperBaseComponentActivity() {
             )
         }
 
+        // One back handler for every overlay, registered before any of the
+        // branches below and in priority order.
+        //
+        // There used to be one per screen. Each was correct in isolation and
+        // the arrangement still let back fall through to the system, closing
+        // the app instead of returning home. Rather than keep guessing which
+        // of seven registrations wins, there is now exactly one — its
+        // behaviour can be read off the page.
+        //
+        // `enabled` is what hands back to the system on the main screen,
+        // where leaving the app is the right answer.
+        val anyOverlay = showSupport || showTopUp || showRecovery ||
+            showShop || showSubscription || showSettings || showServers
+        BackHandler(enabled = anyOverlay) {
+            when {
+                showSupport -> showSupport = false
+                showTopUp -> showTopUp = false
+                showRecovery -> showRecovery = false
+                showShop -> showShop = false
+                showSubscription -> showSubscription = false
+                // The advanced view is reached through settings, and going
+                // back from it lands home rather than in a screen the user
+                // passed through.
+                showServers -> {
+                    showServers = false
+                    showSettings = false
+                }
+                showSettings -> showSettings = false
+            }
+        }
+
         if (showSupport && !showServers) {
-            BackHandler { showSupport = false }
             VpnkaSupportScreen(
                 loading = supportLoading,
                 sending = supportSending,
@@ -448,7 +478,6 @@ class MainActivity : HelperBaseComponentActivity() {
         }
 
         if (showTopUp && !showServers) {
-            BackHandler { showTopUp = false }
             VpnkaTopUpScreen(
                 busy = topUpBusy,
                 error = topUpError,
@@ -471,7 +500,6 @@ class MainActivity : HelperBaseComponentActivity() {
         }
 
         if (showRecovery && !showServers) {
-            BackHandler { showRecovery = false }
             VpnkaRecoveryScreen(
                 code = MmkvManager.getRecoveryCode(),
                 onBack = { showRecovery = false },
@@ -480,7 +508,6 @@ class MainActivity : HelperBaseComponentActivity() {
         }
 
         if (showShop && !showServers) {
-            BackHandler { showShop = false }
             VpnkaShopScreen(
                 loading = shopLoading,
                 buying = buying,
@@ -526,7 +553,6 @@ class MainActivity : HelperBaseComponentActivity() {
         }
 
         if (showSubscription && !showServers) {
-            BackHandler { showSubscription = false }
             VpnkaSubscriptionScreen(
                 loading = subLoading,
                 signedIn = signedIn,
@@ -584,7 +610,6 @@ class MainActivity : HelperBaseComponentActivity() {
         }
 
         if (showSettings && !showServers) {
-            BackHandler { showSettings = false }
             VpnkaSettingsScreen(
                 onPerAppProxy = { navigateTo("per_app_proxy") },
                 batteryExempt = PowerSaveHelper.isExempt(this),
@@ -637,13 +662,14 @@ class MainActivity : HelperBaseComponentActivity() {
                         else -> info.tariff ?: "Подписка"
                     }
                 } ?: "Пробный доступ",
+                trialHoursLeft = subInfo?.takeIf { !it.active }?.trialHoursLeft,
                 serverName = options.firstOrNull { it.guid == uiState.selectedGuid }
                     ?.name ?: "Выбрать сервер",
                 serverDelay = options.firstOrNull { it.guid == uiState.selectedGuid }
                     ?.delay?.takeIf { it.isNotBlank() } ?: "нажмите «Сменить»",
                 sessionSeconds = sessionSeconds,
-                downloadMbps = downMbps,
-                uploadMbps = upMbps,
+                downBytes = downBytes,
+                upBytes = upBytes,
                 onToggle = ::handleFabAction,
                 onOpenProfile = { showSubscription = true },
                 onOpenSettings = { showSettings = true },
@@ -652,13 +678,6 @@ class MainActivity : HelperBaseComponentActivity() {
             return
         }
 
-
-        // Hardware back returns to the simple screen instead of leaving the
-        // app — otherwise the advanced view is a one-way door.
-        BackHandler {
-            showServers = false
-            showSettings = false
-        }
 
         MainScreen(
             mainViewModel = mainViewModel,

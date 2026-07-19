@@ -97,11 +97,12 @@ fun VpnkaConnectScreen(
     isRunning: Boolean,
     isLoading: Boolean,
     planTitle: String,
+    trialHoursLeft: Int?,
     serverName: String,
     serverDelay: String,
     sessionSeconds: Long,
-    downloadMbps: Double?,
-    uploadMbps: Double?,
+    downBytes: Long,
+    upBytes: Long,
     onToggle: () -> Unit,
     onOpenProfile: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -144,6 +145,7 @@ fun VpnkaConnectScreen(
         Column(modifier = Modifier.fillMaxSize()) {
             VpnkaHeader(
                 planTitle = planTitle,
+                trialHoursLeft = trialHoursLeft,
                 onOpenProfile = onOpenProfile,
                 onOpenSettings = onOpenSettings,
             )
@@ -201,14 +203,14 @@ fun VpnkaConnectScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    VpnkaSpeedCard(
-                        label = "ЗАГРУЗКА",
-                        value = downloadMbps,
+                    VpnkaTrafficCard(
+                        label = "ЗАГРУЖЕНО",
+                        bytes = downBytes,
                         modifier = Modifier.weight(1f),
                     )
-                    VpnkaSpeedCard(
-                        label = "ОТДАЧА",
-                        value = uploadMbps,
+                    VpnkaTrafficCard(
+                        label = "ОТДАНО",
+                        bytes = upBytes,
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -225,6 +227,7 @@ fun VpnkaConnectScreen(
 @Composable
 private fun VpnkaHeader(
     planTitle: String,
+    trialHoursLeft: Int?,
     onOpenProfile: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
@@ -266,13 +269,28 @@ private fun VpnkaHeader(
                 letterSpacing = (-0.3).sp,
                 color = VpnkaColors.TextBrand,
             )
-            Text(
-                text = planTitle,
-                fontFamily = VpnkaFonts.manrope600,
-                fontWeight = VpnkaWeight.Semi,
-                fontSize = 11.sp,
-                color = VpnkaColors.TextFaint,
-            )
+            if (trialHoursLeft != null) {
+                // Loud on purpose: this is a countdown to the app going
+                // quiet, and the muted plan colour used everywhere else here
+                // would let it pass for decoration. Red and bold is the one
+                // place on this screen that asks for attention.
+                Text(
+                    text = "До конца $trialHoursLeft ${pluralHours(trialHoursLeft)}, " +
+                        "авторизуйтесь чтобы получить подписку!",
+                    fontFamily = VpnkaFonts.nunito900,
+                    fontWeight = VpnkaWeight.Black,
+                    fontSize = 11.sp,
+                    color = VpnkaColors.Warning,
+                )
+            } else {
+                Text(
+                    text = planTitle,
+                    fontFamily = VpnkaFonts.manrope600,
+                    fontWeight = VpnkaWeight.Semi,
+                    fontSize = 11.sp,
+                    color = VpnkaColors.TextFaint,
+                )
+            }
         }
         Box(
             modifier = Modifier
@@ -394,11 +412,12 @@ private fun VpnkaConnectButton(
 }
 
 @Composable
-private fun VpnkaSpeedCard(
+private fun VpnkaTrafficCard(
     label: String,
-    value: Double?,
+    bytes: Long,
     modifier: Modifier = Modifier,
 ) {
+    val (value, unit) = formatTraffic(bytes)
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(18.dp))
@@ -416,26 +435,20 @@ private fun VpnkaSpeedCard(
         Spacer(Modifier.height(4.dp))
         Row(verticalAlignment = Alignment.Bottom) {
             Text(
-                // A dash when there is nothing to report — disconnected, or
-                // connected but not yet measured. The handoff's climbing
-                // numbers were a simulation; inventing one here would be a
-                // number the user could act on and we made up.
-                text = value?.let { formatMbps(it) } ?: "—",
+                text = value,
                 fontFamily = VpnkaFonts.nunito800,
                 fontWeight = VpnkaWeight.Extra,
                 fontSize = 20.sp,
                 color = VpnkaColors.TextStrong,
             )
-            if (value != null) {
-                Spacer(Modifier.size(4.dp))
-                Text(
-                    text = "Мбит/с",
-                    fontFamily = VpnkaFonts.manrope600,
-                    fontWeight = VpnkaWeight.Semi,
-                    fontSize = 12.sp,
-                    color = VpnkaColors.TextUnit,
-                )
-            }
+            Spacer(Modifier.size(4.dp))
+            Text(
+                text = unit,
+                fontFamily = VpnkaFonts.manrope600,
+                fontWeight = VpnkaWeight.Semi,
+                fontSize = 12.sp,
+                color = VpnkaColors.TextUnit,
+            )
         }
     }
 }
@@ -509,8 +522,16 @@ internal fun formatSession(totalSeconds: Long): String {
     return "%02d:%02d:%02d".format(s / 3600, (s % 3600) / 60, s % 60)
 }
 
-internal fun formatMbps(value: Double): String =
-    if (value >= 100) "%.0f".format(value) else "%.1f".format(value)
+/** Bytes as a number and a unit, so the two can be styled apart. */
+internal fun formatTraffic(bytes: Long): Pair<String, String> {
+    val b = bytes.coerceAtLeast(0)
+    return when {
+        b < 1024 -> b.toString() to "Б"
+        b < 1024L * 1024 -> "%.0f".format(b / 1024.0) to "КБ"
+        b < 1024L * 1024 * 1024 -> "%.1f".format(b / 1024.0 / 1024) to "МБ"
+        else -> "%.2f".format(b / 1024.0 / 1024 / 1024) to "ГБ"
+    }
+}
 
 /** The leading emoji of a server name, or a globe when it has none. */
 internal fun flagOf(name: String): String {
@@ -533,4 +554,148 @@ internal fun nameWithoutFlag(name: String): String {
     val flag = flagOf(name)
     val stripped = if (flag != "🌍") name.trimStart().removePrefix(flag) else name
     return stripped.trim().ifBlank { "Сервер" }
+}
+
+
+/** «час / часа / часов» — the warning is read, not parsed. */
+internal fun pluralHours(n: Int): String {
+    val a = kotlin.math.abs(n)
+    return when {
+        a % 10 == 1 && a % 100 != 11 -> "час"
+        a % 10 in 2..4 && a % 100 !in 12..14 -> "часа"
+        else -> "часов"
+    }
+}
+
+/**
+ * The warm page every inner screen sits on.
+ *
+ * The connect screen got the design; the profile, shop, support and the rest
+ * kept Material's defaults and looked like a different app the moment you
+ * stepped into them. This is the shared shell that closes that gap — the
+ * same wash as the disconnected home screen, a title in the same face, and a
+ * back affordance in the same place on all of them.
+ */
+@Composable
+fun VpnkaPage(
+    title: String,
+    onBack: () -> Unit,
+    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.radialGradient(
+                    colorStops = arrayOf(
+                        0f to VpnkaColors.BgOffCentre,
+                        0.6f to VpnkaColors.BgOffMid,
+                        1f to VpnkaColors.BgOffEdge,
+                    ),
+                    center = Offset.Unspecified,
+                    radius = Float.POSITIVE_INFINITY,
+                )
+            )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(start = 20.dp, end = 20.dp, top = 62.dp, bottom = 24.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(CircleShape)
+                        .background(VpnkaColors.CardSettings)
+                        .clickable(onClick = onBack),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("‹", fontSize = 22.sp, color = VpnkaColors.IconMuted)
+                }
+                Spacer(Modifier.size(12.dp))
+                Text(
+                    text = title,
+                    fontFamily = VpnkaFonts.nunito900,
+                    fontWeight = VpnkaWeight.Black,
+                    fontSize = 22.sp,
+                    color = VpnkaColors.TextBrand,
+                )
+            }
+            Spacer(Modifier.height(20.dp))
+            content()
+        }
+    }
+}
+
+/** A card in the same style as the ones on the home screen. */
+@Composable
+fun VpnkaCard(
+    modifier: Modifier = Modifier,
+    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(VpnkaColors.CardServer)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        content = content,
+    )
+}
+
+/** The screens' primary action, in the accent colour. */
+@Composable
+fun VpnkaPrimaryButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(
+                if (enabled) VpnkaColors.Accent
+                else VpnkaColors.Accent.copy(alpha = 0.4f)
+            )
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(vertical = 14.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            fontFamily = VpnkaFonts.nunito800,
+            fontWeight = VpnkaWeight.Extra,
+            fontSize = 16.sp,
+            color = Color.White,
+        )
+    }
+}
+
+/** A quieter action — the same shape, without the fill. */
+@Composable
+fun VpnkaSecondaryButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(VpnkaColors.CardSpeed)
+            .clickable(onClick = onClick)
+            .padding(vertical = 14.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            fontFamily = VpnkaFonts.nunito800,
+            fontWeight = VpnkaWeight.Extra,
+            fontSize = 15.sp,
+            color = VpnkaColors.TextStrong,
+        )
+    }
 }
