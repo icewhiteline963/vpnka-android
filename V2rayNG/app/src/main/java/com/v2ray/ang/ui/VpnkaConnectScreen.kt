@@ -182,7 +182,7 @@ fun VpnkaConnectScreen(
                     // offset, so the centring still happens inside whatever
                     // space is left instead of pushing content off a short
                     // screen.
-                    .padding(bottom = 40.dp),
+                    .padding(bottom = 30.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {

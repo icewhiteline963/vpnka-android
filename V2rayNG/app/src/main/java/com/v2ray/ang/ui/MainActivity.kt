@@ -296,6 +296,8 @@ class MainActivity : HelperBaseComponentActivity() {
      * registrations so the two can never disagree about what is on top.
      */
     private fun closeTopVpnkaScreen(): Boolean = logBack(when {
+        openedTicket != null -> { openedTicket = null; true }
+        showTickets -> { showTickets = false; true }
         showSupport -> { showSupport = false; true }
         showTopUp -> { showTopUp = false; true }
         showRecovery -> { showRecovery = false; true }
@@ -334,6 +336,8 @@ class MainActivity : HelperBaseComponentActivity() {
     private var showSubscription by mutableStateOf(false)
     private var showShop by mutableStateOf(false)
     private var showSupport by mutableStateOf(false)
+    private var showTickets by mutableStateOf(false)
+    private var openedTicket by mutableStateOf<VpnkaAccount.SupportTicket?>(null)
     private var showTopUp by mutableStateOf(false)
     private var showRecovery by mutableStateOf(false)
     private var showServerPicker by mutableStateOf(false)
@@ -422,7 +426,12 @@ class MainActivity : HelperBaseComponentActivity() {
                 // One group per plan. The profile lists them newest-expiry
                 // first, so the fallback selection lands on the longest-lived
                 // subscription rather than an arbitrary one.
+                // Finished plans are excluded here, not just hidden in the
+                // list: a group built for an expired plan serves nothing,
+                // and leaving it in the picker is how someone selects a
+                // subscription and finds no servers behind it.
                 val plans = fetched?.subscriptions.orEmpty()
+                    .filter { (it.daysLeft ?: 1) > 0 }
                     .mapNotNull { plan ->
                         val token = plan.groupToken ?: return@mapNotNull null
                         token to (plan.tariff ?: "VPNka")
@@ -517,8 +526,42 @@ class MainActivity : HelperBaseComponentActivity() {
         val anyOverlay = showSupport || showTopUp || showRecovery ||
             showServerPicker || showPlanPicker || showPlansList ||
             openedPlan != null || showShop || showSubscription ||
-            showSettings || showServers
+            showSettings || showServers || showTickets || openedTicket != null
         BackHandler(enabled = anyOverlay) { closeTopVpnkaScreen() }
+
+        openedTicket?.let { ticket ->
+            var thread by remember(ticket.id) {
+                mutableStateOf<List<VpnkaAccount.SupportMessage>>(emptyList())
+            }
+            var threadLoading by remember(ticket.id) { mutableStateOf(true) }
+            LaunchedEffect(ticket.id) {
+                thread = VpnkaAccount.fetchTicket(ticket.id)
+                threadLoading = false
+            }
+            VpnkaTicketThreadScreen(
+                subject = ticket.subject,
+                loading = threadLoading,
+                messages = thread,
+                onBack = { openedTicket = null },
+            )
+            return
+        }
+
+        if (showTickets && !showServers) {
+            var tickets by remember { mutableStateOf<List<VpnkaAccount.SupportTicket>>(emptyList()) }
+            var ticketsLoading by remember { mutableStateOf(true) }
+            LaunchedEffect(Unit) {
+                tickets = VpnkaAccount.fetchTickets()
+                ticketsLoading = false
+            }
+            VpnkaTicketsScreen(
+                loading = ticketsLoading,
+                tickets = tickets,
+                onOpen = { openedTicket = it },
+                onBack = { showTickets = false },
+            )
+            return
+        }
 
         if (showSupport && !showServers) {
             VpnkaSupportScreen(
@@ -533,6 +576,7 @@ class MainActivity : HelperBaseComponentActivity() {
                         supportReload++
                     }
                 },
+                onHistory = { showTickets = true },
                 onBack = { showSupport = false },
             )
             return
@@ -769,7 +813,19 @@ class MainActivity : HelperBaseComponentActivity() {
                     val guid = plan.groupToken?.let { MmkvManager.vpnkaGuidForToken(it) }
                     if (guid != null) {
                         mainViewModel.subscriptionIdChanged(guid)
-                        toast("Активная подписка: ${plan.tariff ?: "выбрана"}")
+                        // Switching reads servers from storage — and a plan
+                        // whose group was never fetched has none, which is
+                        // an empty list and «сервер не выбран» at the flower.
+                        // Every plan except the one in use is in exactly
+                        // that state the first time it is picked, so fetch
+                        // instead of showing an empty screen and waiting for
+                        // the user to guess that «обновить» is the answer.
+                        if (MmkvManager.decodeServerList(guid).isEmpty()) {
+                            toast("Загружаю серверы подписки…")
+                            importConfigViaSub()
+                        } else {
+                            toast("Активная подписка: ${plan.tariff ?: "выбрана"}")
+                        }
                     }
                 },
                 onOpenPlan = { openedPlan = it },

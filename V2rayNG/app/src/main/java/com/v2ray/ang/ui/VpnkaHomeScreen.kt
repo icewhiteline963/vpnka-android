@@ -880,12 +880,23 @@ fun VpnkaSupportScreen(
     sending: Boolean,
     messages: List<VpnkaAccount.SupportMessage>,
     onSend: (String) -> Unit,
+    onHistory: () -> Unit,
     onBack: () -> Unit,
 ) {
     var draft by remember { mutableStateOf("") }
 
     VpnkaPage(title = "Поддержка", onBack = onBack) {
         Column(modifier = Modifier.fillMaxSize()) {
+
+        // Past conversations are reachable but not in the way: what someone
+        // opening support wants is to type, and history is for the rarer
+        // case of going back to an answer they were given.
+        VpnkaMenuRow(
+            "История обращений",
+            onHistory,
+            subtitle = "Прошлые вопросы и ответы оператора",
+        )
+        Spacer(Modifier.height(8.dp))
 
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
             when {
@@ -1119,4 +1130,86 @@ private fun VpnkaMenuRow(
             color = VpnkaColors.TextFaint,
         )
     }
+}
+
+
+/**
+ * «История обращений» — every ticket this client opened.
+ *
+ * The support screen shows one live conversation; a question asked and
+ * answered last month used to be unreachable, which made the answer
+ * worthless the moment the ticket closed.
+ */
+@Composable
+fun VpnkaTicketsScreen(
+    loading: Boolean,
+    tickets: List<VpnkaAccount.SupportTicket>,
+    onOpen: (VpnkaAccount.SupportTicket) -> Unit,
+    onBack: () -> Unit,
+) {
+    VpnkaPage(title = "История обращений", onBack = onBack) {
+        when {
+            loading && tickets.isEmpty() ->
+                CircularProgressIndicator(modifier = Modifier.size(28.dp))
+
+            tickets.isEmpty() -> Text(
+                text = "Вы ещё не обращались в поддержку.",
+                fontSize = 14.sp,
+                color = VpnkaColors.TextMuted,
+            )
+
+            else -> LazyColumn {
+                items(tickets) { ticket ->
+                    VpnkaChoiceRow(
+                        title = ticket.subject.ifBlank { "Обращение #${ticket.id}" },
+                        subtitle = buildString {
+                            append(ticketStatusLabel(ticket.status))
+                            val day = ticket.createdAt.take(10)
+                            if (day.isNotBlank()) append(" · $day")
+                        },
+                        selected = false,
+                        onClick = { onOpen(ticket) },
+                    )
+                    Spacer(Modifier.height(8.dp))
+                }
+            }
+        }
+    }
+}
+
+/** One past thread, read-only: it may be closed, and reopening is a new ask. */
+@Composable
+fun VpnkaTicketThreadScreen(
+    subject: String,
+    loading: Boolean,
+    messages: List<VpnkaAccount.SupportMessage>,
+    onBack: () -> Unit,
+) {
+    VpnkaPage(title = subject.ifBlank { "Обращение" }, onBack = onBack) {
+        when {
+            loading && messages.isEmpty() ->
+                CircularProgressIndicator(modifier = Modifier.size(28.dp))
+
+            messages.isEmpty() -> Text(
+                text = "В этом обращении нет сообщений.",
+                fontSize = 14.sp,
+                color = VpnkaColors.TextMuted,
+            )
+
+            else -> LazyColumn {
+                items(messages) { message ->
+                    VpnkaBubble(message)
+                    Spacer(Modifier.height(8.dp))
+                }
+            }
+        }
+    }
+}
+
+private fun ticketStatusLabel(status: String): String = when (status) {
+    "new" -> "новое"
+    "open" -> "в работе"
+    "resolved" -> "решено"
+    "closed" -> "закрыто"
+    else -> status
 }

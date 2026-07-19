@@ -361,6 +361,18 @@ object VpnkaAccount {
         @SerializedName("body") val body: String = "",
     )
 
+    /** One past conversation, as the history list shows it. */
+    data class SupportTicket(
+        @SerializedName("id") val id: Long = 0,
+        @SerializedName("subject") val subject: String = "",
+        @SerializedName("status") val status: String = "",
+        @SerializedName("created_at") val createdAt: String = "",
+    )
+
+    private data class TicketList(
+        @SerializedName("tickets") val tickets: List<SupportTicket>? = null,
+    )
+
     private data class SupportThread(
         @SerializedName("ticket_id") val ticketId: Long? = null,
         @SerializedName("messages") val messages: List<SupportMessage>? = null,
@@ -411,6 +423,14 @@ object VpnkaAccount {
         val body = JsonUtil.toJson(mapOf("text" to text))
             .toRequestBody("application/json".toMediaType())
         call<SupportThread>(authed("/app/support")?.post(body)) != null
+    }
+
+    suspend fun fetchTickets(): List<SupportTicket> = withContext(Dispatchers.IO) {
+        call<TicketList>(authed("/app/support/tickets")?.get())?.tickets.orEmpty()
+    }
+
+    suspend fun fetchTicket(id: Long): List<SupportMessage> = withContext(Dispatchers.IO) {
+        call<SupportThread>(authed("/app/support/tickets/$id")?.get())?.messages.orEmpty()
     }
 
     suspend fun fetchNotices(): List<Notice> = withContext(Dispatchers.IO) {
