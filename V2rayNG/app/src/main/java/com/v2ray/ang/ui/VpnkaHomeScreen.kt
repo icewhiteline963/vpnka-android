@@ -171,30 +171,32 @@ fun VpnkaHomeScreen(
         Box(
             modifier = Modifier
                 .size(190.dp)
-                .clip(CircleShape)
-                .background(
-                    if (isRunning) connectedColor
-                    else MaterialTheme.colorScheme.surfaceVariant
-                )
-                // The whole circle is the target, not an icon inside it: this
+                // The whole shape is the target, not an icon inside it: this
                 // is the one control on the screen and should be impossible
-                // to miss.
+                // to miss. Same size and same position as the plain circle
+                // it replaced — the picture changed, not what the user has
+                // to work out.
+                .clip(CircleShape)
                 .clickable(enabled = !isLoading, onClick = onToggle),
             contentAlignment = Alignment.Center,
         ) {
-            if (isLoading) {
-                CircularProgressIndicator(
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(44.dp),
-                )
-            } else {
+            VpnkaFlower(
+                isRunning = isRunning,
+                isLoading = isLoading,
+                modifier = Modifier.fillMaxSize(),
+            )
+            if (!isLoading) {
                 Text(
                     text = if (isRunning) "Отключить" else "Подключить",
                     fontSize = 21.sp,
                     fontWeight = FontWeight.Medium,
                     textAlign = TextAlign.Center,
-                    color = if (isRunning) Color.White
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                    // Always the surface colour, never white. White worked
+                    // on the solid green circle this replaced; on a
+                    // translucent flower the page shows through, so in the
+                    // light theme white text would sit on a near-white
+                    // background and vanish.
+                    color = MaterialTheme.colorScheme.onSurface,
                 )
             }
         }
