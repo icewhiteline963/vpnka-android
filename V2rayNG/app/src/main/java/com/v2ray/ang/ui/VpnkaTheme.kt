@@ -1,5 +1,8 @@
 package com.v2ray.ang.ui
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.font.Font
@@ -20,47 +23,66 @@ import com.v2ray.ang.R
  * a network tool.
  */
 object VpnkaColors {
-    // Disconnected — the resting state.
+    /**
+     * Which palette the screens read.
+     *
+     * Backed by Compose state rather than a plain flag so flipping it
+     * recomposes everything that touched a colour — every screen updates on
+     * the tap, with no restart and no colour plumbed through call sites.
+     * The warm light palette stays the default: it is the design, and dark
+     * is for people who want it, not a second design.
+     */
+    var dark by mutableStateOf(false)
+
+    private fun pick(light: Color, night: Color) = if (dark) night else light
+
+    // Disconnected — the resting state. The accent survives inversion: it
+    // is the brand, and it reads on both washes.
     val Accent = Color(0xFFE8850C)
     val AccentLight = Color(0xFFF5A83C)
 
     // Connected.
-    val Green = Color(0xFF2FAE4F)
+    val Green: Color get() = pick(Color(0xFF2FAE4F), Color(0xFF5FD07E))
 
     // The trial countdown, and nothing else. Reserved so it keeps meaning
     // "this is about to stop working" rather than becoming another accent.
-    val Warning = Color(0xFFD32F2F)
+    val Warning: Color get() = pick(Color(0xFFD32F2F), Color(0xFFFF6B6B))
 
     // A step below Warning: "worth doing something about soon", not "now".
     // The expiry banner starts here at three days and turns to Warning
     // inside the last one, so the change of colour carries the urgency.
-    val Amber = Color(0xFFB26B00)
+    val Amber: Color get() = pick(Color(0xFFB26B00), Color(0xFFE8A33C))
 
-    // Text, darkest first.
-    val TextStrong = Color(0xFF5C3D10)
-    val TextBrand = Color(0xFF7A4A12)
-    val TextMuted = Color(0xFF8A6635)
-    val TextFaint = Color(0xFFB98C4E)
-    val TextUnit = Color(0xFFA07A3E)
-    val IconMuted = Color(0xFFA06A20)
+    // Text, darkest first — and lightest first once inverted.
+    val TextStrong: Color get() = pick(Color(0xFF5C3D10), Color(0xFFF6E7CE))
+    val TextBrand: Color get() = pick(Color(0xFF7A4A12), Color(0xFFEBD3AC))
+    val TextMuted: Color get() = pick(Color(0xFF8A6635), Color(0xFFC3AC85))
+    val TextFaint: Color get() = pick(Color(0xFFB98C4E), Color(0xFF9A8362))
+    val TextUnit: Color get() = pick(Color(0xFFA07A3E), Color(0xFFB09A72))
+    val IconMuted: Color get() = pick(Color(0xFFA06A20), Color(0xFFD8A65A))
 
-    // Screen background — a radial wash, three stops each way.
-    val BgOffCentre = Color(0xFFFFF8EA)
-    val BgOffMid = Color(0xFFFFEFD2)
-    val BgOffEdge = Color(0xFFFFE4B8)
-    val BgOnCentre = Color(0xFFEEFBE9)
-    val BgOnMid = Color(0xFFDCF3D2)
-    val BgOnEdge = Color(0xFFCDEABF)
+    // Screen background — a radial wash, three stops each way. Dark keeps
+    // the same warmth rather than going neutral grey, so it still reads as
+    // this app at night.
+    val BgOffCentre: Color get() = pick(Color(0xFFFFF8EA), Color(0xFF2A2116))
+    val BgOffMid: Color get() = pick(Color(0xFFFFEFD2), Color(0xFF1F1810))
+    val BgOffEdge: Color get() = pick(Color(0xFFFFE4B8), Color(0xFF15100A))
+    val BgOnCentre: Color get() = pick(Color(0xFFEEFBE9), Color(0xFF1B2A1C))
+    val BgOnMid: Color get() = pick(Color(0xFFDCF3D2), Color(0xFF152015))
+    val BgOnEdge: Color get() = pick(Color(0xFFCDEABF), Color(0xFF0E160F))
 
     // Cards sit on the wash rather than on a surface, so they are white with
     // alpha rather than a solid colour — the gradient shows through and the
-    // card belongs to the page.
-    val CardSpeed = Color(0xFFFFFFFF).copy(alpha = 0.75f)
-    val CardServer = Color(0xFFFFFFFF).copy(alpha = 0.85f)
-    val CardSettings = Color(0xFFFFFFFF).copy(alpha = 0.70f)
+    // card belongs to the page. Dark inverts the tint, not the idea.
+    val CardSpeed: Color get() =
+        pick(Color(0xFFFFFFFF).copy(alpha = 0.75f), Color(0xFFFFFFFF).copy(alpha = 0.07f))
+    val CardServer: Color get() =
+        pick(Color(0xFFFFFFFF).copy(alpha = 0.85f), Color(0xFFFFFFFF).copy(alpha = 0.10f))
+    val CardSettings: Color get() =
+        pick(Color(0xFFFFFFFF).copy(alpha = 0.70f), Color(0xFFFFFFFF).copy(alpha = 0.06f))
 
     // The warm shadow that ties the whole screen together.
-    val Shadow = Color(0xFFB47814)
+    val Shadow: Color get() = pick(Color(0xFFB47814), Color(0xFF000000))
 
     val FlagCircleStart = Color(0xFFFFD75E)
     val FlagCircleEnd = Color(0xFFFF9D2E)

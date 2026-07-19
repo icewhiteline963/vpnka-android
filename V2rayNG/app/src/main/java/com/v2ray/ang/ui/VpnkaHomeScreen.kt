@@ -552,6 +552,15 @@ fun VpnkaSubscriptionScreen(
         VpnkaMenuRow("Связаться с оператором", onSupport)
         VpnkaMenuRow("Настройки приложения", onOpenSettings)
         VpnkaMenuRow("Код восстановления", onShowRecovery)
+        VpnkaMenuRow(
+            if (VpnkaColors.dark) "Светлая тема" else "Тёмная тема",
+            {
+                VpnkaColors.dark = !VpnkaColors.dark
+                MmkvManager.setDarkTheme(VpnkaColors.dark)
+            },
+            subtitle = if (VpnkaColors.dark) "Вернуть тёплое оформление"
+            else "Тёмное оформление для вечера",
+        )
         if (signedIn) {
             TextButton(onClick = onSignOut) { Text("Выйти из аккаунта") }
         } else {

@@ -229,6 +229,10 @@ class MainActivity : HelperBaseComponentActivity() {
         // Back, owned by the activity. Registered once, in priority order,
         // and disabled on the main screen so leaving the app there is still
         // the system's job.
+        // Before anything draws: the palette is read during composition, and
+        // applying it later would show the light screen first and repaint.
+        VpnkaColors.dark = MmkvManager.isDarkTheme()
+
         onBackPressedDispatcher.addCallback(this) {
             if (!closeTopVpnkaScreen()) {
                 // Nothing of ours is open: hand the press back to the

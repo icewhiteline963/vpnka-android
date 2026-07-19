@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -48,6 +49,7 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.v2ray.ang.handler.VpnkaAccount
@@ -138,7 +140,7 @@ fun VpnkaConnectScreen(
         tween(800), label = "bg3",
     )
 
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(
@@ -154,11 +156,21 @@ fun VpnkaConnectScreen(
                 )
             )
     ) {
+        // The handoff's 230dp button assumes a tall screen. Everything else
+        // on this screen has a floor — text, cards, the rows along the
+        // bottom — so the button is the one thing that can give way, and it
+        // has to: with the expiry banner showing, the fixed layout needs
+        // about 842dp and a 1272×2772 phone offers 791. Below that it was
+        // the bottom rows that vanished, silently, off the end of a Column
+        // that does not scroll.
+        val buttonSize = (maxHeight * 0.29f).coerceIn(140.dp, 230.dp)
+        val headerTop = if (maxHeight < 720.dp) 34.dp else 62.dp
         Column(modifier = Modifier.fillMaxSize()) {
             VpnkaHeader(
                 onOpenProfile = onOpenProfile,
                 updateAvailable = updateAvailable,
                 onCheckUpdate = onCheckUpdate,
+                topPadding = headerTop,
             )
 
             Column(
@@ -195,6 +207,7 @@ fun VpnkaConnectScreen(
                     isLoading = isLoading,
                     accent = accent,
                     onToggle = onToggle,
+                    outerSize = buttonSize,
                 )
 
                 Spacer(Modifier.height(8.dp))
@@ -255,11 +268,12 @@ private fun VpnkaHeader(
     onOpenProfile: () -> Unit,
     updateAvailable: Boolean,
     onCheckUpdate: () -> Unit,
+    topPadding: Dp,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 20.dp, end = 20.dp, top = 62.dp),
+            .padding(start = 20.dp, end = 20.dp, top = topPadding),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // Only the account, nothing else. The plan moved down to its own row
@@ -454,6 +468,7 @@ private fun VpnkaConnectButton(
     isLoading: Boolean,
     accent: Color,
     onToggle: () -> Unit,
+    outerSize: Dp,
 ) {
     val transition = rememberInfiniteTransition(label = "button")
 
@@ -484,7 +499,7 @@ private fun VpnkaConnectButton(
     val pressed by interaction.collectIsPressedAsState()
 
     Box(
-        modifier = Modifier.size(230.dp),
+        modifier = Modifier.size(outerSize),
         contentAlignment = Alignment.Center,
     ) {
         // Outer pulse ring.
@@ -523,7 +538,7 @@ private fun VpnkaConnectButton(
         // The button itself: a white circle carrying the logo.
         Box(
             modifier = Modifier
-                .size(176.dp)
+                .size(outerSize * 0.765f)
                 .scale(if (pressed) 0.95f else 1f)
                 .clip(CircleShape)
                 .background(Color.White)

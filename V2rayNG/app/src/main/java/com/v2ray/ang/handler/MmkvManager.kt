@@ -934,6 +934,17 @@ object MmkvManager {
      * than pushed at the user on first launch: a code shown before someone
      * has a subscription is a code nobody writes down.
      */
+    /**
+     * Dark mode, remembered.
+     *
+     * Kept next to the other app-level choices rather than in Android's
+     * night-mode setting: this palette is ours, not the system's, and a
+     * user who runs the phone dark may still want the warm one here.
+     */
+    fun isDarkTheme(): Boolean = decodeSettingsBool(VPNKA_DARK_THEME, false)
+
+    fun setDarkTheme(on: Boolean) = encodeSettings(VPNKA_DARK_THEME, on)
+
     fun getRecoveryCode(): String? =
         settingsStorage.decodeString(KEY_VPNKA_RECOVERY)?.takeIf { it.isNotBlank() }
 
@@ -942,6 +953,7 @@ object MmkvManager {
         settingsStorage.encode(KEY_VPNKA_RECOVERY, code)
     }
     private const val VPNKA_SUB_PREFIX = "https://get.vpnka.io/sub/"
+    private const val VPNKA_DARK_THEME = "vpnka_dark_theme"
 
     /**
      * This install's account token, or null when signed out.
