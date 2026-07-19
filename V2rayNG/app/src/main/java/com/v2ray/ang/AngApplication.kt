@@ -1,6 +1,7 @@
 package com.v2ray.ang
 
 import android.app.Application
+import android.os.Build
 import android.content.Context
 import androidx.work.Configuration
 import androidx.work.WorkManager
@@ -59,6 +60,26 @@ class AngApplication : Application() {
     /**
      * Initializes the application.
      */
+    /**
+     * Whether this is the process the user is looking at.
+     *
+     * Android runs Application.onCreate() once per process, and this app has
+     * three. Anything with a side effect outside this device — registering
+     * an account, calling our API — belongs to one of them.
+     */
+    private fun isMainProcess(): Boolean {
+        val name = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            getProcessName()
+        } else {
+            // Pre-P has no API for it; the cmdline of our own pid is the
+            // same string Android would report.
+            runCatching {
+                java.io.File("/proc/self/cmdline").readText().trim { it <= ' ' }
+            }.getOrNull()
+        }
+        return name == null || name == packageName
+    }
+
     override fun onCreate() {
         super.onCreate()
 
@@ -87,7 +108,15 @@ class AngApplication : Application() {
         // subscription, and a sign-up form shown before someone has seen
         // the product is friction for its own sake. Retried on the next
         // launch if the network is down; the trial works regardless.
-        vpnkaScope.launch { VpnkaAccount.register() }
+        //
+        // Main process only. This runs in all three of ours — the UI, the
+        // core's :RunSoLibV2RayDaemon and :bg — and each one saw "no token
+        // yet" at the same moment, so a single launch registered up to three
+        // accounts, milliseconds apart. Two empty clients from one phone in
+        // one day is what that looked like from the admin list.
+        if (isMainProcess()) {
+            vpnkaScope.launch { VpnkaAccount.register() }
+        }
 
         // Pull a new version down in the background so installing it later is
         // a single tap. Wi-Fi only — see UpdatePrefetcher for why that matters
