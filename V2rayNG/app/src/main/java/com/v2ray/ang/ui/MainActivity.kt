@@ -921,6 +921,10 @@ class MainActivity : HelperBaseComponentActivity() {
                 }
             }
 
+            val activeToken = MmkvManager.vpnkaTokenForGuid(selectedSub)
+            val activePlan = subInfo?.subscriptions.orEmpty()
+                .firstOrNull { it.groupToken != null && it.groupToken == activeToken }
+
             VpnkaConnectScreen(
                 isRunning = uiState.isRunning,
                 isLoading = uiState.isLoading,
@@ -954,6 +958,12 @@ class MainActivity : HelperBaseComponentActivity() {
                     .mapNotNull { it.daysLeft }
                     .minOrNull(),
                 onRenew = { showShop = true },
+                // The plan the traffic is actually on, not merely the first
+                // one: the row names that subscription, so the numbers under
+                // it have to describe the same one.
+                activeDaysLeft = activePlan?.daysLeft,
+                activeDevicesUsed = activePlan?.devicesUsed,
+                activeDevicesLimit = activePlan?.devicesLimit,
                 updateVersion = updateVersion,
                 onCheckUpdate = {
                     startActivity(

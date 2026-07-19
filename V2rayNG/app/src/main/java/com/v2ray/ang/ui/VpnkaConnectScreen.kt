@@ -121,6 +121,9 @@ fun VpnkaConnectScreen(
     onPerAppProxy: () -> Unit,
     expiryDaysLeft: Int?,
     onRenew: () -> Unit,
+    activeDaysLeft: Int?,
+    activeDevicesUsed: Int?,
+    activeDevicesLimit: Int?,
 ) {
     val accent by animateColorAsState(
         targetValue = if (isRunning) VpnkaColors.Green else VpnkaColors.Accent,
@@ -255,6 +258,9 @@ fun VpnkaConnectScreen(
                 VpnkaPlanRow(
                     name = subscriptionName,
                     trialHoursLeft = trialHoursLeft,
+                    daysLeft = activeDaysLeft,
+                    devicesUsed = activeDevicesUsed,
+                    devicesLimit = activeDevicesLimit,
                     canSwitch = canSwitchSubscription,
                     onChange = onChangeSubscription,
                     onOpenProfile = onOpenProfile,
@@ -651,6 +657,9 @@ private fun VpnkaTrafficCard(
 private fun VpnkaPlanRow(
     name: String?,
     trialHoursLeft: Int?,
+    daysLeft: Int?,
+    devicesUsed: Int?,
+    devicesLimit: Int?,
     canSwitch: Boolean,
     onChange: () -> Unit,
     onOpenProfile: () -> Unit,
@@ -696,6 +705,27 @@ private fun VpnkaPlanRow(
                     fontSize = 15.sp,
                     color = VpnkaColors.TextStrong,
                 )
+                // The two numbers people actually check — how long is left
+                // and how many devices are on it. Both were a screen and two
+                // taps away, on a row that had space for them all along.
+                val facts = buildString {
+                    if (daysLeft != null) append("$daysLeft ${pluralDays(daysLeft)}")
+                    if (devicesLimit != null) {
+                        if (isNotEmpty()) append(" · ")
+                        append("${devicesUsed ?: 0}/$devicesLimit устройств")
+                    }
+                }
+                if (facts.isNotEmpty()) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = facts,
+                        fontFamily = VpnkaFonts.manrope600,
+                        fontWeight = VpnkaWeight.Semi,
+                        fontSize = 12.sp,
+                        color = if (daysLeft != null && daysLeft <= 3)
+                            VpnkaColors.Warning else VpnkaColors.TextMuted,
+                    )
+                }
             }
         }
         if (canSwitch && !onTrial) {
