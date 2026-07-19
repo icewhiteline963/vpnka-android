@@ -324,12 +324,6 @@ class MainActivity : HelperBaseComponentActivity() {
         }
 
         var subs by remember { mutableStateOf(MmkvManager.vpnkaSubscriptions()) }
-        // Which plan is active comes from the viewmodel, not from a second
-        // copy kept here. Two sources of truth for this is what put the
-        // server list and the config on different subscriptions.
-        val selectedSub = uiState.selectedGroupId.ifBlank {
-            MmkvManager.selectedSubscriptionGuid()
-        }
 
         LaunchedEffect(Unit) {
             if (vpnkaOpenProfileAfterPayment) {
@@ -414,6 +408,13 @@ class MainActivity : HelperBaseComponentActivity() {
             }
         }
         val uiState by mainViewModel.uiState.collectAsStateWithLifecycle()
+
+        // Which plan is active comes from the viewmodel, not from a second
+        // copy kept here. Two sources of truth for this is what put the
+        // server list and the config on different subscriptions.
+        val selectedSub = uiState.selectedGroupId.ifBlank {
+            MmkvManager.selectedSubscriptionGuid()
+        }
 
         val servers by mainViewModel
             .serversForGroup(uiState.selectedGroupId)
