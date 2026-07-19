@@ -802,6 +802,15 @@ class MainActivity : HelperBaseComponentActivity() {
                 onToggle = ::handleFabAction,
                 onOpenProfile = { showSubscription = true },
                 onChangeServer = { showServerPicker = true },
+                // The launch check only lights the dot; the screen behind the
+                // button does the real check, download and install, and it
+                // already handles the install permission and FileProvider.
+                updateAvailable = updateVersion != null,
+                onCheckUpdate = {
+                    startActivity(
+                        Intent(this@MainActivity, CheckUpdateActivity::class.java)
+                    )
+                },
             )
             return
         }

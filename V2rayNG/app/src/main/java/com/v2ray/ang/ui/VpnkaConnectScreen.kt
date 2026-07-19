@@ -113,6 +113,8 @@ fun VpnkaConnectScreen(
     onOpenProfile: () -> Unit,
     onChangeSubscription: () -> Unit,
     onChangeServer: () -> Unit,
+    updateAvailable: Boolean,
+    onCheckUpdate: () -> Unit,
 ) {
     val accent by animateColorAsState(
         targetValue = if (isRunning) VpnkaColors.Green else VpnkaColors.Accent,
@@ -149,7 +151,11 @@ fun VpnkaConnectScreen(
             )
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            VpnkaHeader(onOpenProfile = onOpenProfile)
+            VpnkaHeader(
+                onOpenProfile = onOpenProfile,
+                updateAvailable = updateAvailable,
+                onCheckUpdate = onCheckUpdate,
+            )
 
             Column(
                 modifier = Modifier
@@ -237,7 +243,11 @@ fun VpnkaConnectScreen(
 }
 
 @Composable
-private fun VpnkaHeader(onOpenProfile: () -> Unit) {
+private fun VpnkaHeader(
+    onOpenProfile: () -> Unit,
+    updateAvailable: Boolean,
+    onCheckUpdate: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -258,6 +268,68 @@ private fun VpnkaHeader(onOpenProfile: () -> Unit) {
         ) {
             VpnkaPersonGlyph()
         }
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        // App update, top right. Always present — tapping it re-checks even
+        // when we already believe we're current, because the check runs once
+        // at launch and a release can land while the app sits open. The dot
+        // is the only part that depends on what that check found.
+        Box(
+            modifier = Modifier
+                .size(38.dp)
+                .clip(CircleShape)
+                .background(Color.White)
+                .clickable(onClick = onCheckUpdate),
+            contentAlignment = Alignment.Center,
+        ) {
+            VpnkaRefreshGlyph()
+            if (updateAvailable) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 8.dp, end = 8.dp)
+                        .size(8.dp)
+                        .clip(CircleShape)
+                        .background(VpnkaColors.Accent)
+                )
+            }
+        }
+    }
+}
+
+/** A circular arrow, drawn rather than pulled in as an icon dependency. */
+@Composable
+private fun VpnkaRefreshGlyph() {
+    androidx.compose.foundation.Canvas(modifier = Modifier.size(20.dp)) {
+        val w = size.width
+        val h = size.height
+        val stroke = w * 0.11f
+        val inset = stroke + w * 0.10f
+        drawArc(
+            color = VpnkaColors.IconMuted,
+            startAngle = 25f,
+            sweepAngle = 300f,
+            useCenter = false,
+            topLeft = Offset(inset, inset),
+            size = androidx.compose.ui.geometry.Size(w - inset * 2, h - inset * 2),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(
+                width = stroke,
+                cap = androidx.compose.ui.graphics.StrokeCap.Round,
+            ),
+        )
+        // Arrowhead at the gap, pointing along the sweep.
+        val r = (w - inset * 2) / 2f
+        val tipX = w / 2f + r * 0.96f
+        val tipY = h / 2f - r * 0.28f
+        val a = w * 0.17f
+        val head = androidx.compose.ui.graphics.Path().apply {
+            moveTo(tipX + a * 0.2f, tipY - a * 0.9f)
+            lineTo(tipX + a * 0.9f, tipY + a * 0.5f)
+            lineTo(tipX - a * 0.8f, tipY + a * 0.2f)
+            close()
+        }
+        drawPath(head, color = VpnkaColors.IconMuted)
     }
 }
 
