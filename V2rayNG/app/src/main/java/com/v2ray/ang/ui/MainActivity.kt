@@ -1264,11 +1264,16 @@ class MainActivity : HelperBaseComponentActivity() {
     }
 
     private fun setSelectServer(guid: String) {
-        // «Неправильный профиль» comes from the core, at connect time, long
-        // after the tap that caused it — the picker offered a guid that is
-        // no longer in storage. Catch it here, where we can still say which
-        // server and still do something about it, instead of letting the
-        // user meet it as a failed connection.
+        // A guid the picker offered but storage cannot decode is stale, and
+        // worth refreshing over. But the selection still has to happen:
+        // this same method is what auto-picks a server at startup, and
+        // refusing there left nothing selected at all — the core then said
+        // «сервер не выбран» and the flower did nothing, which is worse
+        // than the failed connection this was meant to prevent.
+        //
+        // So: select regardless, and kick off a refresh. When it lands, the
+        // list changes, and the effect that watches it picks a live server
+        // if this one is gone.
         if (MmkvManager.decodeServerConfig(guid) == null) {
             android.util.Log.e(
                 "VPNKA_BACK",
@@ -1276,7 +1281,6 @@ class MainActivity : HelperBaseComponentActivity() {
             )
             toast("Список серверов устарел, обновляю…")
             importConfigViaSub()
-            return
         }
         val selected = MmkvManager.getSelectServer()
         if (guid != selected) {
