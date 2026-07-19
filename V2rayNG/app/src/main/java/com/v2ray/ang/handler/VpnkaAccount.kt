@@ -123,7 +123,14 @@ object VpnkaAccount {
         ).toRequestBody("application/json".toMediaType())
         try {
             http().newCall(
-                Request.Builder().url("$BASE/app/auth/exchange").post(body).build()
+                Request.Builder()
+                    .url("$BASE/app/auth/exchange")
+                    // Tells the server which anonymous account this install
+                    // was using, so signing in folds it into the real one
+                    // instead of leaving an empty client behind.
+                    .header("Hwid", MmkvManager.getOrCreateInstallId())
+                    .post(body)
+                    .build()
             ).execute().use { resp ->
                 if (resp.code == 400) {
                     return@withContext Result.failure(InvalidCodeException())

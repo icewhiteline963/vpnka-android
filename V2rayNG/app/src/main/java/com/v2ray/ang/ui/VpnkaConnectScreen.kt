@@ -179,7 +179,10 @@ fun VpnkaConnectScreen(
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxWidth(),
+                    .fillMaxWidth()
+                    // Settled after a few passes: centred was slightly low
+                    // against the rows below, this lifts it back by 15dp.
+                    .padding(bottom = 15.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
