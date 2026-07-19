@@ -747,7 +747,11 @@ class MainActivity : HelperBaseComponentActivity() {
 
         if (showPlansList && !showServers) {
             VpnkaPlansListScreen(
-                plans = subInfo?.subscriptions.orEmpty(),
+                // Finished plans are history, not choices: leaving them in
+                // the list invites someone to select one and conclude the
+                // app is broken when no servers appear behind it.
+                plans = subInfo?.subscriptions.orEmpty()
+                    .filter { (it.daysLeft ?: 1) > 0 },
                 activeToken = MmkvManager.vpnkaTokenForGuid(selectedSub),
                 trialHoursLeft = subInfo?.trialHoursLeft,
                 // Same door as «Подключить Telegram»: the month is granted

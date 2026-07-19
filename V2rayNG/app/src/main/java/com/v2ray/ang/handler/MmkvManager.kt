@@ -961,7 +961,22 @@ object MmkvManager {
         if (code.isNullOrBlank()) return
         settingsStorage.encode(KEY_VPNKA_RECOVERY, code)
     }
-    private const val VPNKA_SUB_PREFIX = "https://get.vpnka.io/sub/"
+    // Where a plan's own subscription lives. The `g/` is not decoration:
+    // `/sub/<token>` is the client's aggregate feed and 404s for a group
+    // token, so every per-plan group the app created pointed at nothing.
+    // That is why switching plans emptied the server list and why the core
+    // then had no profile to connect with.
+    private const val VPNKA_SUB_PREFIX = "https://get.vpnka.io/sub/g/"
+
+    // The account's aggregate feed — every plan merged. A different route
+    // from the per-plan one above, and it must stay without the `g/`.
+    private const val VPNKA_CLIENT_SUB_PREFIX = "https://get.vpnka.io/sub/"
+
+    // Deliberately the shorter string, and used only for matching: it
+    // covers both the current URLs and the broken ones written before the
+    // fix, so those get cleaned up on the next sync instead of lingering as
+    // groups that can never load.
+    private const val VPNKA_SUB_MATCH = "https://get.vpnka.io/sub/"
     private const val VPNKA_DARK_THEME = "vpnka_dark_theme"
     private const val VPNKA_EXPIRY_STAGE = "vpnka_expiry_stage"
 
@@ -1016,7 +1031,7 @@ object MmkvManager {
             .filter {
                 val url = it.subscription.url
                 url == VPNKA_TRIAL_SUB_URL ||
-                    (url.startsWith(VPNKA_SUB_PREFIX) && url !in wanted)
+                    (url.startsWith(VPNKA_SUB_MATCH) && url !in wanted)
             }
             .forEach { removeSubscription(it.guid) }
 
@@ -1053,7 +1068,7 @@ object MmkvManager {
     fun vpnkaSubscriptions(): List<Pair<String, String>> =
         decodeSubscriptions()
             .filter {
-                it.subscription.url.startsWith(VPNKA_SUB_PREFIX) ||
+                it.subscription.url.startsWith(VPNKA_SUB_MATCH) ||
                     it.subscription.url == VPNKA_TRIAL_SUB_URL
             }
             .map { it.guid to it.subscription.remarks }
@@ -1101,7 +1116,7 @@ object MmkvManager {
      */
     fun adoptSubscription(subscriptionToken: String): Boolean {
         if (subscriptionToken.isBlank()) return false
-        val url = VPNKA_SUB_PREFIX + subscriptionToken
+        val url = VPNKA_CLIENT_SUB_PREFIX + subscriptionToken
         if (decodeSubscriptions().any { it.subscription.url == url }) return false
 
         decodeSubscriptions()
