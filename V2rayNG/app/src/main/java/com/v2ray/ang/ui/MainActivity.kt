@@ -131,6 +131,8 @@ import com.v2ray.ang.extension.toast
 import com.v2ray.ang.extension.toastError
 import com.v2ray.ang.extension.toastSuccess
 import com.v2ray.ang.handler.AngConfigManager
+import com.v2ray.ang.util.QRCodeDecoder
+import androidx.compose.ui.graphics.asImageBitmap
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsChangeManager
 import com.v2ray.ang.handler.SettingsManager
@@ -231,6 +233,8 @@ class MainActivity : HelperBaseComponentActivity() {
                 showRecovery -> showRecovery = false
                 showServerPicker -> showServerPicker = false
                 showPlanPicker -> showPlanPicker = false
+                openedPlan != null -> openedPlan = null
+                showPlansList -> showPlansList = false
                 showShop -> showShop = false
                 showSubscription -> showSubscription = false
                 showServers -> {
@@ -281,6 +285,8 @@ class MainActivity : HelperBaseComponentActivity() {
     private var showRecovery by mutableStateOf(false)
     private var showServerPicker by mutableStateOf(false)
     private var showPlanPicker by mutableStateOf(false)
+    private var showPlansList by mutableStateOf(false)
+    private var openedPlan by mutableStateOf<VpnkaAccount.Plan?>(null)
 
     /** Set by the post-payment link; consumed on the next composition. */
     private var vpnkaOpenProfileAfterPayment = false
@@ -451,7 +457,8 @@ class MainActivity : HelperBaseComponentActivity() {
         // most recently added enabled callback first. Belt and braces: if
         // either mechanism is delivered, back stays inside the app.
         val anyOverlay = showSupport || showTopUp || showRecovery ||
-            showServerPicker || showPlanPicker || showShop || showSubscription ||
+            showServerPicker || showPlanPicker || showPlansList ||
+            openedPlan != null || showShop || showSubscription ||
             showSettings || showServers
         BackHandler(enabled = anyOverlay) {
             when {
@@ -460,6 +467,8 @@ class MainActivity : HelperBaseComponentActivity() {
                 showRecovery -> showRecovery = false
                 showServerPicker -> showServerPicker = false
                 showPlanPicker -> showPlanPicker = false
+                openedPlan != null -> openedPlan = null
+                showPlansList -> showPlansList = false
                 showShop -> showShop = false
                 showSubscription -> showSubscription = false
                 showServers -> {
@@ -621,6 +630,67 @@ class MainActivity : HelperBaseComponentActivity() {
             return
         }
 
+        openedPlan?.let { plan ->
+            var devices by remember(plan.groupToken) {
+                mutableStateOf<List<VpnkaAccount.Device>>(emptyList())
+            }
+            var devicesLoading by remember(plan.groupToken) { mutableStateOf(true) }
+            var deviceReload by remember(plan.groupToken) { mutableIntStateOf(0) }
+            val qr = remember(plan.groupToken) {
+                plan.groupToken?.let { token ->
+                    // The plan's own URL, not the account-wide one: scanning
+                    // this on another phone should add this subscription and
+                    // nothing else.
+                    QRCodeDecoder.createQRCode(VpnkaAccount.subscriptionUrl(token), 600)
+                        ?.asImageBitmap()
+                }
+            }
+
+            LaunchedEffect(plan.groupToken, deviceReload) {
+                val token = plan.groupToken
+                if (token != null) {
+                    devicesLoading = true
+                    devices = VpnkaAccount.fetchDevices(token)
+                    devicesLoading = false
+                } else {
+                    devicesLoading = false
+                }
+            }
+
+            VpnkaPlanDetailScreen(
+                plan = plan,
+                devices = devices,
+                devicesLoading = devicesLoading,
+                qr = qr,
+                onRevokeDevice = { id ->
+                    val token = plan.groupToken ?: return@VpnkaPlanDetailScreen
+                    lifecycleScope.launch {
+                        VpnkaAccount.revokeDevice(token, id)
+                        deviceReload++
+                        // The slot count on the card comes from the profile,
+                        // so it has to be re-read or it keeps showing the
+                        // device we just removed.
+                        subReload++
+                    }
+                },
+                onBack = { openedPlan = null },
+            )
+            return
+        }
+
+        if (showPlansList && !showServers) {
+            VpnkaPlansListScreen(
+                plans = subInfo?.subscriptions.orEmpty(),
+                onOpenPlan = { openedPlan = it },
+                onBuy = {
+                    showPlansList = false
+                    showShop = true
+                },
+                onBack = { showPlansList = false },
+            )
+            return
+        }
+
         if (showPlanPicker && !showServers) {
             VpnkaPlansScreen(
                 subscriptions = subs.map { (guid, name) -> VpnkaSubOption(guid, name) },
@@ -711,7 +781,7 @@ class MainActivity : HelperBaseComponentActivity() {
                 subscriptionName = subs.firstOrNull { it.first == selectedSub }?.second
                     ?: subs.firstOrNull()?.second,
                 canSwitchSubscription = subs.size > 1,
-                onChangeSubscription = { showPlanPicker = true },
+                onChangeSubscription = { showPlansList = true },
                 serverName = options.firstOrNull { it.guid == uiState.selectedGuid }
                     ?.name ?: "Выбрать сервер",
                 serverDelay = options.firstOrNull { it.guid == uiState.selectedGuid }

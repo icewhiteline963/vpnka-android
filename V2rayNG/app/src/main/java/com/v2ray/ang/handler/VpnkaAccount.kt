@@ -423,6 +423,37 @@ object VpnkaAccount {
         }
     }
 
+    data class Device(
+        @SerializedName("id") val id: Long = 0,
+        @SerializedName("label") val label: String = "",
+        @SerializedName("last_seen_at") val lastSeenAt: String? = null,
+    )
+
+    private data class Devices(@SerializedName("devices") val devices: List<Device>?)
+
+    suspend fun fetchDevices(groupToken: String): List<Device> =
+        withContext(Dispatchers.IO) {
+            call<Devices>(
+                authed("/app/subscriptions/$groupToken/devices")?.get()
+            )?.devices.orEmpty()
+        }
+
+    /** Free a device slot. True when the server confirmed it. */
+    suspend fun revokeDevice(groupToken: String, deviceId: Long): Boolean =
+        withContext(Dispatchers.IO) {
+            val req = authed("/app/subscriptions/$groupToken/devices/$deviceId/revoke")
+                ?.post(ByteArray(0).toRequestBody())?.build() ?: return@withContext false
+            try {
+                http().newCall(req).execute().use { it.isSuccessful }
+            } catch (e: Exception) {
+                LogUtil.w(AppConfig.TAG, "revoke failed: ${e.message}")
+                false
+            }
+        }
+
+    /** The URL this plan's config lives at — what the QR encodes. */
+    fun subscriptionUrl(groupToken: String): String = "$BASE/sub/g/$groupToken"
+
     /** A payment page that credits the balance. */
     suspend fun topUp(amountRub: Int): String? = withContext(Dispatchers.IO) {
         val body = JsonUtil.toJson(mapOf("amount_rub" to amountRub))

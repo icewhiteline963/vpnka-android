@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -802,7 +803,7 @@ fun VpnkaServersScreen(
 }
 
 @Composable
-private fun VpnkaChoiceRow(
+fun VpnkaChoiceRow(
     title: String,
     subtitle: String?,
     selected: Boolean,
@@ -865,5 +866,197 @@ fun VpnkaPlansScreen(
             )
             Spacer(Modifier.height(8.dp))
         }
+    }
+}
+
+/**
+ * «Мои подписки» — every plan the account holds, and the way to buy another.
+ *
+ * The profile listed them as flat text with nowhere to go. Each is a card
+ * now: tapping opens what the bot shows for it — days, device slots, the
+ * devices themselves, and the QR that adds it to another phone.
+ */
+@Composable
+fun VpnkaPlansListScreen(
+    plans: List<VpnkaAccount.Plan>,
+    onOpenPlan: (VpnkaAccount.Plan) -> Unit,
+    onBuy: () -> Unit,
+    onBack: () -> Unit,
+) {
+    VpnkaPage(title = "Мои подписки", onBack = onBack) {
+        if (plans.isEmpty()) {
+            Text(
+                text = "Пока нет ни одной подписки.",
+                fontFamily = VpnkaFonts.manrope600,
+                fontWeight = VpnkaWeight.Semi,
+                fontSize = 15.sp,
+                color = VpnkaColors.TextMuted,
+            )
+            Spacer(Modifier.height(16.dp))
+        } else {
+            plans.forEach { plan ->
+                VpnkaChoiceRow(
+                    title = plan.tariff ?: "Подписка",
+                    subtitle = buildString {
+                        val days = plan.daysLeft
+                        if (plan.frozen) {
+                            append("заморожена")
+                        } else if (days != null) {
+                            append("$days ${pluralDays(days)}")
+                        }
+                        if (plan.devicesLimit != null) {
+                            if (isNotEmpty()) append(" · ")
+                            append("${plan.devicesUsed ?: 0}/${plan.devicesLimit} устройств")
+                        }
+                    }.ifBlank { null },
+                    selected = false,
+                    onClick = { onOpenPlan(plan) },
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+            Spacer(Modifier.height(12.dp))
+        }
+        VpnkaPrimaryButton(text = "Купить подписку", onClick = onBuy)
+    }
+}
+
+/**
+ * One plan in full: what the bot's card shows, plus its devices and QR.
+ *
+ * The QR encodes the plan's own subscription URL, so scanning it on a second
+ * phone adds that plan and nothing else — which is why the per-plan token
+ * matters rather than the account-wide one.
+ */
+@Composable
+fun VpnkaPlanDetailScreen(
+    plan: VpnkaAccount.Plan,
+    devices: List<VpnkaAccount.Device>,
+    devicesLoading: Boolean,
+    qr: androidx.compose.ui.graphics.ImageBitmap?,
+    onRevokeDevice: (Long) -> Unit,
+    onBack: () -> Unit,
+) {
+    VpnkaPage(title = plan.tariff ?: "Подписка", onBack = onBack) {
+        LazyColumn(modifier = Modifier.weight(1f)) {
+            item {
+                VpnkaCard {
+                    val days = plan.daysLeft
+                    VpnkaDetailRow(
+                        "Состояние",
+                        if (plan.frozen) "Заморожена" else "Активна",
+                    )
+                    if (days != null) {
+                        VpnkaDetailRow("Осталось", "$days ${pluralDays(days)}")
+                    }
+                    if (plan.devicesLimit != null) {
+                        VpnkaDetailRow(
+                            "Устройства",
+                            "${plan.devicesUsed ?: 0} из ${plan.devicesLimit}",
+                        )
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+
+                if (qr != null) {
+                    Text(
+                        text = "ДОБАВИТЬ НА ДРУГОЕ УСТРОЙСТВО",
+                        fontFamily = VpnkaFonts.manrope700,
+                        fontWeight = VpnkaWeight.Bold,
+                        fontSize = 11.sp,
+                        letterSpacing = 1.sp,
+                        color = VpnkaColors.TextFaint,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(Color.White)
+                            .padding(20.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Image(
+                            bitmap = qr,
+                            contentDescription = "QR-код подписки",
+                            modifier = Modifier.size(200.dp),
+                        )
+                    }
+                    Spacer(Modifier.height(16.dp))
+                }
+
+                Text(
+                    text = "УСТРОЙСТВА",
+                    fontFamily = VpnkaFonts.manrope700,
+                    fontWeight = VpnkaWeight.Bold,
+                    fontSize = 11.sp,
+                    letterSpacing = 1.sp,
+                    color = VpnkaColors.TextFaint,
+                )
+                Spacer(Modifier.height(8.dp))
+                if (devicesLoading) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                } else if (devices.isEmpty()) {
+                    Text(
+                        text = "Ни одно устройство ещё не подключалось.",
+                        fontFamily = VpnkaFonts.manrope600,
+                        fontWeight = VpnkaWeight.Semi,
+                        fontSize = 14.sp,
+                        color = VpnkaColors.TextMuted,
+                    )
+                }
+            }
+
+            items(devices) { device ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(VpnkaColors.CardSpeed)
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = device.label,
+                        fontFamily = VpnkaFonts.nunito800,
+                        fontWeight = VpnkaWeight.Extra,
+                        fontSize = 15.sp,
+                        color = VpnkaColors.TextStrong,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text = "Отключить",
+                        fontFamily = VpnkaFonts.nunito800,
+                        fontWeight = VpnkaWeight.Extra,
+                        fontSize = 13.sp,
+                        color = VpnkaColors.Warning,
+                        modifier = Modifier.clickable { onRevokeDevice(device.id) },
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun VpnkaDetailRow(label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            text = label,
+            fontFamily = VpnkaFonts.manrope600,
+            fontWeight = VpnkaWeight.Semi,
+            fontSize = 16.sp,
+            color = VpnkaColors.TextMuted,
+        )
+        Text(
+            text = value,
+            fontFamily = VpnkaFonts.nunito800,
+            fontWeight = VpnkaWeight.Extra,
+            fontSize = 17.sp,
+            color = VpnkaColors.TextStrong,
+        )
     }
 }
