@@ -49,6 +49,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.v2ray.ang.handler.VpnkaAccount
 import com.v2ray.ang.R
 import kotlin.math.cos
 import kotlin.math.sin
