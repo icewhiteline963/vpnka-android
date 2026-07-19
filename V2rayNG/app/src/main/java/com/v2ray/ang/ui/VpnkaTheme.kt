@@ -1,6 +1,7 @@
 package com.v2ray.ang.ui
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontVariation
@@ -63,6 +64,7 @@ object VpnkaColors {
  * design asks for, which is smaller than shipping four static cuts and means
  * a weight the design adds later needs no new asset.
  */
+@OptIn(ExperimentalTextApi::class)
 private fun variable(resId: Int, weight: Int) = Font(
     resId,
     variationSettings = FontVariation.Settings(FontVariation.weight(weight)),
