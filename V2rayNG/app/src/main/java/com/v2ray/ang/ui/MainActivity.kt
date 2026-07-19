@@ -130,7 +130,6 @@ import com.v2ray.ang.extension.toast
 import com.v2ray.ang.extension.toastError
 import com.v2ray.ang.extension.toastSuccess
 import com.v2ray.ang.handler.AngConfigManager
-import com.v2ray.ang.handler.VpnkaSession
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsChangeManager
 import com.v2ray.ang.handler.SettingsManager
@@ -402,34 +401,6 @@ class MainActivity : HelperBaseComponentActivity() {
             }
         }
         val uiState by mainViewModel.uiState.collectAsStateWithLifecycle()
-
-        // Session clock and live speed for the connect screen. Ticked here
-        // rather than in the viewmodel so it stops when the screen goes away:
-        // reading the core's counters resets them, and a poller running
-        // behind a closed screen would quietly eat the numbers the speed
-        // notification is trying to show.
-        var sessionSeconds by remember { mutableLongStateOf(0L) }
-        var downBytes by remember { mutableLongStateOf(0L) }
-        var upBytes by remember { mutableLongStateOf(0L) }
-
-        LaunchedEffect(uiState.isRunning) {
-            if (!uiState.isRunning) {
-                sessionSeconds = 0L
-                downBytes = 0L
-                upBytes = 0L
-                VpnkaSession.elapsedSeconds(false, System.currentTimeMillis())
-                VpnkaSession.sampleTraffic(System.currentTimeMillis(), false)
-                return@LaunchedEffect
-            }
-            while (true) {
-                val now = System.currentTimeMillis()
-                sessionSeconds = VpnkaSession.elapsedSeconds(true, now)
-                val traffic = VpnkaSession.sampleTraffic(now, true)
-                downBytes = traffic.downBytes
-                upBytes = traffic.upBytes
-                kotlinx.coroutines.delay(1000)
-            }
-        }
 
         val servers by mainViewModel
             .serversForGroup(uiState.selectedGroupId)
@@ -707,9 +678,9 @@ class MainActivity : HelperBaseComponentActivity() {
                     ?.name ?: "Выбрать сервер",
                 serverDelay = options.firstOrNull { it.guid == uiState.selectedGuid }
                     ?.delay?.takeIf { it.isNotBlank() } ?: "нажмите «Сменить»",
-                sessionSeconds = sessionSeconds,
-                downBytes = downBytes,
-                upBytes = upBytes,
+                sessionSeconds = uiState.sessionSeconds,
+                downBytes = uiState.downBytes,
+                upBytes = uiState.upBytes,
                 onToggle = ::handleFabAction,
                 onOpenProfile = { showSubscription = true },
                 onChangeServer = { showServerPicker = true },
