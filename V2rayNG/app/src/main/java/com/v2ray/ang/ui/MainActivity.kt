@@ -142,6 +142,9 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.StateFlow
 import com.v2ray.ang.handler.UpdateCheckerManager
 import com.v2ray.ang.handler.UpdatePrefetcher
+import com.v2ray.ang.handler.PowerSaveHelper
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import sh.calvin.reorderable.ReorderableItem
@@ -228,6 +231,7 @@ class MainActivity : HelperBaseComponentActivity() {
         var showServers by rememberSaveable { mutableStateOf(false) }
         var showSettings by rememberSaveable { mutableStateOf(false) }
         var updateVersion by remember { mutableStateOf<String?>(null) }
+        var askBattery by remember { mutableStateOf(PowerSaveHelper.shouldPrompt(this)) }
 
         // Check on every launch. It's a few hundred bytes of JSON, so it can
         // run on any network — unlike the APK itself, which stays Wi-Fi-only
@@ -251,10 +255,42 @@ class MainActivity : HelperBaseComponentActivity() {
             .serversForGroup(uiState.selectedGroupId)
             .collectAsStateWithLifecycle()
 
+        if (askBattery) {
+            AlertDialog(
+                onDismissRequest = {
+                    PowerSaveHelper.markPrompted()
+                    askBattery = false
+                },
+                title = { Text("Чтобы VPN не отключался") },
+                text = {
+                    Text(
+                        "Android усыпляет приложения в фоне — соединение может " +
+                            "обрываться через несколько минут после блокировки " +
+                            "экрана. Разрешите работу без ограничений батареи."
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        PowerSaveHelper.markPrompted()
+                        askBattery = false
+                        PowerSaveHelper.openExemptionRequest(this@MainActivity)
+                    }) { Text("Разрешить") }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        PowerSaveHelper.markPrompted()
+                        askBattery = false
+                    }) { Text("Позже") }
+                },
+            )
+        }
+
         if (showSettings && !showServers) {
             BackHandler { showSettings = false }
             VpnkaSettingsScreen(
                 onPerAppProxy = { navigateTo("per_app_proxy") },
+                batteryExempt = PowerSaveHelper.isExempt(this),
+                onFixBattery = { PowerSaveHelper.openExemptionRequest(this) },
                 onRoutingSettings = { navigateTo("routing_setting") },
                 onOpenAdvanced = { showServers = true },
                 onBack = { showSettings = false },

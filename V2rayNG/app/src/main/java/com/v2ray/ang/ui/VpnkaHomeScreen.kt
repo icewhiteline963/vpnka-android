@@ -270,6 +270,8 @@ fun VpnkaHomeScreen(
 @Composable
 fun VpnkaSettingsScreen(
     onPerAppProxy: () -> Unit,
+    batteryExempt: Boolean,
+    onFixBattery: () -> Unit,
     onRoutingSettings: () -> Unit,
     onOpenAdvanced: () -> Unit,
     onBack: () -> Unit,
@@ -288,6 +290,17 @@ fun VpnkaSettingsScreen(
         )
         Spacer(Modifier.height(24.dp))
 
+        // First row when it's not granted: this is the setting behind most
+        // "VPN keeps dropping" reports, and it's invisible from inside the
+        // app until someone goes looking for it.
+        VpnkaSettingsRow(
+            title = if (batteryExempt) "Работа в фоне: разрешена"
+            else "Работа в фоне: ограничена",
+            subtitle = if (batteryExempt)
+                "Android не усыпляет приложение — соединение держится"
+            else "Android может усыплять приложение и обрывать VPN. Нажмите, чтобы разрешить",
+            onClick = onFixBattery,
+        )
         VpnkaSettingsRow(
             title = "Приложения через VPN",
             subtitle = "Выбрать, каким приложениям идти через VPN, а каким напрямую",

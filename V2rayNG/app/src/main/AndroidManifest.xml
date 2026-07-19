@@ -36,6 +36,11 @@
          own confirmation and still refuses anything signed with a different
          key, so this grants us the ability to *offer*, never to install. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Lets us show the one-tap "ignore battery optimizations" dialog. Doze
+         suspends background work, and a suspended VPN looks like a broken
+         one: connected, but traffic stops minutes after the screen goes off.
+         Asking is all we can do — the user grants it, and can revoke it. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"
         tools:ignore="ForegroundServicesPolicy" />
