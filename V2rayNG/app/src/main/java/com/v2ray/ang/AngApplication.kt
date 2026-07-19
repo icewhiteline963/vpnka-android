@@ -7,6 +7,11 @@ import androidx.work.WorkManager
 import com.tencent.mmkv.MMKV
 import com.v2ray.ang.AppConfig.ANG_PACKAGE
 import com.v2ray.ang.compose.ThemeManager
+import com.v2ray.ang.handler.VpnkaAccount
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.handler.UpdatePrefetcher
@@ -33,6 +38,9 @@ class AngApplication : Application() {
          * what someone who just paid is looking for.
          */
         var vpnkaJustPaid: Boolean = false
+
+        /** Long-lived scope for first-launch work that must not block it. */
+        internal val vpnkaScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     }
 
     /**
@@ -73,6 +81,13 @@ class AngApplication : Application() {
         // an install that updates without refreshing keeps the old one.
         vpnkaNeedsTrialFetch = MmkvManager.ensureTrialSubscription() or
             MmkvManager.consumeVersionChanged(BuildConfig.VERSION_NAME)
+
+        // Give this install an account if it hasn't got one. Nothing is
+        // asked of the user — an account is simply what is needed to own a
+        // subscription, and a sign-up form shown before someone has seen
+        // the product is friction for its own sake. Retried on the next
+        // launch if the network is down; the trial works regardless.
+        vpnkaScope.launch { VpnkaAccount.register() }
 
         // Pull a new version down in the background so installing it later is
         // a single tap. Wi-Fi only — see UpdatePrefetcher for why that matters

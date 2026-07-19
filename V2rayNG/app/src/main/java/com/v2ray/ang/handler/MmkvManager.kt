@@ -902,6 +902,23 @@ object MmkvManager {
     }
 
     private const val KEY_VPNKA_ACCOUNT_TOKEN = "vpnka_account_token"
+    private const val KEY_VPNKA_RECOVERY = "vpnka_recovery_code"
+
+    /**
+     * The account's recovery code, kept so it can be shown when it matters.
+     *
+     * The server returns it exactly once and keeps only a hash, so if this
+     * is lost the account cannot be recovered at all. Held locally rather
+     * than pushed at the user on first launch: a code shown before someone
+     * has a subscription is a code nobody writes down.
+     */
+    fun getRecoveryCode(): String? =
+        settingsStorage.decodeString(KEY_VPNKA_RECOVERY)?.takeIf { it.isNotBlank() }
+
+    fun setRecoveryCode(code: String?) {
+        if (code.isNullOrBlank()) return
+        settingsStorage.encode(KEY_VPNKA_RECOVERY, code)
+    }
     private const val VPNKA_SUB_PREFIX = "https://get.vpnka.io/sub/"
 
     /**

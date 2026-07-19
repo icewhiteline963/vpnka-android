@@ -136,6 +136,89 @@ object VpnkaAccount {
         }
     }
 
+    private data class RegisterResponse(
+        @SerializedName("token") val token: String?,
+        @SerializedName("recovery_code") val recoveryCode: String?,
+    )
+
+    /**
+     * Create this install's account. Called once, on first launch.
+     *
+     * There is no form and nothing to choose: an account is simply what the
+     * app needs in order to own a subscription, and asking someone to invent
+     * credentials before they have seen the product is friction for its own
+     * sake.
+     *
+     * The recovery code comes back exactly once — the server keeps only its
+     * hash — so it is stored locally and shown to the user later, before the
+     * first payment, when they finally have something to lose.
+     */
+    suspend fun register(): Boolean = withContext(Dispatchers.IO) {
+        if (MmkvManager.getAccountToken() != null) return@withContext true
+        val body = JsonUtil.toJson(mapOf("label" to deviceLabel()))
+            .toRequestBody("application/json".toMediaType())
+        try {
+            http().newCall(
+                Request.Builder()
+                    .url("$BASE/app/auth/register")
+                    // Same install id the subscription fetch already sends.
+                    // Recorded server-side for abuse accounting only — it is
+                    // never what authorises a request.
+                    .header("Hwid", MmkvManager.getOrCreateInstallId())
+                    .post(body)
+                    .build()
+            ).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    LogUtil.w(AppConfig.TAG, "register: HTTP ${resp.code}")
+                    return@withContext false
+                }
+                val parsed = JsonUtil.fromJsonSafe(
+                    resp.body?.string().orEmpty(), RegisterResponse::class.java
+                ) ?: return@withContext false
+                val token = parsed.token ?: return@withContext false
+                MmkvManager.setAccountToken(token)
+                MmkvManager.setRecoveryCode(parsed.recoveryCode)
+                true
+            }
+        } catch (e: Exception) {
+            // Offline on first launch is ordinary. The trial subscription
+            // still works, and registration is retried on the next launch.
+            LogUtil.w(AppConfig.TAG, "register failed: ${e.message}")
+            false
+        }
+    }
+
+    /** Trade a recovery code for a session on this device. */
+    suspend fun recover(code: String): Result<Unit> = withContext(Dispatchers.IO) {
+        val body = JsonUtil.toJson(
+            mapOf("recovery_code" to code, "label" to deviceLabel())
+        ).toRequestBody("application/json".toMediaType())
+        try {
+            http().newCall(
+                Request.Builder().url("$BASE/app/auth/recover").post(body).build()
+            ).execute().use { resp ->
+                if (resp.code == 400) {
+                    return@withContext Result.failure(InvalidCodeException())
+                }
+                if (!resp.isSuccessful) {
+                    return@withContext Result.failure(
+                        IllegalStateException("HTTP ${resp.code}")
+                    )
+                }
+                val token = JsonUtil
+                    .fromJsonSafe(resp.body?.string().orEmpty(), TokenResponse::class.java)
+                    ?.token
+                    ?: return@withContext Result.failure(
+                        IllegalStateException("no token")
+                    )
+                MmkvManager.setAccountToken(token)
+                Result.success(Unit)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     /** Wrong, expired and already-used codes all arrive as this. */
     class InvalidCodeException : Exception()
 
