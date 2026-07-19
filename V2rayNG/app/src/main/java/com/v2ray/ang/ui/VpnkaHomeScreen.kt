@@ -507,15 +507,35 @@ fun VpnkaSubscriptionScreen(
         // automatically, so someone whose app storage was cleared silently
         // lands in a fresh empty account, and the sign-in form only ever
         // appeared when signed out — which the app never is.
-        // Telegram first: for someone not signed in it is the way in, and
-        // for everyone else it is the thing most worth doing from here.
-        VpnkaMenuRow("Подключить Telegram", onLinkTelegram)
+        // Two doors that sound the same and are not, which is exactly how
+        // someone with an existing Telegram account ended up being told
+        // «не удалось привязать». Sign-in comes first because most people
+        // arrive from the bot and already have an account; each says who
+        // it is for, in those words.
+        VpnkaMenuRow(
+            "Войти по коду из бота",
+            { showSignIn = true },
+            subtitle = "Если аккаунт уже есть в Telegram — подписки и баланс",
+        )
+        VpnkaMenuRow(
+            "Подключить Telegram",
+            onLinkTelegram,
+            subtitle = "Если аккаунт заведён здесь, в приложении",
+        )
         // Buying and topping up both need an account to charge. Without one
         // they lead to the Telegram sign-in rather than to a shop that
         // cannot complete — the destination is the missing step, not a
         // refusal at the end of one.
-        VpnkaMenuRow("Купить подписку", if (signedIn) onRenew else onLinkTelegram)
-        VpnkaMenuRow("Пополнить баланс", if (signedIn) onTopUp else onLinkTelegram)
+        VpnkaMenuRow(
+            "Купить подписку",
+            if (signedIn) onRenew else ({ showSignIn = true }),
+            subtitle = if (signedIn) null else "Сначала вход — покупка привязывается к аккаунту",
+        )
+        VpnkaMenuRow(
+            "Пополнить баланс",
+            if (signedIn) onTopUp else ({ showSignIn = true }),
+            subtitle = if (signedIn) null else "Сначала вход — баланс хранится в аккаунте",
+        )
         VpnkaMenuRow("Связаться с оператором", onSupport)
         VpnkaMenuRow("Настройки приложения", onOpenSettings)
         VpnkaMenuRow("Код восстановления", onShowRecovery)
@@ -1007,23 +1027,40 @@ fun VpnkaRecoveryScreen(code: String?, onBack: () -> Unit) {
 
 /** A menu line in the app's own type, not Material's defaults. */
 @Composable
-private fun VpnkaMenuRow(title: String, onClick: () -> Unit) {
+private fun VpnkaMenuRow(
+    title: String,
+    onClick: () -> Unit,
+    subtitle: String? = null,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 4.dp, vertical = 14.dp),
+            .padding(horizontal = 4.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = title,
-            fontFamily = VpnkaFonts.nunito800,
-            fontWeight = VpnkaWeight.Extra,
-            fontSize = 17.sp,
-            color = VpnkaColors.TextStrong,
-            modifier = Modifier.weight(1f),
-        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontFamily = VpnkaFonts.nunito800,
+                fontWeight = VpnkaWeight.Extra,
+                fontSize = 17.sp,
+                color = VpnkaColors.TextStrong,
+            )
+            // Only where the title alone leaves a real question open — two
+            // rows that sound alike, or one whose effect isn't obvious. A
+            // subtitle under every row is noise, and noise is what stops
+            // the ones that matter from being read.
+            if (subtitle != null) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = subtitle,
+                    fontSize = 12.sp,
+                    color = VpnkaColors.TextMuted,
+                )
+            }
+        }
         Text(
             text = "›",
             fontSize = 18.sp,

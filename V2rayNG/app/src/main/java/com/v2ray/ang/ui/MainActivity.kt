@@ -287,7 +287,7 @@ class MainActivity : HelperBaseComponentActivity() {
      * mean what it means everywhere else — leave the app. Shared by both back
      * registrations so the two can never disagree about what is on top.
      */
-    private fun closeTopVpnkaScreen(): Boolean = when {
+    private fun closeTopVpnkaScreen(): Boolean = logBack(when {
         showSupport -> { showSupport = false; true }
         showTopUp -> { showTopUp = false; true }
         showRecovery -> { showRecovery = false; true }
@@ -300,6 +300,25 @@ class MainActivity : HelperBaseComponentActivity() {
         showSubscription -> { showSubscription = false; true }
         showServers -> { showServers = false; true }
         else -> false
+    })
+
+    /**
+     * Records what back did, so a logcat can say which of two things happened.
+     *
+     * Five fixes went in blind because "the gesture closes the app" cannot
+     * tell apart *the press never arrived* from *nothing of ours was open*.
+     * On the main screen leaving IS correct, and every capture so far was
+     * taken there. One line here settles it.
+     */
+    private fun logBack(handled: Boolean): Boolean {
+        android.util.Log.i(
+            "VPNKA_BACK",
+            "handled=$handled sub=$showSubscription settings=$showSettings " +
+                "servers=$showServers shop=$showShop plans=$showPlansList " +
+                "plan=${openedPlan != null} support=$showSupport " +
+                "topup=$showTopUp recovery=$showRecovery",
+        )
+        return handled
     }
 
     private var showServers by mutableStateOf(false)
