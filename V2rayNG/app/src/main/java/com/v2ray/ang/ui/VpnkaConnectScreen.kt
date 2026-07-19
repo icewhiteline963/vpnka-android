@@ -110,6 +110,7 @@ fun VpnkaConnectScreen(
     upBytes: Long,
     onToggle: () -> Unit,
     onOpenProfile: () -> Unit,
+    onChangeSubscription: () -> Unit,
     onChangeServer: () -> Unit,
 ) {
     val accent by animateColorAsState(
