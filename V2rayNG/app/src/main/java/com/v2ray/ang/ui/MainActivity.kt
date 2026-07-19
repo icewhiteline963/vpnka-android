@@ -299,9 +299,14 @@ class MainActivity : HelperBaseComponentActivity() {
         // Fetch only while the screen is open, and again on retry. Polling
         // it in the background would spend requests on a card nobody is
         // looking at — days-left doesn't change while you watch it.
+        // Not gated on the profile screen being open. It used to be, and that
+        // was the bug: someone who updates the app and goes straight to the
+        // connect button never opens «Профиль», so the plans were never
+        // synced — the shipped trial stayed in the list and stayed selected
+        // while their paid subscription sat unused.
         LaunchedEffect(showSubscription, subReload, signedIn) {
-            if (showSubscription && signedIn) {
-                subLoading = true
+            if (signedIn) {
+                subLoading = showSubscription
                 val fetched = VpnkaAccount.fetchInfo()
                 subInfo = fetched
                 // A null answer with a token still stored is just a network
@@ -574,7 +579,14 @@ class MainActivity : HelperBaseComponentActivity() {
             // almost everyone. Only when nothing is selected yet — never
             // override a choice the user made.
             LaunchedEffect(options) {
-                if (uiState.selectedGuid.isNullOrBlank() && options.isNotEmpty()) {
+                // A selection that isn't in the current list is stale, not a
+                // choice — it points at a server from a subscription the user
+                // has switched away from, or from a group that no longer
+                // exists. Only a guid still on screen counts as something the
+                // user picked, and only that is left alone.
+                val chosen = uiState.selectedGuid
+                val stillListed = options.any { it.guid == chosen }
+                if (!stillListed && options.isNotEmpty()) {
                     val auto = options.firstOrNull { it.name.contains("Авто") }
                     setSelectServer((auto ?: options.first()).guid)
                 }

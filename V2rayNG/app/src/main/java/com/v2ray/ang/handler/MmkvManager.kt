@@ -885,7 +885,11 @@ object MmkvManager {
             encodeSubscription(
                 guid,
                 SubscriptionItem(
-                    remarks = "VPNka · пробный доступ",
+                    // The duration is in the name on purpose. This grant is
+                    // 24 hours, and a label that merely says "пробный" leaves
+                    // the user to discover the length when it runs out —
+                    // usually mid-something, and usually as a support ticket.
+                    remarks = "VPNka · пробный доступ · 24 часа",
                     url = VPNKA_TRIAL_SUB_URL,
                     enabled = true,
                     autoUpdate = true,
