@@ -397,8 +397,10 @@ private fun VpnkaSettingsRow(
         Spacer(Modifier.height(2.dp))
         Text(
             text = subtitle,
-            fontSize = 13.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontFamily = VpnkaFonts.manrope600,
+            fontWeight = VpnkaWeight.Semi,
+            fontSize = 14.sp,
+            color = VpnkaColors.TextMuted,
         )
     }
 }
@@ -436,6 +438,8 @@ fun VpnkaSubscriptionScreen(
     onRetry: () -> Unit,
     onBack: () -> Unit,
 ) {
+    var showSignIn by remember { mutableStateOf(false) }
+
     VpnkaPage(title = "Профиль", onBack = onBack) {
         Column(
             modifier = Modifier
@@ -443,7 +447,7 @@ fun VpnkaSubscriptionScreen(
                 .verticalScroll(rememberScrollState()),
         ) {
 
-        if (!signedIn) {
+        if (!signedIn || showSignIn) {
             VpnkaSignIn(
                 signingIn = signingIn,
                 error = signInError,
@@ -515,6 +519,17 @@ fun VpnkaSubscriptionScreen(
         }
 
         Spacer(Modifier.height(28.dp))
+        // Always offered, not only when signed out. Accounts are created
+        // automatically now, so someone whose app storage was cleared —
+        // a reinstall, «очистить данные» — silently lands in a fresh empty
+        // account. Without this button there was no way back to the one
+        // holding their subscription: the sign-in form only appeared when
+        // signed out, and the app never is.
+        if (signedIn && !showSignIn) {
+            TextButton(onClick = { showSignIn = true }) {
+                Text("Войти в другой аккаунт")
+            }
+        }
         TextButton(onClick = onRenew) { Text("Купить подписку") }
         TextButton(onClick = onTopUp) { Text("Пополнить баланс") }
         TextButton(onClick = onSupport) { Text("Связаться с оператором") }
@@ -607,9 +622,10 @@ private fun VpnkaPlanCard(plan: VpnkaAccount.Plan) {
     Column(modifier = Modifier.padding(vertical = 10.dp)) {
         Text(
             text = plan.tariff ?: "Подписка",
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface,
+            fontFamily = VpnkaFonts.nunito800,
+            fontWeight = VpnkaWeight.Extra,
+            fontSize = 17.sp,
+            color = VpnkaColors.TextStrong,
         )
         val days = plan.daysLeft
         val devices = if (plan.devicesLimit != null) {

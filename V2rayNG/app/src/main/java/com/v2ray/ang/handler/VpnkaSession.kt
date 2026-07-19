@@ -1,58 +1,86 @@
 package com.v2ray.ang.handler
 
+import android.content.Context
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.core.CoreServiceManager
 import com.v2ray.ang.util.LogUtil
+import com.v2ray.ang.util.MessageUtil
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 /**
- * How long this session has run, and how fast it is going right now.
+ * How much this session has carried, published across the process boundary.
  *
- * The home screen shows both. Neither existed: the app knew whether the
- * tunnel was up, not since when, and the traffic counters were only ever
- * read by the (off-by-default) speed notification.
+ * The core runs in `:RunSoLibV2RayDaemon`. Its traffic counters exist only
+ * in that process, so the activity — which lives in the main one — read
+ * nothing and the cards sat at zero no matter how much data moved. That was
+ * the whole bug: the config was right, the UI was right, and they were in
+ * different processes.
+ *
+ * So the polling happens here, in the core's process, and the totals are
+ * broadcast to the UI.
+ *
+ * Totals rather than a rate: a rate is honestly zero whenever nobody is
+ * downloading, which reads as a broken counter on a screen people open to
+ * check the VPN is working.
  */
 object VpnkaSession {
 
-    private var startedAtMs: Long = 0L
-    private var lastSampleAtMs: Long = 0L
+    private const val TICK_MS = 1000L
 
-    /** Seconds since the tunnel came up, or 0 when it isn't up. */
-    fun elapsedSeconds(isRunning: Boolean, nowMs: Long): Long {
-        if (!isRunning) {
-            startedAtMs = 0L
-            lastSampleAtMs = 0L
-            return 0L
-        }
-        if (startedAtMs == 0L) startedAtMs = nowMs
-        return (nowMs - startedAtMs) / 1000L
-    }
-
-    data class Traffic(val downBytes: Long, val upBytes: Long)
-
+    private var job: Job? = null
     private var downTotal = 0L
     private var upTotal = 0L
+    private var startedAtMs = 0L
+
+    /** Called from the core's process when the tunnel comes up. */
+    fun start(context: Context) {
+        if (job != null) return
+        downTotal = 0L
+        upTotal = 0L
+        startedAtMs = System.currentTimeMillis()
+
+        job = CoroutineScope(Dispatchers.IO).launch {
+            while (isActive) {
+                accumulate()
+                MessageUtil.sendMsg2UI(
+                    context,
+                    AppConfig.MSG_TRAFFIC_TOTALS,
+                    // Serializable payload: down, up, seconds. A longArray
+                    // rather than a data class so nothing has to stay in
+                    // step across the two processes.
+                    longArrayOf(
+                        downTotal,
+                        upTotal,
+                        (System.currentTimeMillis() - startedAtMs) / 1000L,
+                    ),
+                )
+                delay(TICK_MS)
+            }
+        }
+    }
+
+    fun stop() {
+        job?.cancel()
+        job = null
+        downTotal = 0L
+        upTotal = 0L
+        startedAtMs = 0L
+    }
 
     /**
-     * Bytes carried by the tunnel this session, both ways.
+     * Add what moved since the last read.
      *
-     * Accumulated rather than read: querying the core's counters **resets**
-     * them, so each call returns only what moved since the last one and the
-     * running total has to be kept here.
-     *
-     * Totals rather than a rate, because a rate is honestly zero whenever
-     * the user isn't actively downloading — which reads as a broken counter
-     * on a screen someone opens to check that the VPN is working. Bytes only
-     * ever go up.
+     * Reading the counters resets them, so each call returns a delta and the
+     * running total has to be kept here. This is also why only one thing may
+     * poll: with the speed notification switched on (it is off by default)
+     * the two split the same bytes.
      */
-    fun sampleTraffic(nowMs: Long, isRunning: Boolean): Traffic {
-        if (!isRunning) {
-            downTotal = 0L
-            upTotal = 0L
-            lastSampleAtMs = 0L
-            return Traffic(0L, 0L)
-        }
-        lastSampleAtMs = nowMs
-
+    private fun accumulate() {
         try {
             CoreServiceManager.queryAllOutboundTrafficStats().forEach { stat ->
                 // Proxy tags only. Direct traffic bypasses the tunnel — it is
@@ -68,6 +96,5 @@ object VpnkaSession {
         } catch (e: Exception) {
             LogUtil.w(AppConfig.TAG, "traffic sample failed: ${e.message}")
         }
-        return Traffic(downTotal, upTotal)
     }
 }

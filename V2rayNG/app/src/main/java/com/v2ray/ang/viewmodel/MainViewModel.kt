@@ -62,7 +62,11 @@ data class MainUiState(
     val isTesting: Boolean = false,
     val statusText: String = "",
     val confirmRemove: Boolean = false,
-    val doubleColumnDisplay: Boolean = false
+    val doubleColumnDisplay: Boolean = false,
+    // Session traffic and duration, pushed over from the core's process.
+    val downBytes: Long = 0L,
+    val upBytes: Long = 0L,
+    val sessionSeconds: Long = 0L,
 )
 
 class MainViewModel(
@@ -1068,6 +1072,25 @@ class MainViewModel(
                             running = false,
                             clearTestingText = false
                         )
+                        _uiState.update {
+                            it.copy(downBytes = 0L, upBytes = 0L, sessionSeconds = 0L)
+                        }
+                    }
+
+                    AppConfig.MSG_TRAFFIC_TOTALS -> {
+                        // Sent from the core's process, which is the only
+                        // one where its counters exist.
+                        val totals = intent.getSerializableExtra("content")
+                            as? LongArray
+                        if (totals != null && totals.size >= 3) {
+                            _uiState.update {
+                                it.copy(
+                                    downBytes = totals[0],
+                                    upBytes = totals[1],
+                                    sessionSeconds = totals[2],
+                                )
+                            }
+                        }
                     }
 
                     AppConfig.MSG_STATE_START_SUCCESS -> {

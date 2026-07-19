@@ -20,6 +20,7 @@ import com.v2ray.ang.extension.toast
 import com.v2ray.ang.extension.toastError
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.NotificationManager
+import com.v2ray.ang.handler.VpnkaSession
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.handler.SpeedtestManager
 import com.v2ray.ang.root.RootManager
@@ -286,6 +287,9 @@ object CoreServiceManager {
 
         MessageUtil.sendMsg2UI(service, AppConfig.MSG_STATE_START_SUCCESS, "")
         NotificationManager.startSpeedNotification()
+        // Same process as the core, which is the only place its counters
+        // exist. The activity gets the totals by broadcast.
+        VpnkaSession.start(service)
         LogUtil.i(AppConfig.TAG, "StartCore-Manager: Core started successfully")
     }
 
@@ -536,6 +540,7 @@ object CoreServiceManager {
                 Intent.ACTION_SCREEN_OFF -> {
                     LogUtil.i(AppConfig.TAG, "StartCore-Manager: Screen off")
                     NotificationManager.stopSpeedNotification()
+                    VpnkaSession.stop()
                 }
 
                 Intent.ACTION_SCREEN_ON -> {

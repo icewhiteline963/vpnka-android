@@ -191,6 +191,15 @@ object AppConfig {
     const val MSG_MEASURE_CONFIG_NOTIFY = 73
     const val MSG_MEASURE_CONFIG_FINISH = 74
 
+    // Session traffic, pushed from the core's process to the UI.
+    //
+    // The core runs in :RunSoLibV2RayDaemon, so its counters simply do not
+    // exist in the activity's process — reading them there returns nothing,
+    // which is why the traffic cards sat at zero however much data moved.
+    // The numbers have to cross the process boundary, and this is the
+    // broadcast that carries them.
+    const val MSG_TRAFFIC_TOTALS = 75
+
     /** Notification channel IDs and names. */
     const val RAY_NG_CHANNEL_ID = "RAY_NG_M_CH_ID"
     const val RAY_NG_CHANNEL_NAME = "v2rayNG Background Service"
