@@ -35,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.v2ray.ang.handler.VpnkaAccount
 
 /** One entry in the server picker. */
 data class VpnkaServerOption(
@@ -64,6 +65,7 @@ fun VpnkaHomeScreen(
     onSpeedTest: () -> Unit,
     onCheckUpdate: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenSubscription: () -> Unit,
     updateVersion: String? = null,
 ) {
     var expanded by remember { mutableStateOf(false) }
@@ -252,6 +254,7 @@ fun VpnkaHomeScreen(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
+            TextButton(onClick = onOpenSubscription) { Text("Подписка") }
             TextButton(onClick = onOpenSettings) { Text("Настройки") }
             TextButton(onClick = onCheckUpdate) { Text("Обновление") }
         }
@@ -345,6 +348,139 @@ private fun VpnkaSettingsRow(
             text = subtitle,
             fontSize = 13.sp,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * «Моя подписка» — what the bot's card shows, without leaving the app.
+ *
+ * Read-only by design. Renewal, payment methods and refunds live in the
+ * bot, where they already work; duplicating a payment flow here would mean
+ * a second place for money to go wrong. So this states the facts and hands
+ * off for anything that changes them.
+ */
+@Composable
+fun VpnkaSubscriptionScreen(
+    loading: Boolean,
+    info: VpnkaAccount.Info?,
+    hasSubscription: Boolean,
+    onRenew: () -> Unit,
+    onSupport: () -> Unit,
+    onRetry: () -> Unit,
+    onBack: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+    ) {
+        Spacer(Modifier.height(16.dp))
+        Text(
+            text = "Моя подписка",
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Light,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(Modifier.height(20.dp))
+
+        when {
+            loading -> {
+                CircularProgressIndicator(modifier = Modifier.size(32.dp))
+            }
+
+            // Never went through the bot: they're on the shipped trial. Say
+            // so plainly instead of "не активна", which reads as a fault.
+            !hasSubscription -> {
+                Text(
+                    text = "Сейчас работает пробный доступ на сутки.\n" +
+                        "Месяц бесплатно — в боте.",
+                    fontSize = 15.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            info == null -> {
+                Text(
+                    text = "Не удалось получить данные — проверьте интернет",
+                    fontSize = 15.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(12.dp))
+                TextButton(onClick = onRetry) { Text("Повторить") }
+            }
+
+            !info.active -> {
+                Text(
+                    text = "Подписка не активна",
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            else -> {
+                val days = info.daysLeft
+                VpnkaInfoRow(
+                    "Состояние",
+                    if (info.frozen) "Заморожена" else "Активна",
+                )
+                if (days != null) {
+                    VpnkaInfoRow("Осталось", "$days ${pluralDays(days)}")
+                }
+                info.tariff?.let { VpnkaInfoRow("Тариф", it) }
+                if (info.devicesLimit != null) {
+                    VpnkaInfoRow(
+                        "Устройства",
+                        "${info.devicesUsed ?: 0} из ${info.devicesLimit}",
+                    )
+                }
+                info.balance?.let { raw ->
+                    // Comes as a decimal string from the API; show whole
+                    // roubles — twelve decimal places is accounting detail,
+                    // not something a user needs on this screen.
+                    val whole = raw.substringBefore('.')
+                    VpnkaInfoRow("Баланс", "$whole ₽")
+                }
+            }
+        }
+
+        Spacer(Modifier.height(28.dp))
+        TextButton(onClick = onRenew) { Text("Продлить в боте") }
+        TextButton(onClick = onSupport) { Text("Связаться с оператором") }
+
+        Spacer(Modifier.weight(1f))
+        TextButton(onClick = onBack) { Text("← Назад") }
+    }
+}
+
+private fun pluralDays(n: Int): String {
+    val a = kotlin.math.abs(n)
+    return when {
+        a % 10 == 1 && a % 100 != 11 -> "день"
+        a % 10 in 2..4 && a % 100 !in 12..14 -> "дня"
+        else -> "дней"
+    }
+}
+
+@Composable
+private fun VpnkaInfoRow(label: String, value: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 10.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Text(
+            text = label,
+            fontSize = 15.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            text = value,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface,
         )
     }
 }

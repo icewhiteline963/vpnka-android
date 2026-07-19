@@ -145,6 +145,8 @@ import com.v2ray.ang.handler.UpdatePrefetcher
 import com.v2ray.ang.handler.PowerSaveHelper
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
+import com.v2ray.ang.handler.VpnkaAccount
+import androidx.compose.runtime.mutableIntStateOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import sh.calvin.reorderable.ReorderableItem
@@ -230,6 +232,21 @@ class MainActivity : HelperBaseComponentActivity() {
         // rather than editing MainScreen keeps their releases mergeable as-is.
         var showServers by rememberSaveable { mutableStateOf(false) }
         var showSettings by rememberSaveable { mutableStateOf(false) }
+        var showSubscription by rememberSaveable { mutableStateOf(false) }
+        var subInfo by remember { mutableStateOf<VpnkaAccount.Info?>(null) }
+        var subLoading by remember { mutableStateOf(false) }
+        var subReload by remember { mutableIntStateOf(0) }
+
+        // Fetch only while the screen is open, and again on retry. Polling
+        // it in the background would spend requests on a card nobody is
+        // looking at — days-left doesn't change while you watch it.
+        LaunchedEffect(showSubscription, subReload) {
+            if (showSubscription) {
+                subLoading = true
+                subInfo = VpnkaAccount.fetchInfo()
+                subLoading = false
+            }
+        }
         var updateVersion by remember { mutableStateOf<String?>(null) }
         var askBattery by remember { mutableStateOf(PowerSaveHelper.shouldPrompt(this)) }
 
@@ -285,6 +302,20 @@ class MainActivity : HelperBaseComponentActivity() {
             )
         }
 
+        if (showSubscription && !showServers) {
+            BackHandler { showSubscription = false }
+            VpnkaSubscriptionScreen(
+                loading = subLoading,
+                info = subInfo,
+                hasSubscription = VpnkaAccount.hasSubscription(),
+                onRenew = { navigateTo("vpnka_month") },
+                onSupport = { navigateTo("vpnka_support") },
+                onRetry = { subReload++ },
+                onBack = { showSubscription = false },
+            )
+            return
+        }
+
         if (showSettings && !showServers) {
             BackHandler { showSettings = false }
             VpnkaSettingsScreen(
@@ -330,6 +361,7 @@ class MainActivity : HelperBaseComponentActivity() {
                 onSpeedTest = mainViewModel::testAllRealPing,
                 onCheckUpdate = { navigateTo("check_update") },
                 onOpenSettings = { showSettings = true },
+                onOpenSubscription = { showSubscription = true },
                 updateVersion = updateVersion,
             )
             return
@@ -409,6 +441,14 @@ class MainActivity : HelperBaseComponentActivity() {
             // (and our existing abuse checks). `?start=app` tells the bot the
             // user arrived from here, so it can offer the return link that
             // drops the new subscription straight back into this app.
+            "vpnka_support" -> {
+                // Support lives in the bot: tickets, agent shifts and
+                // routing already work there. A second chat here would mean
+                // duplicating message storage and delivery, and operators
+                // watching two places.
+                Utils.openUri(this, "https://t.me/vpnka_io_bot?start=support")
+                return
+            }
             "vpnka_month" -> {
                 Utils.openUri(this, "https://t.me/vpnka_io_bot?start=app")
                 return
