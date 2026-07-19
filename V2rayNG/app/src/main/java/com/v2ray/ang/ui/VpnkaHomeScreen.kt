@@ -64,6 +64,7 @@ fun VpnkaHomeScreen(
     onSpeedTest: () -> Unit,
     onCheckUpdate: () -> Unit,
     onOpenSettings: () -> Unit,
+    updateVersion: String? = null,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val selected = servers.firstOrNull { it.guid == selectedGuid }
@@ -82,6 +83,28 @@ fun VpnkaHomeScreen(
             fontWeight = FontWeight.Light,
             color = MaterialTheme.colorScheme.onSurface,
         )
+
+        // Shown when the launch-time check found something. A banner rather
+        // than a dialog: an update is worth telling someone about, but not
+        // worth standing between them and the connect button.
+        if (updateVersion != null) {
+            Spacer(Modifier.height(12.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer)
+                    .clickable(onClick = onCheckUpdate)
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+            ) {
+                Text(
+                    text = "Доступно обновление $updateVersion — нажмите, чтобы установить",
+                    fontSize = 14.sp,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                )
+            }
+        }
 
         Spacer(Modifier.height(32.dp))
 

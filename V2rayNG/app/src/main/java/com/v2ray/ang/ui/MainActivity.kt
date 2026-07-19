@@ -140,6 +140,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.StateFlow
+import com.v2ray.ang.handler.UpdateCheckerManager
+import com.v2ray.ang.handler.UpdatePrefetcher
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import sh.calvin.reorderable.ReorderableItem
@@ -225,6 +227,25 @@ class MainActivity : HelperBaseComponentActivity() {
         // rather than editing MainScreen keeps their releases mergeable as-is.
         var showServers by rememberSaveable { mutableStateOf(false) }
         var showSettings by rememberSaveable { mutableStateOf(false) }
+        var updateVersion by remember { mutableStateOf<String?>(null) }
+
+        // Check on every launch. It's a few hundred bytes of JSON, so it can
+        // run on any network — unlike the APK itself, which stays Wi-Fi-only
+        // because it would otherwise cross our own nodes at 32 MB a head.
+        LaunchedEffect(Unit) {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    UpdateCheckerManager.checkForUpdate(includePreRelease = false)
+                }
+            }.onSuccess { result ->
+                if (result.hasUpdate) {
+                    updateVersion = result.latestVersion
+                    // Start the download at the next Wi-Fi moment rather than
+                    // making the user wait for it when they finally tap.
+                    UpdatePrefetcher.requestPrefetchNow(this@MainActivity)
+                }
+            }
+        }
         val uiState by mainViewModel.uiState.collectAsStateWithLifecycle()
         val servers by mainViewModel
             .serversForGroup(uiState.selectedGroupId)
@@ -273,6 +294,7 @@ class MainActivity : HelperBaseComponentActivity() {
                 onSpeedTest = mainViewModel::testAllRealPing,
                 onCheckUpdate = { navigateTo("check_update") },
                 onOpenSettings = { showSettings = true },
+                updateVersion = updateVersion,
             )
             return
         }

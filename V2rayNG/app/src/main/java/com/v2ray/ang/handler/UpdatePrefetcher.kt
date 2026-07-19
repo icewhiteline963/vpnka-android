@@ -4,7 +4,9 @@ import android.content.Context
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
@@ -53,6 +55,31 @@ object UpdatePrefetcher {
 
         WorkManager.getInstance(context).enqueueUniquePeriodicWork(
             TASK_NAME, ExistingPeriodicWorkPolicy.KEEP, request,
+        )
+    }
+
+    /**
+     * Ask for a download now, rather than waiting out the daily cycle.
+     *
+     * Called when a launch-time check found something. Still UNMETERED: the
+     * point is to shorten the wait until the next Wi-Fi moment, not to spend
+     * someone's mobile data because they happened to open the app.
+     *
+     * KEEP, so repeatedly opening the app doesn't queue the same download
+     * over and over.
+     */
+    fun requestPrefetchNow(context: Context) {
+        val request = OneTimeWorkRequestBuilder<PrefetchTask>()
+            .setConstraints(
+                Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.UNMETERED)
+                    .setRequiresStorageNotLow(true)
+                    .build()
+            )
+            .addTag(TASK_NAME)
+            .build()
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            TASK_NAME + "_now", ExistingWorkPolicy.KEEP, request,
         )
     }
 
