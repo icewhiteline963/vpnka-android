@@ -5,6 +5,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.net.VpnService
 import android.os.Build
+import android.window.OnBackInvokedDispatcher
 import android.os.Bundle
 import android.view.KeyEvent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -227,28 +228,31 @@ class MainActivity : HelperBaseComponentActivity() {
         // and disabled on the main screen so leaving the app there is still
         // the system's job.
         onBackPressedDispatcher.addCallback(this) {
-            when {
-                showSupport -> showSupport = false
-                showTopUp -> showTopUp = false
-                showRecovery -> showRecovery = false
-                showServerPicker -> showServerPicker = false
-                showPlanPicker -> showPlanPicker = false
-                openedPlan != null -> openedPlan = null
-                showPlansList -> showPlansList = false
-                showShop -> showShop = false
-                showSubscription -> showSubscription = false
-                showServers -> {
-                    showServers = false
-                    showSettings = false
-                }
-                showSettings -> showSettings = false
-                else -> {
-                    // Nothing of ours is open: hand the press back to the
-                    // system so it closes the app as it always would.
-                    isEnabled = false
-                    onBackPressedDispatcher.onBackPressed()
-                    isEnabled = true
-                }
+            if (!closeTopVpnkaScreen()) {
+                // Nothing of ours is open: hand the press back to the
+                // system so it closes the app as it always would.
+                isEnabled = false
+                onBackPressedDispatcher.onBackPressed()
+                isEnabled = true
+            }
+        }
+
+        // And again, straight at the platform.
+        //
+        // The androidx dispatcher above should be enough, and once the
+        // manifest declared enableOnBackInvokedCallback the system did stop
+        // reporting us as opted out — but the gesture still left the app.
+        // Something between the OS and androidx wasn't delivering, so this
+        // registration removes the middle entirely. Registered last, so on
+        // API 33+ it is the one the system calls; below that the androidx
+        // path above still runs.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            onBackInvokedDispatcher.registerOnBackInvokedCallback(
+                OnBackInvokedDispatcher.PRIORITY_DEFAULT
+            ) {
+                // Nothing open means the press was meant for the system, and
+                // at this level "close the app" is ours to do.
+                if (!closeTopVpnkaScreen()) moveTaskToBack(true)
             }
         }
 
@@ -276,6 +280,28 @@ class MainActivity : HelperBaseComponentActivity() {
     // composition is gone: the activity owns the state and answers back
     // through its own dispatcher, which is registered once in onCreate and
     // cannot be missed by a recomposition.
+    /**
+     * Closes the innermost screen of ours that is open.
+     *
+     * Returns false when none is, which is the caller's cue to let the press
+     * mean what it means everywhere else — leave the app. Shared by both back
+     * registrations so the two can never disagree about what is on top.
+     */
+    private fun closeTopVpnkaScreen(): Boolean = when {
+        showSupport -> { showSupport = false; true }
+        showTopUp -> { showTopUp = false; true }
+        showRecovery -> { showRecovery = false; true }
+        showServerPicker -> { showServerPicker = false; true }
+        showPlanPicker -> { showPlanPicker = false; true }
+        openedPlan != null -> { openedPlan = null; true }
+        showPlansList -> { showPlansList = false; true }
+        showShop -> { showShop = false; true }
+        showSettings -> { showSettings = false; true }
+        showSubscription -> { showSubscription = false; true }
+        showServers -> { showServers = false; true }
+        else -> false
+    }
+
     private var showServers by mutableStateOf(false)
     private var showSettings by mutableStateOf(false)
     private var showSubscription by mutableStateOf(false)
@@ -465,24 +491,7 @@ class MainActivity : HelperBaseComponentActivity() {
             showServerPicker || showPlanPicker || showPlansList ||
             openedPlan != null || showShop || showSubscription ||
             showSettings || showServers
-        BackHandler(enabled = anyOverlay) {
-            when {
-                showSupport -> showSupport = false
-                showTopUp -> showTopUp = false
-                showRecovery -> showRecovery = false
-                showServerPicker -> showServerPicker = false
-                showPlanPicker -> showPlanPicker = false
-                openedPlan != null -> openedPlan = null
-                showPlansList -> showPlansList = false
-                showShop -> showShop = false
-                showSubscription -> showSubscription = false
-                showServers -> {
-                    showServers = false
-                    showSettings = false
-                }
-                showSettings -> showSettings = false
-            }
-        }
+        BackHandler(enabled = anyOverlay) { closeTopVpnkaScreen() }
 
         if (showSupport && !showServers) {
             VpnkaSupportScreen(
@@ -573,6 +582,22 @@ class MainActivity : HelperBaseComponentActivity() {
                 onTopUp = { navigateTo("vpnka_month") },
                 onRetry = { showShop = false; showShop = true },
                 onBack = { showShop = false },
+            )
+            return
+        }
+
+        // Above the profile, not below it. Settings is opened from inside the
+        // profile, and the profile block returns — so while it sat lower the
+        // flag was set and the screen never changed. Placed here, back from
+        // settings lands on the profile it was opened from.
+        if (showSettings && !showServers) {
+            VpnkaSettingsScreen(
+                onPerAppProxy = { navigateTo("per_app_proxy") },
+                batteryExempt = PowerSaveHelper.isExempt(this),
+                onFixBattery = { PowerSaveHelper.openExemptionRequest(this) },
+                onRoutingSettings = { navigateTo("routing_setting") },
+                onCheckUpdate = { navigateTo("check_update") },
+                onBack = { showSettings = false },
             )
             return
         }
@@ -738,18 +763,6 @@ class MainActivity : HelperBaseComponentActivity() {
                 onRefresh = ::importConfigViaSub,
                 onSpeedTest = mainViewModel::testAllRealPing,
                 onBack = { showServerPicker = false },
-            )
-            return
-        }
-
-        if (showSettings && !showServers) {
-            VpnkaSettingsScreen(
-                onPerAppProxy = { navigateTo("per_app_proxy") },
-                batteryExempt = PowerSaveHelper.isExempt(this),
-                onFixBattery = { PowerSaveHelper.openExemptionRequest(this) },
-                onRoutingSettings = { navigateTo("routing_setting") },
-                onCheckUpdate = { navigateTo("check_update") },
-                onBack = { showSettings = false },
             )
             return
         }

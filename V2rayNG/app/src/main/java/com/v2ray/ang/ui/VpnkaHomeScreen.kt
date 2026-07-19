@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -506,18 +507,18 @@ fun VpnkaSubscriptionScreen(
         // automatically, so someone whose app storage was cleared silently
         // lands in a fresh empty account, and the sign-in form only ever
         // appeared when signed out — which the app never is.
-        if (signedIn && !showSignIn) {
-            VpnkaMenuRow("Войти в другой аккаунт") { showSignIn = true }
-        }
-        VpnkaMenuRow("Купить подписку", onRenew)
-        VpnkaMenuRow("Пополнить баланс", onTopUp)
+        // Telegram first: for someone not signed in it is the way in, and
+        // for everyone else it is the thing most worth doing from here.
+        VpnkaMenuRow("Подключить Telegram", onLinkTelegram)
+        // Buying and topping up both need an account to charge. Without one
+        // they lead to the Telegram sign-in rather than to a shop that
+        // cannot complete — the destination is the missing step, not a
+        // refusal at the end of one.
+        VpnkaMenuRow("Купить подписку", if (signedIn) onRenew else onLinkTelegram)
+        VpnkaMenuRow("Пополнить баланс", if (signedIn) onTopUp else onLinkTelegram)
         VpnkaMenuRow("Связаться с оператором", onSupport)
         VpnkaMenuRow("Настройки приложения", onOpenSettings)
         VpnkaMenuRow("Код восстановления", onShowRecovery)
-        // Optional, and worded as such: the account works without Telegram.
-        // Linking is for people who also want the bot, or who arrived from
-        // it and would otherwise end up with two separate accounts.
-        VpnkaMenuRow("Подключить Telegram", onLinkTelegram)
         if (signedIn) {
             TextButton(onClick = onSignOut) { Text("Выйти из аккаунта") }
         } else {
@@ -732,55 +733,84 @@ private fun VpnkaTariffCard(
     onBuy: (Int, String) -> Unit,
     onTopUp: () -> Unit,
 ) {
+    // Compact by design: name and price share the top line, the terms sit
+    // under them as one quiet line, and the actions are plain tappable text
+    // rather than Material buttons — those brought their own height, ripple
+    // and padding, which is what made these cards tower over everything else
+    // on the screen.
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(14.dp))
             .background(VpnkaColors.CardSpeed)
-            .padding(16.dp),
+            .padding(horizontal = 14.dp, vertical = 11.dp),
     ) {
-        Text(
-            text = tariff.name,
-            fontSize = 16.sp,
-            fontWeight = VpnkaWeight.Extra,
-            color = VpnkaColors.TextStrong,
-        )
-        Spacer(Modifier.height(4.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = tariff.name,
+                fontFamily = VpnkaFonts.nunito800,
+                fontWeight = VpnkaWeight.Extra,
+                fontSize = 15.sp,
+                color = VpnkaColors.TextStrong,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                text = "${tariff.priceRub} ₽",
+                fontFamily = VpnkaFonts.nunito800,
+                fontWeight = VpnkaWeight.Extra,
+                fontSize = 15.sp,
+                color = VpnkaColors.TextStrong,
+            )
+        }
+        Spacer(Modifier.height(2.dp))
         Text(
             text = buildString {
-                append("${tariff.priceRub} ₽")
+                append("${tariff.durationDays} дн · ${tariff.deviceLimit} устр.")
                 // The full price only appears when a friend discount is live,
                 // so the discount is visible rather than merely applied.
-                tariff.priceRubFull?.let { append("  (вместо $it ₽)") }
-                append(" · ${tariff.durationDays} дн · ${tariff.deviceLimit} устр.")
+                tariff.priceRubFull?.let { append(" · вместо $it ₽") }
             },
-            fontSize = 13.sp,
+            fontSize = 12.sp,
             color = VpnkaColors.TextMuted,
         )
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(8.dp))
 
-        Row {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             if (tariff.canPayBalance) {
-                Button(
-                    onClick = { onBuy(tariff.id, "balance") },
-                    enabled = !buying,
-                ) { Text("С баланса") }
-                Spacer(Modifier.height(0.dp))
+                VpnkaTariffAction("С баланса", !buying) {
+                    onBuy(tariff.id, "balance")
+                }
+                Spacer(Modifier.width(18.dp))
             }
             if (tariff.canPayCard) {
-                TextButton(
-                    onClick = { onBuy(tariff.id, "card") },
-                    enabled = !buying,
-                ) { Text("Картой") }
+                VpnkaTariffAction("Картой", !buying) { onBuy(tariff.id, "card") }
             }
             // Neither route is open: too little balance and too small an
             // amount for the processor. Say what would fix it instead of
             // showing a card with no way forward.
             if (!tariff.canPayBalance && !tariff.canPayCard) {
-                TextButton(onClick = onTopUp) { Text("Пополнить баланс в боте") }
+                VpnkaTariffAction("Пополнить баланс", true, onTopUp)
             }
         }
     }
+}
+
+@Composable
+private fun VpnkaTariffAction(
+    label: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    Text(
+        text = label,
+        fontFamily = VpnkaFonts.nunito800,
+        fontWeight = VpnkaWeight.Extra,
+        fontSize = 13.sp,
+        color = if (enabled) VpnkaColors.Accent else VpnkaColors.TextFaint,
+        modifier = Modifier
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(vertical = 2.dp),
+    )
 }
 
 /**
