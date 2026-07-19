@@ -31,6 +31,11 @@ object VpnkaColors {
     // "this is about to stop working" rather than becoming another accent.
     val Warning = Color(0xFFD32F2F)
 
+    // A step below Warning: "worth doing something about soon", not "now".
+    // The expiry banner starts here at three days and turns to Warning
+    // inside the last one, so the change of colour carries the urgency.
+    val Amber = Color(0xFFB26B00)
+
     // Text, darkest first.
     val TextStrong = Color(0xFF5C3D10)
     val TextBrand = Color(0xFF7A4A12)

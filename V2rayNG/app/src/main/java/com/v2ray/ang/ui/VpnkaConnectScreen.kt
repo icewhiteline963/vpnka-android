@@ -115,6 +115,9 @@ fun VpnkaConnectScreen(
     onChangeServer: () -> Unit,
     updateAvailable: Boolean,
     onCheckUpdate: () -> Unit,
+    onPerAppProxy: () -> Unit,
+    expiryDaysLeft: Int?,
+    onRenew: () -> Unit,
 ) {
     val accent by animateColorAsState(
         targetValue = if (isRunning) VpnkaColors.Green else VpnkaColors.Accent,
@@ -221,6 +224,9 @@ fun VpnkaConnectScreen(
                         modifier = Modifier.weight(1f),
                     )
                 }
+                if (expiryDaysLeft != null && expiryDaysLeft <= 3) {
+                    VpnkaExpiryBanner(daysLeft = expiryDaysLeft, onRenew = onRenew)
+                }
                 // Above the server, because it is the wider choice: the plan
                 // decides which servers exist at all. Only offered as a
                 // switch when there is more than one — otherwise it is a
@@ -237,6 +243,7 @@ fun VpnkaConnectScreen(
                     delay = serverDelay,
                     onChange = onChangeServer,
                 )
+                VpnkaPerAppRow(onClick = onPerAppProxy)
             }
         }
     }
@@ -295,6 +302,89 @@ private fun VpnkaHeader(
                 )
             }
         }
+    }
+}
+
+/**
+ * The subscription is nearly over, said where it will be seen.
+ *
+ * Amber at three days, red inside the last one: renewing is the user's
+ * problem too, and the day the tunnel stops without warning is the day
+ * they look for another provider.
+ */
+@Composable
+private fun VpnkaExpiryBanner(daysLeft: Int, onRenew: () -> Unit) {
+    val urgent = daysLeft <= 1
+    val tint = if (urgent) VpnkaColors.Warning else VpnkaColors.Amber
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(tint.copy(alpha = 0.14f))
+            .clickable(onClick = onRenew)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+    ) {
+        Text(
+            text = if (urgent) {
+                "Подписка кончается меньше чем через сутки"
+            } else {
+                "Подписка кончается через $daysLeft ${pluralDays(daysLeft)}"
+            },
+            fontFamily = VpnkaFonts.nunito800,
+            fontWeight = VpnkaWeight.Extra,
+            fontSize = 15.sp,
+            color = tint,
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            text = "Продлите в боте, чтобы связь не прервалась. Нажмите здесь.",
+            fontFamily = VpnkaFonts.manrope600,
+            fontWeight = VpnkaWeight.Semi,
+            fontSize = 12.sp,
+            color = VpnkaColors.TextMuted,
+        )
+    }
+}
+
+/**
+ * Per-app routing, on the main screen rather than buried in settings.
+ *
+ * It is the setting people actually need — banking and government apps
+ * refuse a foreign address, so without it the choice is «VPN» or «bank»,
+ * and users resolve that by disconnecting. The line under the title says
+ * what it does, because «прокси для приложений» does not.
+ */
+@Composable
+private fun VpnkaPerAppRow(onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(VpnkaColors.CardSpeed)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Прокси для приложений",
+                fontFamily = VpnkaFonts.nunito800,
+                fontWeight = VpnkaWeight.Extra,
+                fontSize = 15.sp,
+                color = VpnkaColors.TextStrong,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = "Выберите, какие приложения идут через VPN. Банки и " +
+                    "госуслуги лучше оставить без него.",
+                fontFamily = VpnkaFonts.manrope600,
+                fontWeight = VpnkaWeight.Semi,
+                fontSize = 12.sp,
+                color = VpnkaColors.TextFaint,
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        Text(text = "›", fontSize = 18.sp, color = VpnkaColors.TextFaint)
     }
 }
 
@@ -952,44 +1042,107 @@ fun VpnkaPlansScreen(
 @Composable
 fun VpnkaPlansListScreen(
     plans: List<VpnkaAccount.Plan>,
+    activeToken: String?,
     onOpenPlan: (VpnkaAccount.Plan) -> Unit,
     onBuy: () -> Unit,
     onBack: () -> Unit,
 ) {
     VpnkaPage(title = "Мои подписки", onBack = onBack) {
         if (plans.isEmpty()) {
-            Text(
-                text = "Пока нет ни одной подписки.",
-                fontFamily = VpnkaFonts.manrope600,
-                fontWeight = VpnkaWeight.Semi,
-                fontSize = 15.sp,
-                color = VpnkaColors.TextMuted,
+            // No purchase yet means the shipped free month is what carries
+            // the traffic. Naming it, and marking it live, beats «пока нет
+            // ни одной подписки» — which read as though nothing worked while
+            // the connection was in fact running on it.
+            VpnkaPlanRowActive(
+                title = "Бесплатный месяц",
+                subtitle = "сейчас используется",
+                onClick = {},
             )
             Spacer(Modifier.height(16.dp))
         } else {
             plans.forEach { plan ->
-                VpnkaChoiceRow(
-                    title = plan.tariff ?: "Подписка",
-                    subtitle = buildString {
-                        val days = plan.daysLeft
-                        if (plan.frozen) {
-                            append("заморожена")
-                        } else if (days != null) {
-                            append("$days ${pluralDays(days)}")
-                        }
-                        if (plan.devicesLimit != null) {
-                            if (isNotEmpty()) append(" · ")
-                            append("${plan.devicesUsed ?: 0}/${plan.devicesLimit} устройств")
-                        }
-                    }.ifBlank { null },
-                    selected = false,
-                    onClick = { onOpenPlan(plan) },
-                )
+                val live = plan.groupToken != null && plan.groupToken == activeToken
+                val subtitle = buildString {
+                    val days = plan.daysLeft
+                    if (plan.frozen) {
+                        append("заморожена")
+                    } else if (days != null) {
+                        append("$days ${pluralDays(days)}")
+                    }
+                    if (plan.devicesLimit != null) {
+                        if (isNotEmpty()) append(" · ")
+                        append("${plan.devicesUsed ?: 0}/${plan.devicesLimit} устройств")
+                    }
+                    if (live) {
+                        if (isNotEmpty()) append(" · ")
+                        append("сейчас используется")
+                    }
+                }.ifBlank { null }
+
+                if (live) {
+                    VpnkaPlanRowActive(
+                        title = plan.tariff ?: "Подписка",
+                        subtitle = subtitle,
+                        onClick = { onOpenPlan(plan) },
+                    )
+                } else {
+                    VpnkaChoiceRow(
+                        title = plan.tariff ?: "Подписка",
+                        subtitle = subtitle,
+                        selected = false,
+                        onClick = { onOpenPlan(plan) },
+                    )
+                }
                 Spacer(Modifier.height(8.dp))
             }
             Spacer(Modifier.height(12.dp))
         }
         VpnkaPrimaryButton(text = "Купить подписку", onClick = onBuy)
+    }
+}
+
+/**
+ * The plan the traffic is actually going through.
+ *
+ * Green rather than the accent: the accent is what «tap me» looks like
+ * everywhere else in the app, and this is a statement of fact, not an
+ * invitation. It also matches the colour the connect button turns when
+ * the tunnel is up, so the two read as the same signal.
+ */
+@Composable
+private fun VpnkaPlanRowActive(
+    title: String,
+    subtitle: String?,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(VpnkaColors.Green.copy(alpha = 0.14f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontFamily = VpnkaFonts.nunito800,
+                fontWeight = VpnkaWeight.Extra,
+                fontSize = 15.sp,
+                color = VpnkaColors.TextStrong,
+            )
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    fontFamily = VpnkaFonts.manrope600,
+                    fontWeight = VpnkaWeight.Semi,
+                    fontSize = 12.sp,
+                    color = VpnkaColors.Green,
+                )
+            }
+        }
+        Text(text = "●", fontSize = 14.sp, color = VpnkaColors.Green)
     }
 }
 

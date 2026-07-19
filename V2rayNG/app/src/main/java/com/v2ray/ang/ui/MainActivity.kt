@@ -5,7 +5,9 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.net.VpnService
 import android.os.Build
+import android.provider.Settings
 import android.window.OnBackInvokedDispatcher
+import androidx.core.app.NotificationManagerCompat
 import android.os.Bundle
 import android.view.KeyEvent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -614,6 +616,20 @@ class MainActivity : HelperBaseComponentActivity() {
                 onPerAppProxy = { navigateTo("per_app_proxy") },
                 batteryExempt = PowerSaveHelper.isExempt(this),
                 onFixBattery = { PowerSaveHelper.openExemptionRequest(this) },
+                notificationsEnabled = NotificationManagerCompat.from(this)
+                    .areNotificationsEnabled(),
+                onFixNotifications = {
+                    // The runtime prompt only appears once; after that only
+                    // the system screen can turn them back on, so go there
+                    // directly rather than firing a request that no longer
+                    // shows anything.
+                    startActivity(
+                        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(
+                            Settings.EXTRA_APP_PACKAGE,
+                            packageName,
+                        )
+                    )
+                },
                 onRoutingSettings = { navigateTo("routing_setting") },
                 onCheckUpdate = { navigateTo("check_update") },
                 onBack = { showSettings = false },
@@ -730,6 +746,7 @@ class MainActivity : HelperBaseComponentActivity() {
         if (showPlansList && !showServers) {
             VpnkaPlansListScreen(
                 plans = subInfo?.subscriptions.orEmpty(),
+                activeToken = MmkvManager.vpnkaTokenForGuid(selectedSub),
                 onOpenPlan = { openedPlan = it },
                 onBuy = {
                     showPlansList = false
@@ -837,6 +854,15 @@ class MainActivity : HelperBaseComponentActivity() {
                 // The launch check only lights the dot; the screen behind the
                 // button does the real check, download and install, and it
                 // already handles the install permission and FileProvider.
+                onPerAppProxy = { navigateTo("per_app_proxy") },
+                // The plan that runs out first is the one worth warning
+                // about; a longer one behind it does not make the gap
+                // any less of an outage.
+                expiryDaysLeft = subInfo?.subscriptions.orEmpty()
+                    .filter { !it.frozen }
+                    .mapNotNull { it.daysLeft }
+                    .minOrNull(),
+                onRenew = { showShop = true },
                 updateAvailable = updateVersion != null,
                 onCheckUpdate = {
                     startActivity(
@@ -1217,6 +1243,20 @@ class MainActivity : HelperBaseComponentActivity() {
     }
 
     private fun setSelectServer(guid: String) {
+        // «Неправильный профиль» comes from the core, at connect time, long
+        // after the tap that caused it — the picker offered a guid that is
+        // no longer in storage. Catch it here, where we can still say which
+        // server and still do something about it, instead of letting the
+        // user meet it as a failed connection.
+        if (MmkvManager.decodeServerConfig(guid) == null) {
+            android.util.Log.e(
+                "VPNKA_BACK",
+                "stale server guid=$guid group=${mainViewModel.uiState.value.selectedGroupId}",
+            )
+            toast("Список серверов устарел, обновляю…")
+            importConfigViaSub()
+            return
+        }
         val selected = MmkvManager.getSelectServer()
         if (guid != selected) {
             mainViewModel.updateSelectedGuid(guid)
@@ -1224,8 +1264,22 @@ class MainActivity : HelperBaseComponentActivity() {
         }
     }
 
+    /**
+     * Back, and the reason six fixes before this one missed.
+     *
+     * Upstream swallowed KEYCODE_BACK here and went straight to
+     * moveTaskToBack — before onBackPressed, before either dispatcher. On a
+     * device where the gesture arrives as a key event (ColorOS routes it
+     * that way, since it gates the predictive-back path behind a system
+     * setting the manifest cannot reach) every handler downstream was dead
+     * code. The on-screen ‹ button kept working because a click is not a
+     * key event, which is exactly what made this look like a state bug.
+     *
+     * Our screens get first refusal; leaving the app stays the fallback.
+     */
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         if (keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_BUTTON_B) {
+            if (closeTopVpnkaScreen()) return true
             moveTaskToBack(false)
             return true
         }

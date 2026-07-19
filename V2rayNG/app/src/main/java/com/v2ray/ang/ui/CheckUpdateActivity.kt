@@ -1,48 +1,37 @@
 package com.v2ray.ang.ui
 
 import android.os.Bundle
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.BuildConfig
 import com.v2ray.ang.R
-import com.v2ray.ang.compose.AppTopBar
 import com.v2ray.ang.compose.LocalAppSnackbar
-import com.v2ray.ang.compose.SettingsMenuItem
-import com.v2ray.ang.compose.SettingsSwitchItem
-import com.v2ray.ang.compose.ToastType
-import com.v2ray.ang.compose.VersionInfoBlock
 import com.v2ray.ang.core.CoreNativeManager
 import com.v2ray.ang.dto.CheckUpdateResult
 import com.v2ray.ang.extension.toast
 import com.v2ray.ang.extension.toastError
-import com.v2ray.ang.extension.toastSuccess
 import com.v2ray.ang.handler.ApkUpdateInstaller
-import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.UpdateCheckerManager
 import com.v2ray.ang.util.LogUtil
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 class CheckUpdateActivity : BaseComponentActivity() {
 
@@ -63,9 +52,6 @@ fun CheckUpdateScreen(onBackClick: () -> Unit) {
     val snackbar = LocalAppSnackbar.current
 
     var isLoading by remember { mutableStateOf(false) }
-    var checkPreRelease by remember {
-        mutableStateOf(MmkvManager.decodeSettingsBool(AppConfig.PREF_CHECK_UPDATE_PRE_RELEASE, false))
-    }
     var showUpdateDialog by remember { mutableStateOf(false) }
     var updateResult by remember { mutableStateOf<CheckUpdateResult?>(null) }
     // Downloading an APK over a Russian mobile link is tens of seconds of
@@ -100,40 +86,40 @@ fun CheckUpdateScreen(onBackClick: () -> Unit) {
         }
     }
 
-    LaunchedEffect(Unit) { checkForUpdates(checkPreRelease) }
+    // Stable only. The pre-release switch offered a choice nobody using
+    // this app wants to make, and picking wrong meant an untested build on
+    // the one connection someone has to reach anything.
+    LaunchedEffect(Unit) { checkForUpdates(false) }
 
-    Scaffold(
-        contentWindowInsets = ScaffoldDefaults.contentWindowInsets,
-        topBar = {
-            AppTopBar(
-                title = stringResource(R.string.update_check_for_update),
-                onBackClick = onBackClick,
-                isLoading = isLoading
+    VpnkaPage(title = "Обновление", onBack = onBackClick) {
+        VpnkaCard {
+            Text(
+                text = "Установленная версия",
+                fontSize = 13.sp,
+                color = VpnkaColors.TextMuted,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = versionText,
+                fontFamily = VpnkaFonts.nunito800,
+                fontWeight = VpnkaWeight.Extra,
+                fontSize = 17.sp,
+                color = VpnkaColors.TextStrong,
             )
         }
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .verticalScroll(rememberScrollState())
-        ) {
-            SettingsSwitchItem(
-                icon = painterResource(R.drawable.ic_source_code_24dp),
-                title = stringResource(R.string.update_check_pre_release),
-                checked = checkPreRelease,
-                onCheckedChange = { checked ->
-                    checkPreRelease = checked
-                    MmkvManager.encodeSettings(AppConfig.PREF_CHECK_UPDATE_PRE_RELEASE, checked)
-                }
-            )
-            SettingsMenuItem(
-                icon = painterResource(R.drawable.ic_check_update_24dp),
-                title = stringResource(R.string.update_check_for_update),
-                onClick = { checkForUpdates(checkPreRelease) }
-            )
-            VersionInfoBlock(versionText = versionText)
-        }
+        Spacer(Modifier.height(16.dp))
+        VpnkaPrimaryButton(
+            text = if (isLoading) "Проверяю…" else "Проверить обновление",
+            onClick = { checkForUpdates(false) },
+            enabled = !isLoading,
+        )
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = "Обновления скачиваются с нашего сервера, а не из Google " +
+                "Play — так они доходят и без VPN.",
+            fontSize = 13.sp,
+            color = VpnkaColors.TextMuted,
+        )
     }
 
     if (downloading) {

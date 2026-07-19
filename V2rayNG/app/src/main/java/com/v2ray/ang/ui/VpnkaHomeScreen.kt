@@ -336,6 +336,8 @@ fun VpnkaSettingsScreen(
     onPerAppProxy: () -> Unit,
     batteryExempt: Boolean,
     onFixBattery: () -> Unit,
+    notificationsEnabled: Boolean,
+    onFixNotifications: () -> Unit,
     onRoutingSettings: () -> Unit,
     onCheckUpdate: () -> Unit,
     onBack: () -> Unit,
@@ -354,6 +356,17 @@ fun VpnkaSettingsScreen(
                 "Android не усыпляет приложение — соединение держится"
             else "Android может усыплять приложение и обрывать VPN. Нажмите, чтобы разрешить",
             onClick = onFixBattery,
+        )
+        // Asked for once at first launch, and silently declined by many.
+        // Without it the expiry reminder never arrives, and the first sign
+        // of the subscription ending is a connection that stops.
+        VpnkaSettingsRow(
+            title = if (notificationsEnabled) "Уведомления: включены"
+            else "Уведомления: выключены",
+            subtitle = if (notificationsEnabled)
+                "Напомним за 3 дня и за сутки до конца подписки"
+            else "Без них не придёт напоминание об окончании подписки. Нажмите, чтобы включить",
+            onClick = onFixNotifications,
         )
         VpnkaSettingsRow(
             title = "Приложения через VPN",
