@@ -39,6 +39,9 @@ object VpnkaAccount {
         @SerializedName("devices_limit") val devicesLimit: Int? = null,
         @SerializedName("traffic_used_bytes") val trafficUsedBytes: Long? = null,
         @SerializedName("balance") val balance: String? = null,
+        // Already in roubles and already converted server-side — the app
+        // does no currency maths.
+        @SerializedName("balance_rub") val balanceRub: Int? = null,
         @SerializedName("frozen") val frozen: Boolean = false,
         @SerializedName("subscriptions") val subscriptions: List<Plan>? = null,
         @SerializedName("subscription_token") val subscriptionToken: String? = null,

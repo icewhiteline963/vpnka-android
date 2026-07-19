@@ -108,7 +108,6 @@ fun VpnkaConnectScreen(
     upBytes: Long,
     onToggle: () -> Unit,
     onOpenProfile: () -> Unit,
-    onOpenSettings: () -> Unit,
     onChangeServer: () -> Unit,
 ) {
     val accent by animateColorAsState(
@@ -150,7 +149,6 @@ fun VpnkaConnectScreen(
                 planTitle = planTitle,
                 trialHoursLeft = trialHoursLeft,
                 onOpenProfile = onOpenProfile,
-                onOpenSettings = onOpenSettings,
             )
 
             Column(
@@ -232,83 +230,82 @@ private fun VpnkaHeader(
     planTitle: String,
     trialHoursLeft: Int?,
     onOpenProfile: () -> Unit,
-    onOpenSettings: () -> Unit,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 20.dp, end = 20.dp, top = 62.dp),
+            .padding(start = 20.dp, end = 20.dp, top = 62.dp)
+            // The whole row opens the account. It carries the plan and the
+            // trial countdown, so it is already where someone looks to find
+            // out about their subscription.
+            .clickable(onClick = onOpenProfile),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // The plan line is already here, so this is where someone looks to
-        // find out about their subscription — tapping it opens the profile
-        // rather than hiding that behind the settings gear, which is about
-        // the app rather than the account.
+        // A person, not the product logo. The logo is on the connect button
+        // a few centimetres below and says «this is VPNka»; repeating it here
+        // says nothing, while a person says «your account is behind this».
         Box(
             modifier = Modifier
                 .size(38.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(Color.White)
-                .clickable(onClick = onOpenProfile),
+                .clip(CircleShape)
+                .background(Color.White),
+            contentAlignment = Alignment.Center,
         ) {
-            Image(
-                painter = painterResource(R.drawable.vpnka_logo),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
+            VpnkaPersonGlyph()
         }
         Spacer(Modifier.size(10.dp))
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .clickable(onClick = onOpenProfile),
-        ) {
-            Text(
-                text = "VPNka",
-                fontFamily = VpnkaFonts.nunito900,
-                fontWeight = VpnkaWeight.Black,
-                fontSize = 19.sp,
-                letterSpacing = (-0.3).sp,
-                color = VpnkaColors.TextBrand,
-            )
+        Column(modifier = Modifier.weight(1f)) {
             if (trialHoursLeft != null) {
                 // Loud on purpose: this is a countdown to the app going
-                // quiet, and the muted plan colour used everywhere else here
-                // would let it pass for decoration. Red and bold is the one
-                // place on this screen that asks for attention.
+                // quiet, and the muted plan colour used elsewhere would let
+                // it pass for decoration.
                 Text(
                     text = "До конца $trialHoursLeft ${pluralHours(trialHoursLeft)}, " +
                         "авторизуйтесь чтобы получить подписку!",
                     fontFamily = VpnkaFonts.nunito900,
                     fontWeight = VpnkaWeight.Black,
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
                     color = VpnkaColors.Warning,
                 )
             } else {
                 Text(
                     text = planTitle,
-                    fontFamily = VpnkaFonts.manrope600,
-                    fontWeight = VpnkaWeight.Semi,
-                    fontSize = 11.sp,
-                    color = VpnkaColors.TextFaint,
+                    fontFamily = VpnkaFonts.nunito800,
+                    fontWeight = VpnkaWeight.Extra,
+                    fontSize = 14.sp,
+                    color = VpnkaColors.TextStrong,
                 )
             }
         }
-        Box(
-            modifier = Modifier
-                .size(38.dp)
-                .clip(CircleShape)
-                .background(VpnkaColors.CardSettings)
-                .clickable(onClick = onOpenSettings),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                text = "⚙",
-                fontSize = 17.sp,
-                color = VpnkaColors.IconMuted,
-            )
-        }
+        Text(
+            text = "›",
+            fontSize = 20.sp,
+            color = VpnkaColors.TextFaint,
+        )
+    }
+}
+
+/** A simple head-and-shoulders mark, drawn rather than shipped. */
+@Composable
+private fun VpnkaPersonGlyph() {
+    androidx.compose.foundation.Canvas(modifier = Modifier.size(20.dp)) {
+        val w = size.width
+        val h = size.height
+        drawCircle(
+            color = VpnkaColors.IconMuted,
+            radius = w * 0.22f,
+            center = Offset(w / 2f, h * 0.30f),
+        )
+        // Shoulders: an arc clipped by the canvas bottom reads as a bust
+        // without needing a path.
+        drawArc(
+            color = VpnkaColors.IconMuted,
+            startAngle = 180f,
+            sweepAngle = 180f,
+            useCenter = true,
+            topLeft = Offset(w * 0.12f, h * 0.60f),
+            size = androidx.compose.ui.geometry.Size(w * 0.76f, h * 0.70f),
+        )
     }
 }
 

@@ -431,6 +431,7 @@ fun VpnkaSubscriptionScreen(
     onSupport: () -> Unit,
     onTopUp: () -> Unit,
     onShowRecovery: () -> Unit,
+    onOpenSettings: () -> Unit,
     onLinkTelegram: () -> Unit,
     onRetry: () -> Unit,
     onBack: () -> Unit,
@@ -470,9 +471,9 @@ fun VpnkaSubscriptionScreen(
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    info.balance?.let {
+                    info.balanceRub?.let {
                         Spacer(Modifier.height(12.dp))
-                        VpnkaInfoRow("Баланс", "${it.substringBefore('.')} ₽")
+                        VpnkaInfoRow("Баланс", "$it ₽")
                     }
                 }
 
@@ -502,8 +503,12 @@ fun VpnkaSubscriptionScreen(
                             )
                         }
                     }
-                    info.balance?.let {
-                        VpnkaInfoRow("Баланс", "${it.substringBefore('.')} ₽")
+                    // Roubles, converted server-side. The raw balance is in
+                    // the platform currency, and the app used to print that
+                    // number with a ₽ sign on it — a wrong figure about
+                    // money, which is the kind a user acts on.
+                    info.balanceRub?.let {
+                        VpnkaInfoRow("Баланс", "$it ₽")
                     }
                 }
             }
@@ -513,6 +518,7 @@ fun VpnkaSubscriptionScreen(
         TextButton(onClick = onRenew) { Text("Купить подписку") }
         TextButton(onClick = onTopUp) { Text("Пополнить баланс") }
         TextButton(onClick = onSupport) { Text("Связаться с оператором") }
+        TextButton(onClick = onOpenSettings) { Text("Настройки приложения") }
         TextButton(onClick = onShowRecovery) { Text("Код восстановления") }
         // Optional, and worded as such: the account works without Telegram.
         // Linking is for people who also want the bot, or who arrived from
@@ -637,6 +643,9 @@ internal fun pluralDays(n: Int): String {
 
 @Composable
 private fun VpnkaInfoRow(label: String, value: String) {
+    // Was 15sp in the theme's onSurfaceVariant — a pale grey that came from
+    // Material's palette rather than this design's, and read as disabled
+    // text on the warm background. Bigger and in the page's own darkest ink.
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -645,14 +654,17 @@ private fun VpnkaInfoRow(label: String, value: String) {
     ) {
         Text(
             text = label,
-            fontSize = 15.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontFamily = VpnkaFonts.manrope600,
+            fontWeight = VpnkaWeight.Semi,
+            fontSize = 16.sp,
+            color = VpnkaColors.TextMuted,
         )
         Text(
             text = value,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface,
+            fontFamily = VpnkaFonts.nunito800,
+            fontWeight = VpnkaWeight.Extra,
+            fontSize = 17.sp,
+            color = VpnkaColors.TextStrong,
         )
     }
 }

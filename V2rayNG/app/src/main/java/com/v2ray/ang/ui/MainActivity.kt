@@ -50,7 +50,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.DropdownMenu
-import androidx.activity.compose.BackHandler
+import androidx.activity.addCallback
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -221,6 +221,32 @@ class MainActivity : HelperBaseComponentActivity() {
         // still an empty screen. Fetch it now so the user's first sight of
         // the app is a working server list. Reuses the normal update path,
         // so it shows the same spinner and toasts as a manual refresh.
+        // Back, owned by the activity. Registered once, in priority order,
+        // and disabled on the main screen so leaving the app there is still
+        // the system's job.
+        onBackPressedDispatcher.addCallback(this) {
+            when {
+                showSupport -> showSupport = false
+                showTopUp -> showTopUp = false
+                showRecovery -> showRecovery = false
+                showServerPicker -> showServerPicker = false
+                showShop -> showShop = false
+                showSubscription -> showSubscription = false
+                showServers -> {
+                    showServers = false
+                    showSettings = false
+                }
+                showSettings -> showSettings = false
+                else -> {
+                    // Nothing of ours is open: hand the press back to the
+                    // system so it closes the app as it always would.
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                    isEnabled = true
+                }
+            }
+        }
+
         if (AngApplication.vpnkaNeedsTrialFetch) {
             AngApplication.vpnkaNeedsTrialFetch = false
             importConfigViaSub()
@@ -236,6 +262,24 @@ class MainActivity : HelperBaseComponentActivity() {
         }
     }
 
+    // Which overlay is open, owned by the activity rather than by the
+    // composition.
+    //
+    // These were `rememberSaveable` inside ScreenContent, and back kept
+    // reaching the system and closing the app. Two rounds of fixing the
+    // Compose-side handler didn't change that, so the dependency on
+    // composition is gone: the activity owns the state and answers back
+    // through its own dispatcher, which is registered once in onCreate and
+    // cannot be missed by a recomposition.
+    private var showServers by mutableStateOf(false)
+    private var showSettings by mutableStateOf(false)
+    private var showSubscription by mutableStateOf(false)
+    private var showShop by mutableStateOf(false)
+    private var showSupport by mutableStateOf(false)
+    private var showTopUp by mutableStateOf(false)
+    private var showRecovery by mutableStateOf(false)
+    private var showServerPicker by mutableStateOf(false)
+
     /** Set by the post-payment link; consumed on the next composition. */
     private var vpnkaOpenProfileAfterPayment = false
 
@@ -244,24 +288,16 @@ class MainActivity : HelperBaseComponentActivity() {
         // Our one-button screen is what the app opens on; upstream's full
         // server UI lives behind the long-press escape hatch below. Wrapping
         // rather than editing MainScreen keeps their releases mergeable as-is.
-        var showServers by rememberSaveable { mutableStateOf(false) }
-        var showSettings by rememberSaveable { mutableStateOf(false) }
-        var showSubscription by rememberSaveable { mutableStateOf(false) }
         var subInfo by remember { mutableStateOf<VpnkaAccount.Info?>(null) }
         var subLoading by remember { mutableStateOf(false) }
         var subReload by remember { mutableIntStateOf(0) }
         var signedIn by remember { mutableStateOf(VpnkaAccount.isSignedIn()) }
         var signingIn by remember { mutableStateOf(false) }
         var signInError by remember { mutableStateOf<String?>(null) }
-        var showShop by rememberSaveable { mutableStateOf(false) }
         var tariffs by remember { mutableStateOf<List<VpnkaAccount.Tariff>>(emptyList()) }
         var shopLoading by remember { mutableStateOf(false) }
         var shopError by remember { mutableStateOf<String?>(null) }
         var buying by remember { mutableStateOf(false) }
-        var showSupport by rememberSaveable { mutableStateOf(false) }
-        var showTopUp by rememberSaveable { mutableStateOf(false) }
-        var showRecovery by rememberSaveable { mutableStateOf(false) }
-        var showServerPicker by rememberSaveable { mutableStateOf(false) }
         var supportMessages by remember {
             mutableStateOf<List<VpnkaAccount.SupportMessage>>(emptyList())
         }
@@ -429,39 +465,6 @@ class MainActivity : HelperBaseComponentActivity() {
             )
         }
 
-        // One back handler for every overlay, registered before any of the
-        // branches below and in priority order.
-        //
-        // There used to be one per screen. Each was correct in isolation and
-        // the arrangement still let back fall through to the system, closing
-        // the app instead of returning home. Rather than keep guessing which
-        // of seven registrations wins, there is now exactly one — its
-        // behaviour can be read off the page.
-        //
-        // `enabled` is what hands back to the system on the main screen,
-        // where leaving the app is the right answer.
-        val anyOverlay = showSupport || showTopUp || showRecovery ||
-            showServerPicker || showShop || showSubscription ||
-            showSettings || showServers
-        BackHandler(enabled = anyOverlay) {
-            when {
-                showSupport -> showSupport = false
-                showTopUp -> showTopUp = false
-                showRecovery -> showRecovery = false
-                showServerPicker -> showServerPicker = false
-                showShop -> showShop = false
-                showSubscription -> showSubscription = false
-                // The advanced view is reached through settings, and going
-                // back from it lands home rather than in a screen the user
-                // passed through.
-                showServers -> {
-                    showServers = false
-                    showSettings = false
-                }
-                showSettings -> showSettings = false
-            }
-        }
-
         if (showSupport && !showServers) {
             VpnkaSupportScreen(
                 loading = supportLoading,
@@ -600,6 +603,7 @@ class MainActivity : HelperBaseComponentActivity() {
                 onSupport = { showSupport = true },
                 onTopUp = { showTopUp = true },
                 onShowRecovery = { showRecovery = true },
+                onOpenSettings = { showSettings = true },
                 onLinkTelegram = {
                     lifecycleScope.launch {
                         val url = VpnkaAccount.telegramLinkUrl()
@@ -708,7 +712,6 @@ class MainActivity : HelperBaseComponentActivity() {
                 upBytes = upBytes,
                 onToggle = ::handleFabAction,
                 onOpenProfile = { showSubscription = true },
-                onOpenSettings = { showSettings = true },
                 onChangeServer = { showServerPicker = true },
             )
             return
