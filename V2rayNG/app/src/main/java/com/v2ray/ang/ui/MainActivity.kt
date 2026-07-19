@@ -366,6 +366,7 @@ class MainActivity : HelperBaseComponentActivity() {
         var tariffs by remember { mutableStateOf<List<VpnkaAccount.Tariff>>(emptyList()) }
         var shopLoading by remember { mutableStateOf(false) }
         var shopError by remember { mutableStateOf<String?>(null) }
+        var shopReload by remember { mutableIntStateOf(0) }
         var buying by remember { mutableStateOf(false) }
         var supportMessages by remember {
             mutableStateOf<List<VpnkaAccount.SupportMessage>>(emptyList())
@@ -395,9 +396,16 @@ class MainActivity : HelperBaseComponentActivity() {
             }
         }
 
-        LaunchedEffect(showShop) {
+        // `shopReload` is what makes «Повторить» work. The retry used to be
+        // `showShop = false; showShop = true` in one lambda: state is not
+        // read back mid-composition, so the effect's key never changed value
+        // and the fetch never re-ran. The button looked alive and did
+        // nothing, which on a failed tariff load is the one moment the user
+        // has no other way forward.
+        LaunchedEffect(showShop, shopReload) {
             if (showShop) {
                 shopLoading = true
+                shopError = null
                 tariffs = VpnkaAccount.fetchTariffs().orEmpty()
                 shopLoading = false
             }
@@ -443,6 +451,12 @@ class MainActivity : HelperBaseComponentActivity() {
                 if (plans.isNotEmpty()) {
                     val switched = MmkvManager.syncSubscriptions(plans)
                     subs = MmkvManager.vpnkaSubscriptions()
+                    // The groups the viewmodel knows about are now out of
+                    // date — sync may have created one per plan. Everything
+                    // that selects a plan goes through the viewmodel, so
+                    // leaving it with the old list is what made the first tap
+                    // on a newly-appeared subscription do nothing.
+                    mainViewModel.setupGroupTab(forceRefresh = true)
                     if (switched != null) {
                         // Same path a manual refresh takes, so the user sees
                         // the familiar spinner and toasts rather than servers
@@ -699,7 +713,7 @@ class MainActivity : HelperBaseComponentActivity() {
                     }
                 },
                 onTopUp = { navigateTo("vpnka_month") },
-                onRetry = { showShop = false; showShop = true },
+                onRetry = { shopReload++ },
                 onBack = { showShop = false },
             )
             return

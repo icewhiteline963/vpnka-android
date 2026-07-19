@@ -112,11 +112,20 @@ class PerAppProxyViewModel : ViewModel() {
         SettingsChangeManager.makeRestartService()
     }
 
-    // Per‑app proxy switch
+    // Per‑app proxy switch.
+    //
+    // Both setters flag a restart, the same way `saveBlacklist` does.
+    // Editing the app list restarted the tunnel and switching the mode did
+    // not, so turning per-app routing on — or flipping it from "only these"
+    // to "all but these" — was written to storage and then ignored until
+    // something else happened to restart the service. The screen said one
+    // thing and the traffic did another, which for this setting is the
+    // difference between an app going through the VPN and not.
     fun setPerAppProxyEnabled(enabled: Boolean) {
         if (_perAppProxyEnabled.value != enabled) {
             _perAppProxyEnabled.value = enabled
             MmkvManager.encodeSettings(AppConfig.PREF_PER_APP_PROXY, enabled)
+            SettingsChangeManager.makeRestartService()
         }
     }
 
@@ -124,6 +133,7 @@ class PerAppProxyViewModel : ViewModel() {
         if (_bypassApps.value != enabled) {
             _bypassApps.value = enabled
             MmkvManager.encodeSettings(AppConfig.PREF_BYPASS_APPS, enabled)
+            SettingsChangeManager.makeRestartService()
         }
     }
 

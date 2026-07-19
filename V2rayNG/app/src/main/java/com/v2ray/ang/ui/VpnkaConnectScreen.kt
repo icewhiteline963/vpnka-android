@@ -10,6 +10,8 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.lazy.LazyColumn
@@ -24,6 +26,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -33,11 +36,15 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -168,41 +175,80 @@ fun VpnkaConnectScreen(
         // that does not scroll.
         val buttonSize = (maxHeight * 0.29f).coerceIn(140.dp, 230.dp)
         val headerTop = if (maxHeight < 720.dp) 34.dp else 62.dp
-        Column(modifier = Modifier.fillMaxSize()) {
-            VpnkaHeader(
-                onOpenProfile = onOpenProfile,
-                updateAvailable = updateVersion != null,
-                onCheckUpdate = onCheckUpdate,
-                topPadding = headerTop,
-                // Status sits on the icons' line — it is the one fact the
-                // screen exists to state, and it belongs at the top of it
-                // rather than floating above the button.
-                status = if (isRunning) "ЗАЩИЩЕНО" else "НЕ ЗАЩИЩЕНО",
-                statusColor = accent,
-            )
 
-            Text(
-                text = when {
-                    isLoading -> "Подключаемся…"
-                    isRunning -> "Ваш трафик зашифрован 🌼"
-                    else -> "Нажмите на цветочек"
-                },
-                fontFamily = VpnkaFonts.nunito800,
-                fontWeight = VpnkaWeight.Extra,
-                fontSize = 15.sp,
-                color = VpnkaColors.TextMuted,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 6.dp),
-            )
+        // The column scrolls, and the button's breathing room is measured
+        // rather than guessed.
+        //
+        // `weight(1f)` gave the middle whatever was left, which is the right
+        // look but silently clips instead of scrolling: with both banners up
+        // the rows along the bottom went off the end of the screen with no
+        // way to reach them. Inside a scrolling column weight has no meaning
+        // — there is no "left over" when the height is unbounded — so the
+        // middle takes an explicit height: the screen minus what the parts
+        // above and below actually measured. On a tall phone that is the
+        // same number weight produced, so the button stays exactly where it
+        // was tuned to sit; on a short one it bottoms out and the rest
+        // scrolls into reach.
+        val density = LocalDensity.current
+        var topPx by remember { mutableIntStateOf(0) }
+        var bottomPx by remember { mutableIntStateOf(0) }
+        val middleHeight = if (topPx == 0 && bottomPx == 0) {
+            // First frame, before anything has reported a size. A fraction
+            // close to the usual outcome, so the button doesn't visibly jump
+            // into place once the real numbers arrive.
+            maxHeight * 0.42f
+        } else {
+            val chrome = with(density) { (topPx + bottomPx).toDp() }
+            (maxHeight - chrome).coerceAtLeast(buttonSize + 96.dp)
+        }
 
-            // What is left between the header and the traffic cards, with
-            // the button centred in it: the two lines above no longer pull
-            // it off centre the way they did when they shared this column.
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+        ) {
+            // Measured as one block: everything above the button.
             Column(
                 modifier = Modifier
-                    .weight(1f)
+                    .fillMaxWidth()
+                    .onSizeChanged { topPx = it.height }
+            ) {
+                VpnkaHeader(
+                    onOpenProfile = onOpenProfile,
+                    updateAvailable = updateVersion != null,
+                    onCheckUpdate = onCheckUpdate,
+                    topPadding = headerTop,
+                    // Status sits on the icons' line — it is the one fact the
+                    // screen exists to state, and it belongs at the top of it
+                    // rather than floating above the button.
+                    status = if (isRunning) "ЗАЩИЩЕНО" else "НЕ ЗАЩИЩЕНО",
+                    statusColor = accent,
+                )
+
+                Text(
+                    text = when {
+                        isLoading -> "Подключаемся…"
+                        isRunning -> "Ваш трафик зашифрован 🌼"
+                        else -> "Нажмите на цветочек"
+                    },
+                    fontFamily = VpnkaFonts.nunito800,
+                    fontWeight = VpnkaWeight.Extra,
+                    fontSize = 15.sp,
+                    color = VpnkaColors.TextMuted,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 6.dp),
+                )
+
+            }
+
+            // The button, centred in what is left between the two measured
+            // blocks — the two lines above no longer pull it off centre the
+            // way they did when they shared one column.
+            Column(
+                modifier = Modifier
+                    .height(middleHeight)
                     .fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
@@ -225,9 +271,22 @@ fun VpnkaConnectScreen(
                 )
             }
 
+            // The nav bar's height is added to this block's own bottom
+            // padding, not subtracted from the screen: the app draws
+            // edge-to-edge, so on a phone with gesture navigation the last
+            // row — «приложения через VPN» — sat underneath the system bar
+            // and its taps went to the system. Measured after the padding,
+            // so the button above still gets the space that is actually
+            // left.
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    // onSizeChanged sits outside both paddings on purpose:
+                    // it reports the size of what is left of the chain, and
+                    // the middle's height is the screen minus what this
+                    // block *occupies*, insets included.
+                    .onSizeChanged { bottomPx = it.height }
+                    .navigationBarsPadding()
                     .padding(start = 20.dp, end = 20.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {

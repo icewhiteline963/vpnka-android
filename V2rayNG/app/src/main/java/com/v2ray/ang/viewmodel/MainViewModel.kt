@@ -487,7 +487,17 @@ class MainViewModel(
     }
 
     fun subscriptionIdChanged(id: String) {
-        if (_uiState.value.groups.none { it.id == id }) {
+        // Storage decides, not `uiState.groups`.
+        //
+        // The list in uiState is a snapshot taken by the last setupGroupTab,
+        // and a subscription synced after that — which is every plan the
+        // server has just told us about — is missing from it. Selecting one
+        // then hit this guard and returned without a word: the tap did
+        // nothing, no error, and the second tap worked only because the
+        // groups had been refreshed in between. Checking the store instead
+        // makes the first tap the one that counts, and a genuinely unknown
+        // id still returns.
+        if (MmkvManager.decodeSubscription(id) == null) {
             return
         }
         mutableServersForGroup(id)

@@ -63,7 +63,17 @@
         android:theme="@style/AppThemeDayNight.NoActionBar"
         android:usesCleartextTraffic="true">
 
+        <!-- Portrait everywhere. The screens are laid out as one column
+             sized against the viewport height, and in landscape the connect
+             button was pushed off the bottom with no way to scroll to it.
+             Locking is the honest fix for a UI that has no landscape design,
+             rather than pretending one exists.
+
+             Android 16+ ignores this on large screens (>600dp), so tablets
+             will still rotate — the layout has to survive that on its own,
+             which is what the scrolling container on the main screen is for. -->
         <activity
+            android:screenOrientation="portrait"
             android:name=".ui.MainActivity"
             android:exported="true"
             android:launchMode="singleTask">
@@ -82,101 +92,127 @@
                 android:resource="@xml/shortcuts" />
         </activity>
         <activity
+            android:screenOrientation="portrait"
             android:name=".ui.server.ServerVmessActivity"
             android:exported="false"
             android:windowSoftInputMode="stateUnchanged|adjustResize" />
         <activity
+            android:screenOrientation="portrait"
             android:name=".ui.server.ServerVlessActivity"
             android:exported="false"
             android:windowSoftInputMode="stateUnchanged|adjustResize" />
         <activity
+            android:screenOrientation="portrait"
             android:name=".ui.server.ServerShadowsocksActivity"
             android:exported="false"
             android:windowSoftInputMode="stateUnchanged|adjustResize" />
         <activity
+            android:screenOrientation="portrait"
             android:name=".ui.server.ServerSocksActivity"
             android:exported="false"
             android:windowSoftInputMode="stateUnchanged|adjustResize" />
         <activity
+            android:screenOrientation="portrait"
             android:name=".ui.server.ServerHttpActivity"
             android:exported="false"
             android:windowSoftInputMode="stateUnchanged|adjustResize" />
         <activity
+            android:screenOrientation="portrait"
             android:name=".ui.server.ServerTrojanActivity"
             android:exported="false"
             android:windowSoftInputMode="stateUnchanged|adjustResize" />
         <activity
+            android:screenOrientation="portrait"
             android:name=".ui.server.ServerWireguardActivity"
             android:exported="false"
             android:windowSoftInputMode="stateUnchanged|adjustResize" />
         <activity
+            android:screenOrientation="portrait"
             android:name=".ui.server.ServerHysteria2Activity"
             android:exported="false"
             android:windowSoftInputMode="stateUnchanged|adjustResize" />
         <activity
+            android:screenOrientation="portrait"
             android:name=".ui.server.ServerCustomConfigActivity"
             android:exported="false"
             android:windowSoftInputMode="stateUnchanged|adjustResize" />
         <activity
+            android:screenOrientation="portrait"
             android:name=".ui.server.ServerGroupActivity"
             android:exported="false"
             android:windowSoftInputMode="stateUnchanged|adjustResize" />
         <activity
+            android:screenOrientation="portrait"
             android:name=".ui.server.ServerProxyChainActivity"
             android:exported="false"
             android:windowSoftInputMode="stateUnchanged|adjustResize" />
         <activity
+            android:screenOrientation="portrait"
             android:name=".ui.SettingsActivity"
             android:exported="false" />
         <activity
+            android:screenOrientation="portrait"
             android:name=".ui.PerAppProxyActivity"
             android:exported="false" />
         <activity
+            android:screenOrientation="portrait"
             android:name=".ui.AppPickerActivity"
             android:exported="false" />
         <activity
+            android:screenOrientation="portrait"
             android:name=".ui.ScannerActivity"
             android:exported="false" />
         <activity
+            android:screenOrientation="portrait"
             android:name=".ui.LogcatActivity"
             android:exported="false" />
         <activity
+            android:screenOrientation="portrait"
             android:name=".ui.RoutingSettingActivity"
             android:exported="false" />
         <activity
+            android:screenOrientation="portrait"
             android:name=".ui.RoutingEditActivity"
             android:windowSoftInputMode="stateUnchanged|adjustResize"
             android:exported="false" />
         <activity
+            android:screenOrientation="portrait"
             android:name=".ui.SubSettingActivity"
             android:exported="false" />
         <activity
+            android:screenOrientation="portrait"
             android:name=".ui.UserAssetActivity"
             android:exported="false" />
         <activity
+            android:screenOrientation="portrait"
             android:name=".ui.UserAssetUrlActivity"
             android:exported="false" />
 
         <activity
+            android:screenOrientation="portrait"
             android:name=".ui.SubEditActivity"
             android:windowSoftInputMode="stateUnchanged|adjustResize"
             android:exported="false" />
         <activity
+            android:screenOrientation="portrait"
             android:name=".ui.ScScannerActivity"
             android:exported="false" />
         <activity
+            android:screenOrientation="portrait"
             android:name=".ui.ScSwitchActivity"
             android:excludeFromRecents="true"
             android:exported="false"
             android:process=":RunSoLibV2RayDaemon"
             android:theme="@style/AppThemeDayNight.NoActionBar.Translucent" />
         <activity
+            android:screenOrientation="portrait"
             android:name=".ui.ScStartActivity"
             android:excludeFromRecents="true"
             android:exported="false"
             android:process=":RunSoLibV2RayDaemon"
             android:theme="@style/AppThemeDayNight.NoActionBar.Translucent" />
         <activity
+            android:screenOrientation="portrait"
             android:name=".ui.ScStopActivity"
             android:excludeFromRecents="true"
             android:exported="false"
@@ -184,6 +220,7 @@
             android:theme="@style/AppThemeDayNight.NoActionBar.Translucent" />
 
         <activity
+            android:screenOrientation="portrait"
             android:name=".ui.UrlSchemeActivity"
             android:exported="true">
             <intent-filter>
@@ -213,12 +250,15 @@
             </intent-filter>
         </activity>
         <activity
+            android:screenOrientation="portrait"
             android:name=".ui.CheckUpdateActivity"
             android:exported="false" />
         <activity
+            android:screenOrientation="portrait"
             android:name=".ui.BackupActivity"
             android:exported="false" />
         <activity
+            android:screenOrientation="portrait"
             android:name=".ui.AboutActivity"
             android:exported="false" />
 
@@ -313,6 +353,7 @@
         </service>
         <!-- =====================Tasker===================== -->
         <activity
+            android:screenOrientation="portrait"
             android:name=".ui.TaskerActivity"
             android:exported="true"
             android:icon="@mipmap/ic_launcher">

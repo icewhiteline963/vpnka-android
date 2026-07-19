@@ -100,8 +100,20 @@ class AngApplication : Application() {
         // Re-fetch after an update as well as when there's nothing to
         // connect to: the config format follows the version we announce, so
         // an install that updates without refreshing keeps the old one.
-        vpnkaNeedsTrialFetch = MmkvManager.ensureTrialSubscription() or
-            MmkvManager.consumeVersionChanged(BuildConfig.VERSION_NAME)
+        //
+        // Main process only, for the same reason as the registration below —
+        // and here the consequence was quieter. `consumeVersionChanged`
+        // clears the flag as it reads it, so whichever of the three
+        // processes started first took the "version changed" signal. When
+        // that was :bg or the core's daemon, the UI process was told nothing
+        // had changed and skipped the post-update config refetch, leaving
+        // the install on the previous format until something else happened
+        // to trigger a fetch. `vpnkaNeedsTrialFetch` is read by
+        // MainActivity, which only ever runs here anyway.
+        if (isMainProcess()) {
+            vpnkaNeedsTrialFetch = MmkvManager.ensureTrialSubscription() or
+                MmkvManager.consumeVersionChanged(BuildConfig.VERSION_NAME)
+        }
 
         // Give this install an account if it hasn't got one. Nothing is
         // asked of the user — an account is simply what is needed to own a
