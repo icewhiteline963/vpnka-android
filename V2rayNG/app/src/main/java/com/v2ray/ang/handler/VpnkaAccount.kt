@@ -50,6 +50,10 @@ object VpnkaAccount {
         // so the server can only answer this when the app says which install
         // is asking.
         @SerializedName("trial_hours_left") val trialHoursLeft: Int? = null,
+        // Whether a Telegram is attached. Not the same as being signed in:
+        // the app registers an account on first launch, so everyone has a
+        // token, and only this says whether they are in their real account.
+        @SerializedName("telegram_linked") val telegramLinked: Boolean = false,
     )
 
     data class Plan(

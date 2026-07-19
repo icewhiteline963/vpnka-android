@@ -437,6 +437,7 @@ private fun VpnkaSettingsRow(
 fun VpnkaSubscriptionScreen(
     loading: Boolean,
     signedIn: Boolean,
+    telegramLinked: Boolean,
     signingIn: Boolean,
     signInError: String?,
     info: VpnkaAccount.Info?,
@@ -525,16 +526,24 @@ fun VpnkaSubscriptionScreen(
         // «не удалось привязать». Sign-in comes first because most people
         // arrive from the bot and already have an account; each says who
         // it is for, in those words.
-        VpnkaMenuRow(
-            "Войти по коду из бота",
-            { showSignIn = true },
-            subtitle = "Если аккаунт уже есть в Telegram — подписки и баланс",
-        )
-        VpnkaMenuRow(
-            "Подключить Telegram",
-            onLinkTelegram,
-            subtitle = "Если аккаунт заведён здесь, в приложении",
-        )
+        //
+        // Both disappear once a Telegram is attached, because both are then
+        // answered. The test is telegramLinked, not signedIn: the app makes
+        // an account on first launch, so signedIn is true for everyone and
+        // hiding on it would take away the only route to linking — the very
+        // gap that produced «не удалось привязать».
+        if (!telegramLinked) {
+            VpnkaMenuRow(
+                "Войти по коду из бота",
+                { showSignIn = true },
+                subtitle = "Если аккаунт уже есть в Telegram — подписки и баланс",
+            )
+            VpnkaMenuRow(
+                "Подключить Telegram",
+                onLinkTelegram,
+                subtitle = "Если аккаунт заведён здесь, в приложении",
+            )
+        }
         // Buying and topping up both need an account to charge. Without one
         // they lead to the Telegram sign-in rather than to a shop that
         // cannot complete — the destination is the missing step, not a
@@ -551,7 +560,10 @@ fun VpnkaSubscriptionScreen(
         )
         VpnkaMenuRow("Связаться с оператором", onSupport)
         VpnkaMenuRow("Настройки приложения", onOpenSettings)
-        VpnkaMenuRow("Код восстановления", onShowRecovery)
+        // Only worth showing to someone who has an account to recover.
+        if (telegramLinked) {
+            VpnkaMenuRow("Код восстановления", onShowRecovery)
+        }
         VpnkaMenuRow(
             if (VpnkaColors.dark) "Светлая тема" else "Тёмная тема",
             {

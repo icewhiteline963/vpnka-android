@@ -647,6 +647,7 @@ class MainActivity : HelperBaseComponentActivity() {
             VpnkaSubscriptionScreen(
                 loading = subLoading,
                 signedIn = signedIn,
+                telegramLinked = subInfo?.telegramLinked == true,
                 signingIn = signingIn,
                 signInError = signInError,
                 info = subInfo,
