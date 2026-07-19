@@ -23,8 +23,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -35,7 +33,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -44,13 +41,16 @@ import com.v2ray.ang.R
 import com.v2ray.ang.compose.AppDivider
 import com.v2ray.ang.compose.AppListItem
 import com.v2ray.ang.compose.AppTopBar
-import com.v2ray.ang.compose.colorFabActive
 import com.v2ray.ang.compose.verticalScrollbar
 import com.v2ray.ang.dto.AppInfo
-import com.v2ray.ang.extension.toastInfo
 import com.v2ray.ang.extension.toastSuccess
 import com.v2ray.ang.util.Utils
 import com.v2ray.ang.viewmodel.PerAppProxyViewModel
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 
 class PerAppProxyActivity : BaseComponentActivity() {
 
@@ -63,11 +63,33 @@ class PerAppProxyActivity : BaseComponentActivity() {
 
     @Composable
     override fun ScreenContent() {
+        var showModeHelp by remember { mutableStateOf(false) }
         val apps by viewModel.displayedApps.collectAsStateWithLifecycle()
         val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
         val blacklist by viewModel.blacklist.collectAsStateWithLifecycle()
         val perAppProxyEnabled by viewModel.perAppProxyEnabled.collectAsStateWithLifecycle()
         val bypassApps by viewModel.bypassApps.collectAsStateWithLifecycle()
+
+        if (showModeHelp) {
+            AlertDialog(
+                onDismissRequest = { showModeHelp = false },
+                title = { Text("Как это работает") },
+                text = {
+                    Text(
+                        "Системный — весь трафик телефона идёт через VPN. " +
+                            "Подходит большинству.\n\n" +
+                            "Выбранные — через VPN идут только отмеченные " +
+                            "приложения, остальные напрямую.\n\n" +
+                            "Обход — наоборот: через VPN идёт всё, кроме " +
+                            "отмеченных. Так оставляют напрямую банки и " +
+                            "госуслуги, которые не пускают с зарубежного адреса."
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = { showModeHelp = false }) { Text("Понятно") }
+                },
+            )
+        }
 
         PerAppProxyScreen(
             apps = apps,
@@ -78,9 +100,7 @@ class PerAppProxyActivity : BaseComponentActivity() {
             onBackClick = { finish() },
             onPerAppProxyChanged = { viewModel.setPerAppProxyEnabled(it) },
             onBypassAppsChanged = { viewModel.setBypassAppsEnabled(it) },
-            onInfoClick = {
-                toastInfo(R.string.summary_pref_per_app_proxy)
-            },
+            onInfoClick = { showModeHelp = true },
             onToggleApp = { viewModel.toggle(it) },
             onSearch = { viewModel.filterApps(it) },
             onSelectAll = { viewModel.selectAll() },
@@ -204,47 +224,31 @@ fun PerAppProxyScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceEvenly
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(
-                            text = stringResource(R.string.per_app_proxy_settings_enable),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Switch(
-                            checked = perAppProxyEnabled,
-                            modifier = Modifier.scale(0.65f),
-                            onCheckedChange = onPerAppProxyChanged,
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = MaterialTheme.colorScheme.onSecondary,
-                                checkedTrackColor = colorFabActive
-                            )
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(
-                            text = stringResource(R.string.switch_bypass_apps_mode),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Switch(
-                            checked = bypassApps,
-                            modifier = Modifier.scale(0.65f),
-                            onCheckedChange = onBypassAppsChanged,
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = MaterialTheme.colorScheme.onSecondary,
-                                checkedTrackColor = colorFabActive
-                            )
-                        )
-                    }
+                    // Three named modes instead of two switches whose
+                    // combinations the user had to work out. «Включить» plus
+                    // «обход» meant four states, one of them meaningless, and
+                    // nothing on screen said which apps ended up where.
+                    PerAppModeSelector(
+                        mode = when {
+                            !perAppProxyEnabled -> PerAppMode.SYSTEM
+                            bypassApps -> PerAppMode.BYPASS
+                            else -> PerAppMode.SELECTED
+                        },
+                        onModeChange = { mode ->
+                            when (mode) {
+                                PerAppMode.SYSTEM -> onPerAppProxyChanged(false)
+                                PerAppMode.SELECTED -> {
+                                    onPerAppProxyChanged(true)
+                                    onBypassAppsChanged(false)
+                                }
+                                PerAppMode.BYPASS -> {
+                                    onPerAppProxyChanged(true)
+                                    onBypassAppsChanged(true)
+                                }
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
                     IconButton(onClick = onInfoClick) {
                         Icon(
                             painter = painterResource(R.drawable.ic_about_24dp),
@@ -273,6 +277,59 @@ fun PerAppProxyScreen(
                     )
                     AppDivider()
                 }
+            }
+        }
+    }
+}
+
+/** Which apps the tunnel carries. */
+enum class PerAppMode(val label: String) {
+    SYSTEM("Системный"),
+    SELECTED("Выбранные"),
+    BYPASS("Обход"),
+}
+
+/**
+ * The three modes as one row of segments.
+ *
+ * A segmented control rather than switches because these are exclusive:
+ * with two switches the user had to hold «включено + обход» in their head
+ * and infer the result, and the fourth combination — off plus bypass —
+ * meant nothing at all. Naming the state removes the inference.
+ */
+@Composable
+private fun PerAppModeSelector(
+    mode: PerAppMode,
+    onModeChange: (PerAppMode) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        PerAppMode.entries.forEach { entry ->
+            val active = entry == mode
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(
+                        if (active) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.surfaceVariant
+                    )
+                    .clickable { onModeChange(entry) }
+                    .padding(vertical = 7.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = entry.label,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (active) MaterialTheme.colorScheme.onPrimary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
