@@ -34,6 +34,16 @@ object VpnkaColors {
      */
     var dark by mutableStateOf(false)
 
+    /**
+     * Whether the tunnel is up, for screens other than the main one.
+     *
+     * Kept here rather than threaded through every `VpnkaPage` call: the
+     * inner screens are plain pages that know nothing about the VPN, and
+     * adding a parameter to each would put the same value in fifteen call
+     * sites. Compose state, so flipping it repaints whatever is open.
+     */
+    var connected by mutableStateOf(false)
+
     private fun pick(light: Color, night: Color) = if (dark) night else light
 
     // Disconnected — the resting state. The accent survives inversion: it

@@ -337,6 +337,10 @@ class MainActivity : HelperBaseComponentActivity() {
     private var showShop by mutableStateOf(false)
     private var showSupport by mutableStateOf(false)
     private var showTickets by mutableStateOf(false)
+    // Telegram link the user asked for while the tunnel was down. Held until
+    // the VPN reports itself up, then opened.
+    private var askVpnForTelegram by mutableStateOf(false)
+    private var telegramLinkPending by mutableStateOf(false)
     private var openedTicket by mutableStateOf<VpnkaAccount.SupportTicket?>(null)
     private var showTopUp by mutableStateOf(false)
     private var showRecovery by mutableStateOf(false)
@@ -470,6 +474,50 @@ class MainActivity : HelperBaseComponentActivity() {
             }
         }
         val uiState by mainViewModel.uiState.collectAsStateWithLifecycle()
+
+        // Inner screens read this to paint themselves green while the
+        // tunnel is up, the same as the main screen.
+        VpnkaColors.connected = uiState.isRunning
+
+        // The link was asked for before the VPN was up. Open it the moment
+        // it is — waiting for the user to tap again would lose the thread
+        // of what they were doing.
+        LaunchedEffect(uiState.isRunning) {
+            if (telegramLinkPending && uiState.isRunning) {
+                telegramLinkPending = false
+                openTelegramLink()
+            }
+        }
+
+        if (askVpnForTelegram) {
+            AlertDialog(
+                onDismissRequest = { askVpnForTelegram = false },
+                title = { Text("Включить VPN?") },
+                text = {
+                    Text(
+                        "Telegram у большинства провайдеров заблокирован — " +
+                            "без VPN ссылка не откроется. Включим и сразу " +
+                            "перейдём в бота."
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        askVpnForTelegram = false
+                        telegramLinkPending = true
+                        handleFabAction()
+                    }) { Text("Включить") }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        askVpnForTelegram = false
+                        // Their call: some networks pass Telegram fine, and
+                        // refusing to open the link would be worse than a
+                        // page that might not load.
+                        openTelegramLink()
+                    }) { Text("Открыть без VPN") }
+                },
+            )
+        }
 
         // Which plan is active comes from the viewmodel, not from a second
         // copy kept here. Two sources of truth for this is what put the
@@ -734,7 +782,7 @@ class MainActivity : HelperBaseComponentActivity() {
                 onTopUp = { showTopUp = true },
                 onShowRecovery = { showRecovery = true },
                 onOpenSettings = { showSettings = true },
-                onLinkTelegram = { openTelegramLink() },
+                onLinkTelegram = { openTelegramLinkGuarded() },
                 onRetry = { subReload++ },
                 onBack = { showSubscription = false },
             )
@@ -801,7 +849,7 @@ class MainActivity : HelperBaseComponentActivity() {
                 // Same door as «Подключить Telegram»: the month is granted
                 // by the bot on arrival, and the link carries the token that
                 // ties it to this install.
-                onGetFreeMonth = { openTelegramLink() },
+                onGetFreeMonth = { openTelegramLinkGuarded() },
                 // Switching the plan switches the local subscription group
                 // the server list is drawn from; the effect watching that
                 // list then moves the selection to a server that exists in
@@ -1350,6 +1398,21 @@ class MainActivity : HelperBaseComponentActivity() {
      * claiming the free month and renewing are the same trip through the
      * same token, and three copies would drift.
      */
+    /**
+     * Open the bot, making sure it can actually be reached.
+     *
+     * Telegram is blocked on the networks this app exists for, so tapping
+     * «Подключить Telegram» with the tunnel down opened a browser that
+     * timed out — and the failure looked like ours. Ask first, then open.
+     */
+    private fun openTelegramLinkGuarded() {
+        if (mainViewModel.uiState.value.isRunning) {
+            openTelegramLink()
+        } else {
+            askVpnForTelegram = true
+        }
+    }
+
     private fun openTelegramLink() {
         lifecycleScope.launch {
             val url = VpnkaAccount.telegramLinkUrl()

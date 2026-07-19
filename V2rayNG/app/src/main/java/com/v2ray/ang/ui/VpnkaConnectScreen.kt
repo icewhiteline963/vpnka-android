@@ -876,8 +876,15 @@ fun VpnkaPage(
         modifier = Modifier
             .fillMaxSize()
             .background(
+                // Follows the tunnel, like the main screen: turning the VPN
+                // on from inside the profile should be visible there and
+                // not only after going back.
                 Brush.radialGradient(
-                    colorStops = arrayOf(
+                    colorStops = if (VpnkaColors.connected) arrayOf(
+                        0f to VpnkaColors.BgOnCentre,
+                        0.6f to VpnkaColors.BgOnMid,
+                        1f to VpnkaColors.BgOnEdge,
+                    ) else arrayOf(
                         0f to VpnkaColors.BgOffCentre,
                         0.6f to VpnkaColors.BgOffMid,
                         1f to VpnkaColors.BgOffEdge,
