@@ -51,6 +51,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.DropdownMenu
 import androidx.activity.addCallback
+import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -434,6 +435,36 @@ class MainActivity : HelperBaseComponentActivity() {
                     }) { Text("Позже") }
                 },
             )
+        }
+
+        // A second back handler, registered during composition.
+        //
+        // The activity already registers one in onCreate. That should be
+        // enough, and by every reading of the code it is — but the gesture
+        // still closed the app, while the on-screen ‹ button worked, which
+        // says the press never reached the dispatcher rather than that the
+        // state was wrong.
+        //
+        // Compose registers this one later, and Android dispatches to the
+        // most recently added enabled callback first. Belt and braces: if
+        // either mechanism is delivered, back stays inside the app.
+        val anyOverlay = showSupport || showTopUp || showRecovery ||
+            showServerPicker || showShop || showSubscription ||
+            showSettings || showServers
+        BackHandler(enabled = anyOverlay) {
+            when {
+                showSupport -> showSupport = false
+                showTopUp -> showTopUp = false
+                showRecovery -> showRecovery = false
+                showServerPicker -> showServerPicker = false
+                showShop -> showShop = false
+                showSubscription -> showSubscription = false
+                showServers -> {
+                    showServers = false
+                    showSettings = false
+                }
+                showSettings -> showSettings = false
+            }
         }
 
         if (showSupport && !showServers) {
