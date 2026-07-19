@@ -12,6 +12,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import ColumnScope
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -580,7 +583,7 @@ internal fun pluralHours(n: Int): String {
 fun VpnkaPage(
     title: String,
     onBack: () -> Unit,
-    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
 ) {
     Box(
         modifier = Modifier
@@ -632,7 +635,7 @@ fun VpnkaPage(
 @Composable
 fun VpnkaCard(
     modifier: Modifier = Modifier,
-    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
 ) {
     Column(
         modifier = modifier
@@ -761,10 +764,10 @@ fun VpnkaServersScreen(
         )
         Spacer(Modifier.height(8.dp))
 
-        androidx.compose.foundation.lazy.LazyColumn(
+        LazyColumn(
             modifier = Modifier.weight(1f),
         ) {
-            androidx.compose.foundation.lazy.items(servers) { server ->
+            items(servers) { server ->
                 VpnkaChoiceRow(
                     title = server.name,
                     subtitle = server.delay.takeIf { it.isNotBlank() },
