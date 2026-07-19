@@ -950,6 +950,19 @@ object MmkvManager {
 
     fun setExpiryReminded(stage: Int) = encodeSettings(VPNKA_EXPIRY_STAGE, stage.toString())
 
+    /**
+     * Whether the current server is the user's choice or ours.
+     *
+     * Without this the two are indistinguishable, and an automatic pick
+     * made when «Авто» happened to be missing outlives the reason for it:
+     * the guid stays valid, so nothing ever revisits it, and the app keeps
+     * defaulting to whichever city it grabbed that day.
+     */
+    fun wasServerPickedByUser(): Boolean = decodeSettingsBool(VPNKA_SERVER_BY_USER, false)
+
+    fun setServerPickedByUser(byUser: Boolean) =
+        encodeSettings(VPNKA_SERVER_BY_USER, byUser)
+
     fun isDarkTheme(): Boolean = decodeSettingsBool(VPNKA_DARK_THEME, false)
 
     fun setDarkTheme(on: Boolean) = encodeSettings(VPNKA_DARK_THEME, on)
@@ -979,6 +992,7 @@ object MmkvManager {
     private const val VPNKA_SUB_MATCH = "https://get.vpnka.io/sub/"
     private const val VPNKA_DARK_THEME = "vpnka_dark_theme"
     private const val VPNKA_EXPIRY_STAGE = "vpnka_expiry_stage"
+    private const val VPNKA_SERVER_BY_USER = "vpnka_server_by_user"
 
     /**
      * This install's account token, or null when signed out.

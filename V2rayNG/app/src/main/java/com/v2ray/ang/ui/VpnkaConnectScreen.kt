@@ -176,13 +176,7 @@ fun VpnkaConnectScreen(
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxWidth()
-                    // Lifted off centre: the rows along the bottom have grown
-                    // and were crowding the button. Padding rather than an
-                    // offset, so the centring still happens inside whatever
-                    // space is left instead of pushing content off a short
-                    // screen.
-                    .padding(bottom = 30.dp),
+                    .fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {

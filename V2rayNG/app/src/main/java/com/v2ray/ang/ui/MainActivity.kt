@@ -874,7 +874,7 @@ class MainActivity : HelperBaseComponentActivity() {
                 isLoading = uiState.isLoading,
                 isTesting = uiState.isTesting,
                 onSelectServer = {
-                    setSelectServer(it)
+                    setSelectServer(it, byUser = true)
                     showServerPicker = false
                 },
                 onRefresh = ::importConfigViaSub,
@@ -905,9 +905,19 @@ class MainActivity : HelperBaseComponentActivity() {
                 // user picked, and only that is left alone.
                 val chosen = uiState.selectedGuid
                 val stillListed = options.any { it.guid == chosen }
-                if (!stillListed && options.isNotEmpty()) {
-                    val auto = options.firstOrNull { it.name.contains("Авто") }
-                    setSelectServer((auto ?: options.first()).guid)
+                val auto = options.firstOrNull { it.name.contains("Авто") }
+                when {
+                    !stillListed && options.isNotEmpty() ->
+                        setSelectServer((auto ?: options.first()).guid)
+
+                    // Still listed, but never actually chosen by anyone: an
+                    // automatic pick from a day when «Авто» was missing stays
+                    // valid forever, so nothing revisits it and the app keeps
+                    // opening on whichever city it grabbed back then. Move to
+                    // «Авто» now that it exists; a real choice is left alone.
+                    auto != null && chosen != auto.guid &&
+                        !MmkvManager.wasServerPickedByUser() ->
+                        setSelectServer(auto.guid)
                 }
             }
 
@@ -1337,7 +1347,8 @@ class MainActivity : HelperBaseComponentActivity() {
         }
     }
 
-    private fun setSelectServer(guid: String) {
+    private fun setSelectServer(guid: String, byUser: Boolean = false) {
+        MmkvManager.setServerPickedByUser(byUser)
         // A guid the picker offered but storage cannot decode is stale, and
         // worth refreshing over. But the selection still has to happen:
         // this same method is what auto-picks a server at startup, and
