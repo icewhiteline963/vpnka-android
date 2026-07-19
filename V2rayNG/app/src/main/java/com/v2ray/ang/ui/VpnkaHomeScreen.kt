@@ -377,7 +377,6 @@ fun VpnkaSubscriptionScreen(
     signingIn: Boolean,
     signInError: String?,
     info: VpnkaAccount.Info?,
-    hasSubscription: Boolean,
     onSignIn: (String) -> Unit,
     onSignOut: () -> Unit,
     onGetCode: () -> Unit,
@@ -473,9 +472,9 @@ fun VpnkaSubscriptionScreen(
         TextButton(onClick = onSupport) { Text("Связаться с оператором") }
         if (signedIn) {
             TextButton(onClick = onSignOut) { Text("Выйти из аккаунта") }
-        } else if (!hasSubscription) {
-            // Signed out and running on the shipped trial: say what they're
-            // actually on, so «не активна» above never reads as a fault.
+        } else {
+            // Signed out means running on the shipped 24h trial: say what
+            // they're actually on, so nothing above reads as a fault.
             Spacer(Modifier.height(8.dp))
             Text(
                 text = "Сейчас работает пробный доступ на сутки.",

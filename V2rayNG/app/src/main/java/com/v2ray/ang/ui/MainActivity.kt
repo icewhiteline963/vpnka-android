@@ -333,7 +333,6 @@ class MainActivity : HelperBaseComponentActivity() {
                 signingIn = signingIn,
                 signInError = signInError,
                 info = subInfo,
-                hasSubscription = signedIn,
                 onSignIn = { code ->
                     signingIn = true
                     signInError = null
