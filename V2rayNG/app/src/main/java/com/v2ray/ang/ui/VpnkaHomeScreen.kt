@@ -644,7 +644,7 @@ private fun VpnkaPlanCard(plan: VpnkaAccount.Plan) {
     }
 }
 
-private fun pluralDays(n: Int): String {
+internal fun pluralDays(n: Int): String {
     val a = kotlin.math.abs(n)
     return when {
         a % 10 == 1 && a % 100 != 11 -> "день"

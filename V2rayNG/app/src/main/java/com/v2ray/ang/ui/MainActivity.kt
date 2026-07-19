@@ -72,6 +72,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -129,6 +130,7 @@ import com.v2ray.ang.extension.toast
 import com.v2ray.ang.extension.toastError
 import com.v2ray.ang.extension.toastSuccess
 import com.v2ray.ang.handler.AngConfigManager
+import com.v2ray.ang.handler.VpnkaSession
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsChangeManager
 import com.v2ray.ang.handler.SettingsManager
@@ -273,6 +275,34 @@ class MainActivity : HelperBaseComponentActivity() {
                 supportLoading = true
                 supportMessages = VpnkaAccount.fetchSupport()
                 supportLoading = false
+            }
+        }
+
+        // Session clock and live speed for the connect screen. Ticked here
+        // rather than in the viewmodel so it stops when the screen goes away:
+        // reading the core's counters resets them, and a poller running
+        // behind a closed screen would quietly eat the numbers the speed
+        // notification is trying to show.
+        var sessionSeconds by remember { mutableLongStateOf(0L) }
+        var downMbps by remember { mutableStateOf<Double?>(null) }
+        var upMbps by remember { mutableStateOf<Double?>(null) }
+
+        LaunchedEffect(uiState.isRunning) {
+            if (!uiState.isRunning) {
+                sessionSeconds = 0L
+                downMbps = null
+                upMbps = null
+                VpnkaSession.elapsedSeconds(false, System.currentTimeMillis())
+                return@LaunchedEffect
+            }
+            while (true) {
+                val now = System.currentTimeMillis()
+                sessionSeconds = VpnkaSession.elapsedSeconds(true, now)
+                VpnkaSession.sampleSpeed(now)?.let {
+                    downMbps = it.downMbps
+                    upMbps = it.upMbps
+                }
+                kotlinx.coroutines.delay(1000)
             }
         }
 
@@ -592,32 +622,35 @@ class MainActivity : HelperBaseComponentActivity() {
                 }
             }
 
-            VpnkaHomeScreen(
+            VpnkaConnectScreen(
                 isRunning = uiState.isRunning,
                 isLoading = uiState.isLoading,
-                isTesting = uiState.isTesting,
-                servers = options,
-                selectedGuid = uiState.selectedGuid,
+                // Real subscription, not the handoff's «Премиум · 214 дней»:
+                // the plan the user actually holds and the days actually
+                // left, or a plain word when there is no purchase yet.
+                planTitle = subInfo?.let { info ->
+                    val days = info.daysLeft
+                    when {
+                        !info.active -> "Пробный доступ"
+                        days != null -> "${info.tariff ?: "Подписка"} · $days ${pluralDays(days)}"
+                        else -> info.tariff ?: "Подписка"
+                    }
+                } ?: "Пробный доступ",
+                serverName = options.firstOrNull { it.guid == uiState.selectedGuid }
+                    ?.name ?: "Выбрать сервер",
+                serverDelay = options.firstOrNull { it.guid == uiState.selectedGuid }
+                    ?.delay?.takeIf { it.isNotBlank() } ?: "нажмите «Сменить»",
+                sessionSeconds = sessionSeconds,
+                downloadMbps = downMbps,
+                uploadMbps = upMbps,
                 onToggle = ::handleFabAction,
-                onSelectServer = ::setSelectServer,
-                onRefreshSubscription = ::importConfigViaSub,
-                onSpeedTest = mainViewModel::testAllRealPing,
-                onCheckUpdate = { navigateTo("check_update") },
+                onOpenProfile = { showSubscription = true },
                 onOpenSettings = { showSettings = true },
-                onOpenSubscription = { showSubscription = true },
-                subscriptions = subs.map { (guid, name) -> VpnkaSubOption(guid, name) },
-                selectedSubGuid = selectedSub,
-                onSelectSubscription = { guid ->
-                    MmkvManager.selectSubscription(guid)
-                    selectedSub = guid
-                    // Switching plans changes which servers exist, so the
-                    // list has to be refetched rather than reused.
-                    importConfigViaSub()
-                },
-                updateVersion = updateVersion,
+                onChangeServer = { showServers = true },
             )
             return
         }
+
 
         // Hardware back returns to the simple screen instead of leaving the
         // app — otherwise the advanced view is a one-way door.
