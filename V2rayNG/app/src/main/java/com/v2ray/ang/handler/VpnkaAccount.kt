@@ -136,6 +136,7 @@ object VpnkaAccount {
                         IllegalStateException("no token in response")
                     )
                 MmkvManager.setAccountToken(token)
+                MmkvManager.setSessionRevoked(false)
                 Result.success(Unit)
             }
         } catch (e: Exception) {
@@ -163,6 +164,11 @@ object VpnkaAccount {
      */
     suspend fun register(): Boolean = withContext(Dispatchers.IO) {
         if (MmkvManager.getAccountToken() != null) return@withContext true
+        // A revoked session means an account already exists and someone
+        // decided this device should not reach it. Making a new one hides
+        // that decision and loses the account; the profile screen asks the
+        // user to sign in again instead.
+        if (MmkvManager.wasSessionRevoked()) return@withContext false
         val body = JsonUtil.toJson(mapOf("label" to deviceLabel()))
             .toRequestBody("application/json".toMediaType())
         try {
@@ -220,6 +226,7 @@ object VpnkaAccount {
                         IllegalStateException("no token")
                     )
                 MmkvManager.setAccountToken(token)
+                MmkvManager.setSessionRevoked(false)
                 Result.success(Unit)
             }
         } catch (e: Exception) {
@@ -253,6 +260,12 @@ object VpnkaAccount {
                 if (resp.code == 401) {
                     LogUtil.w(AppConfig.TAG, "profile: session revoked")
                     MmkvManager.setAccountToken(null)
+                    // Remember that this was a revocation, not a fresh
+                    // install. Without it the next launch quietly registers
+                    // a brand-new empty account and the user is left staring
+                    // at «подписка не активна» while their real one — with
+                    // the subscriptions and the balance — still exists.
+                    MmkvManager.setSessionRevoked(true)
                     return@withContext null
                 }
                 if (!resp.isSuccessful) {

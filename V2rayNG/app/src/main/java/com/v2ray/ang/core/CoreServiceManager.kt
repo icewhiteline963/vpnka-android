@@ -301,6 +301,12 @@ object CoreServiceManager {
     fun stopCoreLoop(): Boolean {
         val service = getService() ?: return false
 
+        // The session is over here, and only here. It used to be stopped on
+        // ACTION_SCREEN_OFF instead, so the timer kept counting after the
+        // user disconnected and reset itself when the screen went dark —
+        // exactly backwards.
+        VpnkaSession.stop()
+
         if (coreController.isRunning) {
             CoroutineScope(Dispatchers.IO).launch {
                 try {
@@ -540,7 +546,10 @@ object CoreServiceManager {
                 Intent.ACTION_SCREEN_OFF -> {
                     LogUtil.i(AppConfig.TAG, "StartCore-Manager: Screen off")
                     NotificationManager.stopSpeedNotification()
-                    VpnkaSession.stop()
+                    // The session counter keeps running: the tunnel is still
+                    // up and still carrying data, and stopping here reset the
+                    // totals — the screen going dark is not the end of a
+                    // session. It is stopped where the core is stopped.
                 }
 
                 Intent.ACTION_SCREEN_ON -> {

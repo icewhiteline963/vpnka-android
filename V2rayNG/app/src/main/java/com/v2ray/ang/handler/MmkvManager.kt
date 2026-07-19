@@ -906,6 +906,24 @@ object MmkvManager {
     }
 
     private const val KEY_VPNKA_ACCOUNT_TOKEN = "vpnka_account_token"
+    private const val KEY_VPNKA_SESSION_REVOKED = "vpnka_session_revoked"
+
+    /**
+     * True when the backend refused this device's token.
+     *
+     * The difference between "no account yet" and "an account exists but
+     * this device was cut off" matters: the first should be given a new
+     * account silently, the second must not be, or the user quietly ends up
+     * on an empty account while the one holding their subscriptions is still
+     * there. Cleared by a successful sign-in.
+     */
+    fun wasSessionRevoked(): Boolean =
+        settingsStorage.decodeBool(KEY_VPNKA_SESSION_REVOKED, false)
+
+    fun setSessionRevoked(value: Boolean) {
+        settingsStorage.encode(KEY_VPNKA_SESSION_REVOKED, value)
+    }
+
     private const val KEY_VPNKA_RECOVERY = "vpnka_recovery_code"
 
     /**

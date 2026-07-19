@@ -46,6 +46,13 @@ object VpnkaSession {
 
         job = CoroutineScope(Dispatchers.IO).launch {
             while (isActive) {
+                // Self-guard: if the core stopped by a path that forgot to
+                // call stop(), the timer must not keep counting a session
+                // that has ended.
+                if (!CoreServiceManager.isRunning()) {
+                    stop()
+                    return@launch
+                }
                 accumulate()
                 MessageUtil.sendMsg2UI(
                     context,
