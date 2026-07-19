@@ -21,7 +21,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.CircularProgressIndicator
@@ -906,22 +908,40 @@ fun VpnkaSupportScreen(
         }
 
         Spacer(Modifier.height(12.dp))
+        // Explicit colours, not the theme's. Material defaults are drawn
+        // for a grey surface; on this warm wash the typed text and the label
+        // came out barely darker than the background — the same way the
+        // profile menu did, and for the same reason.
         OutlinedTextField(
             value = draft,
             onValueChange = { draft = it.take(4000) },
-            label = { Text("Сообщение") },
+            label = { Text("Сообщение", color = VpnkaColors.TextMuted) },
             enabled = !sending,
+            textStyle = LocalTextStyle.current.copy(
+                color = VpnkaColors.TextStrong,
+                fontSize = 15.sp,
+            ),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = VpnkaColors.TextStrong,
+                unfocusedTextColor = VpnkaColors.TextStrong,
+                disabledTextColor = VpnkaColors.TextMuted,
+                cursorColor = VpnkaColors.Accent,
+                focusedBorderColor = VpnkaColors.Accent,
+                unfocusedBorderColor = VpnkaColors.TextFaint,
+                focusedLabelColor = VpnkaColors.Accent,
+                unfocusedLabelColor = VpnkaColors.TextMuted,
+            ),
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(8.dp))
-        Button(
+        VpnkaPrimaryButton(
+            text = if (sending) "Отправляем…" else "Отправить",
             onClick = {
                 onSend(draft)
                 draft = ""
             },
             enabled = draft.isNotBlank() && !sending,
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text(if (sending) "Отправляем…" else "Отправить") }
+        )
 
         }
     }

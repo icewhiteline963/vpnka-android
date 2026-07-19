@@ -1067,6 +1067,7 @@ fun VpnkaPlansListScreen(
     activeToken: String?,
     trialHoursLeft: Int?,
     onGetFreeMonth: () -> Unit,
+    onSelectPlan: (VpnkaAccount.Plan) -> Unit,
     onOpenPlan: (VpnkaAccount.Plan) -> Unit,
     onBuy: () -> Unit,
     onBack: () -> Unit,
@@ -1112,20 +1113,17 @@ fun VpnkaPlansListScreen(
                     }
                 }.ifBlank { null }
 
-                if (live) {
-                    VpnkaPlanRowActive(
-                        title = plan.tariff ?: "Подписка",
-                        subtitle = subtitle,
-                        onClick = { onOpenPlan(plan) },
-                    )
-                } else {
-                    VpnkaChoiceRow(
-                        title = plan.tariff ?: "Подписка",
-                        subtitle = subtitle,
-                        selected = false,
-                        onClick = { onOpenPlan(plan) },
-                    )
-                }
+                // Tapping the row switches the traffic to that plan —
+                // the thing a list of plans is for. Details moved to their
+                // own button: reading a plan and using it are different
+                // intentions, and one tap cannot mean both.
+                VpnkaPlanRow2(
+                    title = plan.tariff ?: "Подписка",
+                    subtitle = subtitle,
+                    live = live,
+                    onSelect = { onSelectPlan(plan) },
+                    onDetails = { onOpenPlan(plan) },
+                )
                 Spacer(Modifier.height(8.dp))
             }
             Spacer(Modifier.height(12.dp))
@@ -1142,6 +1140,69 @@ fun VpnkaPlansListScreen(
  * invitation. It also matches the colour the connect button turns when
  * the tunnel is up, so the two read as the same signal.
  */
+@Composable
+private fun VpnkaPlanRow2(
+    title: String,
+    subtitle: String?,
+    live: Boolean,
+    onSelect: () -> Unit,
+    onDetails: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(
+                if (live) VpnkaColors.Green.copy(alpha = 0.14f)
+                else VpnkaColors.CardSpeed
+            ),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // The row itself selects. Its tap target stops short of the details
+        // button so the two cannot be confused by a thumb.
+        Row(
+            modifier = Modifier
+                .weight(1f)
+                .clickable(onClick = onSelect)
+                .padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    fontFamily = VpnkaFonts.nunito800,
+                    fontWeight = VpnkaWeight.Extra,
+                    fontSize = 15.sp,
+                    color = VpnkaColors.TextStrong,
+                )
+                if (subtitle != null) {
+                    Text(
+                        text = subtitle,
+                        fontFamily = VpnkaFonts.manrope600,
+                        fontWeight = VpnkaWeight.Semi,
+                        fontSize = 12.sp,
+                        color = if (live) VpnkaColors.Green else VpnkaColors.TextFaint,
+                    )
+                }
+            }
+            if (live) {
+                Text(text = "●", fontSize = 14.sp, color = VpnkaColors.Green)
+            }
+        }
+        Text(
+            text = "Детали ›",
+            fontFamily = VpnkaFonts.nunito800,
+            fontWeight = VpnkaWeight.Extra,
+            fontSize = 13.sp,
+            color = VpnkaColors.Accent,
+            modifier = Modifier
+                .clip(RoundedCornerShape(12.dp))
+                .clickable(onClick = onDetails)
+                .padding(horizontal = 14.dp, vertical = 14.dp),
+        )
+    }
+}
+
 @Composable
 private fun VpnkaPlanRowActive(
     title: String,

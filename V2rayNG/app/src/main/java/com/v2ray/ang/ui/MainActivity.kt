@@ -754,6 +754,20 @@ class MainActivity : HelperBaseComponentActivity() {
                 // by the bot on arrival, and the link carries the token that
                 // ties it to this install.
                 onGetFreeMonth = { openTelegramLink() },
+                // Switching the plan switches the local subscription group
+                // the server list is drawn from; the effect watching that
+                // list then moves the selection to a server that exists in
+                // it. Going through the viewmodel keeps the group and the
+                // config on the same subscription — two sources of truth
+                // here is what once sent traffic through one plan while the
+                // screen named another.
+                onSelectPlan = { plan ->
+                    val guid = plan.groupToken?.let { MmkvManager.vpnkaGuidForToken(it) }
+                    if (guid != null) {
+                        mainViewModel.subscriptionIdChanged(guid)
+                        toast("Активная подписка: ${plan.tariff ?: "выбрана"}")
+                    }
+                },
                 onOpenPlan = { openedPlan = it },
                 onBuy = {
                     showPlansList = false

@@ -1067,6 +1067,12 @@ object MmkvManager {
      * by local guid, and only the stored URL joins the two. Without this the
      * UI cannot say which of several plans is the one carrying traffic.
      */
+    /** The local group behind an account-side token — the inverse of below. */
+    fun vpnkaGuidForToken(token: String): String? =
+        decodeSubscriptions()
+            .firstOrNull { it.subscription.url == VPNKA_SUB_PREFIX + token }
+            ?.guid
+
     fun vpnkaTokenForGuid(guid: String?): String? {
         if (guid.isNullOrBlank()) return null
         val url = decodeSubscriptions()
