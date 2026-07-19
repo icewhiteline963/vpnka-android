@@ -236,14 +236,37 @@ class MainActivity : HelperBaseComponentActivity() {
         var subInfo by remember { mutableStateOf<VpnkaAccount.Info?>(null) }
         var subLoading by remember { mutableStateOf(false) }
         var subReload by remember { mutableIntStateOf(0) }
+        var signedIn by remember { mutableStateOf(VpnkaAccount.isSignedIn()) }
+        var signingIn by remember { mutableStateOf(false) }
+        var signInError by remember { mutableStateOf<String?>(null) }
 
         // Fetch only while the screen is open, and again on retry. Polling
         // it in the background would spend requests on a card nobody is
         // looking at — days-left doesn't change while you watch it.
-        LaunchedEffect(showSubscription, subReload) {
-            if (showSubscription) {
+        LaunchedEffect(showSubscription, subReload, signedIn) {
+            if (showSubscription && signedIn) {
                 subLoading = true
-                subInfo = VpnkaAccount.fetchInfo()
+                val fetched = VpnkaAccount.fetchInfo()
+                subInfo = fetched
+                // A null answer with a token still stored is just a network
+                // failure; a null answer *and* no token means the backend
+                // told us the session is gone — the user revoked this device
+                // from the bot. Reflect that instead of leaving them on a
+                // screen that will never load.
+                signedIn = VpnkaAccount.isSignedIn()
+
+                // Signing in is also how a paid subscription reaches the
+                // phone: the profile carries the subscription token, so we
+                // can swap the shipped trial for the real thing instead of
+                // asking the user to copy a URL out of the bot.
+                fetched?.subscriptionToken?.let { token ->
+                    if (MmkvManager.adoptSubscription(token)) {
+                        // Same path a manual refresh takes, so the user sees
+                        // the familiar spinner and toasts rather than servers
+                        // appearing out of nowhere.
+                        importConfigViaSub()
+                    }
+                }
                 subLoading = false
             }
         }
@@ -306,8 +329,45 @@ class MainActivity : HelperBaseComponentActivity() {
             BackHandler { showSubscription = false }
             VpnkaSubscriptionScreen(
                 loading = subLoading,
+                signedIn = signedIn,
+                signingIn = signingIn,
+                signInError = signInError,
                 info = subInfo,
-                hasSubscription = VpnkaAccount.hasSubscription(),
+                hasSubscription = signedIn,
+                onSignIn = { code ->
+                    signingIn = true
+                    signInError = null
+                    lifecycleScope.launch {
+                        val result = VpnkaAccount.signIn(code)
+                        signingIn = false
+                        result.fold(
+                            onSuccess = {
+                                signedIn = true
+                                subReload++
+                            },
+                            onFailure = { error ->
+                                signInError =
+                                    if (error is VpnkaAccount.InvalidCodeException) {
+                                        // Wrong, expired and already-used are one
+                                        // answer from the server on purpose, so
+                                        // the message covers all three.
+                                        "Код не подошёл. Он живёт 10 минут и " +
+                                            "срабатывает один раз — возьмите новый в боте."
+                                    } else {
+                                        "Не удалось войти — проверьте интернет"
+                                    }
+                            },
+                        )
+                    }
+                },
+                onSignOut = {
+                    lifecycleScope.launch {
+                        VpnkaAccount.signOut()
+                        signedIn = false
+                        subInfo = null
+                    }
+                },
+                onGetCode = { navigateTo("vpnka_app_code") },
                 onRenew = { navigateTo("vpnka_month") },
                 onSupport = { navigateTo("vpnka_support") },
                 onRetry = { subReload++ },
@@ -451,6 +511,13 @@ class MainActivity : HelperBaseComponentActivity() {
             }
             "vpnka_month" -> {
                 Utils.openUri(this, "https://t.me/vpnka_io_bot?start=app")
+                return
+            }
+            // Straight to the card that mints a sign-in code, so the user
+            // doesn't have to find «Профиль» in the bot's menu while holding
+            // a half-filled code field open in the app.
+            "vpnka_app_code" -> {
+                Utils.openUri(this, "https://t.me/vpnka_io_bot?start=appcode")
                 return
             }
             else -> return

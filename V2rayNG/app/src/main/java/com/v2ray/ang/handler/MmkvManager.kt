@@ -901,5 +901,64 @@ object MmkvManager {
         return true
     }
 
+    private const val KEY_VPNKA_ACCOUNT_TOKEN = "vpnka_account_token"
+    private const val VPNKA_SUB_PREFIX = "https://get.vpnka.io/sub/"
+
+    /**
+     * This install's account token, or null when signed out.
+     *
+     * Kept in the same MMKV store as everything else. That store is
+     * app-private, so on a non-rooted phone it is as protected as the
+     * subscription URL sitting next to it — and unlike that URL, a leak here
+     * can be cut off from the bot without touching anyone else's device.
+     */
+    fun getAccountToken(): String? =
+        settingsStorage.decodeString(KEY_VPNKA_ACCOUNT_TOKEN)?.takeIf { it.isNotBlank() }
+
+    fun setAccountToken(token: String?) {
+        if (token.isNullOrBlank()) {
+            settingsStorage.remove(KEY_VPNKA_ACCOUNT_TOKEN)
+        } else {
+            settingsStorage.encode(KEY_VPNKA_ACCOUNT_TOKEN, token)
+        }
+    }
+
+    /**
+     * Point the app at the subscription belonging to the account that just
+     * signed in, replacing the trial it shipped with.
+     *
+     * This is what signing in is *for*, from the user's side: before it,
+     * getting a paid subscription onto a phone meant copying a URL out of
+     * the bot by hand. The trial group is dropped rather than left disabled
+     * — it is a 24h grant the account has outgrown, and leaving it in the
+     * picker only invites someone to select an expired profile and conclude
+     * the app is broken.
+     *
+     * @return true when the subscription list changed and the caller should
+     *         fetch.
+     */
+    fun adoptSubscription(subscriptionToken: String): Boolean {
+        if (subscriptionToken.isBlank()) return false
+        val url = VPNKA_SUB_PREFIX + subscriptionToken
+        if (decodeSubscriptions().any { it.subscription.url == url }) return false
+
+        decodeSubscriptions()
+            .filter { it.subscription.url == VPNKA_TRIAL_SUB_URL }
+            .forEach { removeSubscription(it.guid) }
+
+        val guid = Utils.getUuid()
+        encodeSubscription(
+            guid,
+            SubscriptionItem(
+                remarks = "VPNka",
+                url = url,
+                enabled = true,
+                autoUpdate = true,
+            ),
+        )
+        encodeSettings(CACHE_SUBSCRIPTION_ID, guid)
+        return true
+    }
+
     //endregion
 }

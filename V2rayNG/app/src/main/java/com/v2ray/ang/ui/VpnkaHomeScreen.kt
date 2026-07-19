@@ -17,6 +17,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -353,18 +357,30 @@ private fun VpnkaSettingsRow(
 }
 
 /**
- * «Моя подписка» — what the bot's card shows, without leaving the app.
+ * «Профиль» — the account, its subscriptions, and the way in and out of it.
  *
- * Read-only by design. Renewal, payment methods and refunds live in the
- * bot, where they already work; duplicating a payment flow here would mean
- * a second place for money to go wrong. So this states the facts and hands
- * off for anything that changes them.
+ * Signing in is deliberately a code typed by hand rather than a password.
+ * There are no passwords on this service: the bot *is* the account, and the
+ * shortest honest bridge from a Telegram identity to a phone is a code shown
+ * in one and typed into the other. It buys the thing that matters — a
+ * credential belonging to this install alone, which the user can revoke from
+ * the bot without disturbing their other devices.
+ *
+ * Everything that moves money stays in the bot, where payment and refunds
+ * already work; a second payment flow here would be a second place for money
+ * to go wrong. So this screen states facts and hands off for anything else.
  */
 @Composable
 fun VpnkaSubscriptionScreen(
     loading: Boolean,
+    signedIn: Boolean,
+    signingIn: Boolean,
+    signInError: String?,
     info: VpnkaAccount.Info?,
     hasSubscription: Boolean,
+    onSignIn: (String) -> Unit,
+    onSignOut: () -> Unit,
+    onGetCode: () -> Unit,
     onRenew: () -> Unit,
     onSupport: () -> Unit,
     onRetry: () -> Unit,
@@ -373,74 +389,81 @@ fun VpnkaSubscriptionScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(24.dp),
     ) {
         Spacer(Modifier.height(16.dp))
         Text(
-            text = "Моя подписка",
+            text = "Профиль",
             fontSize = 24.sp,
             fontWeight = FontWeight.Light,
             color = MaterialTheme.colorScheme.onSurface,
         )
         Spacer(Modifier.height(20.dp))
 
-        when {
-            loading -> {
-                CircularProgressIndicator(modifier = Modifier.size(32.dp))
-            }
+        if (!signedIn) {
+            VpnkaSignIn(
+                signingIn = signingIn,
+                error = signInError,
+                onSignIn = onSignIn,
+                onGetCode = onGetCode,
+            )
+        } else {
+            when {
+                loading -> CircularProgressIndicator(modifier = Modifier.size(32.dp))
 
-            // Never went through the bot: they're on the shipped trial. Say
-            // so plainly instead of "не активна", which reads as a fault.
-            !hasSubscription -> {
-                Text(
-                    text = "Сейчас работает пробный доступ на сутки.\n" +
-                        "Месяц бесплатно — в боте.",
-                    fontSize = 15.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-
-            info == null -> {
-                Text(
-                    text = "Не удалось получить данные — проверьте интернет",
-                    fontSize = 15.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(12.dp))
-                TextButton(onClick = onRetry) { Text("Повторить") }
-            }
-
-            !info.active -> {
-                Text(
-                    text = "Подписка не активна",
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-
-            else -> {
-                val days = info.daysLeft
-                VpnkaInfoRow(
-                    "Состояние",
-                    if (info.frozen) "Заморожена" else "Активна",
-                )
-                if (days != null) {
-                    VpnkaInfoRow("Осталось", "$days ${pluralDays(days)}")
-                }
-                info.tariff?.let { VpnkaInfoRow("Тариф", it) }
-                if (info.devicesLimit != null) {
-                    VpnkaInfoRow(
-                        "Устройства",
-                        "${info.devicesUsed ?: 0} из ${info.devicesLimit}",
+                info == null -> {
+                    Text(
+                        text = "Не удалось получить данные — проверьте интернет",
+                        fontSize = 15.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    Spacer(Modifier.height(12.dp))
+                    TextButton(onClick = onRetry) { Text("Повторить") }
                 }
-                info.balance?.let { raw ->
-                    // Comes as a decimal string from the API; show whole
-                    // roubles — twelve decimal places is accounting detail,
-                    // not something a user needs on this screen.
-                    val whole = raw.substringBefore('.')
-                    VpnkaInfoRow("Баланс", "$whole ₽")
+
+                !info.active -> {
+                    Text(
+                        text = "Подписка не активна",
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    info.balance?.let {
+                        Spacer(Modifier.height(12.dp))
+                        VpnkaInfoRow("Баланс", "${it.substringBefore('.')} ₽")
+                    }
+                }
+
+                else -> {
+                    // Every live purchase, not just the newest. Some accounts
+                    // hold more than one, and showing a single subscription
+                    // leaves the user counting days on one they aren't using.
+                    val plans = info.subscriptions.orEmpty()
+                    if (plans.size > 1) {
+                        plans.forEachIndexed { index, plan ->
+                            if (index > 0) Spacer(Modifier.height(4.dp))
+                            VpnkaPlanCard(plan)
+                        }
+                    } else {
+                        VpnkaInfoRow(
+                            "Состояние",
+                            if (info.frozen) "Заморожена" else "Активна",
+                        )
+                        info.daysLeft?.let {
+                            VpnkaInfoRow("Осталось", "$it ${pluralDays(it)}")
+                        }
+                        info.tariff?.let { VpnkaInfoRow("Тариф", it) }
+                        if (info.devicesLimit != null) {
+                            VpnkaInfoRow(
+                                "Устройства",
+                                "${info.devicesUsed ?: 0} из ${info.devicesLimit}",
+                            )
+                        }
+                    }
+                    info.balance?.let {
+                        VpnkaInfoRow("Баланс", "${it.substringBefore('.')} ₽")
+                    }
                 }
             }
         }
@@ -448,9 +471,112 @@ fun VpnkaSubscriptionScreen(
         Spacer(Modifier.height(28.dp))
         TextButton(onClick = onRenew) { Text("Продлить в боте") }
         TextButton(onClick = onSupport) { Text("Связаться с оператором") }
+        if (signedIn) {
+            TextButton(onClick = onSignOut) { Text("Выйти из аккаунта") }
+        } else if (!hasSubscription) {
+            // Signed out and running on the shipped trial: say what they're
+            // actually on, so «не активна» above never reads as a fault.
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "Сейчас работает пробный доступ на сутки.",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
 
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.height(24.dp))
         TextButton(onClick = onBack) { Text("← Назад") }
+    }
+}
+
+@Composable
+private fun VpnkaSignIn(
+    signingIn: Boolean,
+    error: String?,
+    onSignIn: (String) -> Unit,
+    onGetCode: () -> Unit,
+) {
+    var code by remember { mutableStateOf("") }
+
+    Text(
+        text = "Войдите, чтобы видеть свои подписки здесь и в боте, " +
+            "и чтобы это устройство можно было отключить отдельно.",
+        fontSize = 14.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Spacer(Modifier.height(20.dp))
+
+    OutlinedTextField(
+        value = code,
+        // The code is six characters from a fixed alphabet, so anything
+        // longer is a typo rather than input worth keeping. Upper-casing
+        // here — not just on send — means the field shows the user exactly
+        // what the bot showed them.
+        onValueChange = { code = it.uppercase().filter { c -> c.isLetterOrDigit() }.take(6) },
+        label = { Text("Код из бота") },
+        singleLine = true,
+        enabled = !signingIn,
+        modifier = Modifier.fillMaxWidth(),
+    )
+
+    if (error != null) {
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = error,
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.error,
+        )
+    }
+
+    Spacer(Modifier.height(16.dp))
+    Button(
+        onClick = { onSignIn(code) },
+        enabled = code.length == 6 && !signingIn,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        if (signingIn) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(18.dp),
+                strokeWidth = 2.dp,
+                color = MaterialTheme.colorScheme.onPrimary,
+            )
+        } else {
+            Text("Войти")
+        }
+    }
+    Spacer(Modifier.height(8.dp))
+    TextButton(onClick = onGetCode, modifier = Modifier.fillMaxWidth()) {
+        Text("Получить код в боте")
+    }
+}
+
+@Composable
+private fun VpnkaPlanCard(plan: VpnkaAccount.Plan) {
+    Column(modifier = Modifier.padding(vertical = 10.dp)) {
+        Text(
+            text = plan.tariff ?: "Подписка",
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        val days = plan.daysLeft
+        val devices = if (plan.devicesLimit != null) {
+            " · ${plan.devicesUsed ?: 0}/${plan.devicesLimit} устройств"
+        } else {
+            ""
+        }
+        Text(
+            text = buildString {
+                if (plan.frozen) append("заморожена") else if (days != null) {
+                    append("$days ${pluralDays(days)}")
+                } else {
+                    append("активна")
+                }
+                append(devices)
+            },
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 
