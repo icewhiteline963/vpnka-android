@@ -328,6 +328,97 @@ object VpnkaAccount {
 
     class NotEnoughBalanceException : Exception()
 
+    data class SupportMessage(
+        @SerializedName("id") val id: Long = 0,
+        @SerializedName("from_me") val fromMe: Boolean = false,
+        @SerializedName("body") val body: String = "",
+    )
+
+    private data class SupportThread(
+        @SerializedName("ticket_id") val ticketId: Long? = null,
+        @SerializedName("messages") val messages: List<SupportMessage>? = null,
+    )
+
+    data class Notice(
+        @SerializedName("id") val id: Long = 0,
+        @SerializedName("kind") val kind: String = "",
+        @SerializedName("body") val body: String = "",
+        @SerializedName("read") val read: Boolean = false,
+    )
+
+    private data class Inbox(
+        @SerializedName("unread") val unread: Int = 0,
+        @SerializedName("items") val items: List<Notice>? = null,
+    )
+
+    private data class UrlResponse(@SerializedName("url") val url: String?)
+
+    private fun authed(path: String): Request.Builder? {
+        val token = MmkvManager.getAccountToken() ?: return null
+        return Request.Builder()
+            .url("$BASE$path")
+            .header("Authorization", "Bearer $token")
+    }
+
+    private inline fun <reified T> call(builder: Request.Builder?): T? {
+        val req = builder?.build() ?: return null
+        return try {
+            http().newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) {
+                    LogUtil.w(AppConfig.TAG, "${req.url}: HTTP ${resp.code}")
+                    return null
+                }
+                JsonUtil.fromJsonSafe(resp.body?.string().orEmpty(), T::class.java)
+            }
+        } catch (e: Exception) {
+            LogUtil.w(AppConfig.TAG, "${req.url} failed: ${e.message}")
+            null
+        }
+    }
+
+    suspend fun fetchSupport(): List<SupportMessage> = withContext(Dispatchers.IO) {
+        call<SupportThread>(authed("/app/support")?.get())?.messages.orEmpty()
+    }
+
+    suspend fun sendSupport(text: String): Boolean = withContext(Dispatchers.IO) {
+        val body = JsonUtil.toJson(mapOf("text" to text))
+            .toRequestBody("application/json".toMediaType())
+        call<SupportThread>(authed("/app/support")?.post(body)) != null
+    }
+
+    suspend fun fetchNotices(): List<Notice> = withContext(Dispatchers.IO) {
+        call<Inbox>(authed("/app/notifications")?.get())?.items.orEmpty()
+    }
+
+    suspend fun markNoticesRead() = withContext(Dispatchers.IO) {
+        val req = authed("/app/notifications/read")
+            ?.post(ByteArray(0).toRequestBody())?.build() ?: return@withContext
+        try {
+            http().newCall(req).execute().close()
+        } catch (e: Exception) {
+            LogUtil.w(AppConfig.TAG, "mark read failed: ${e.message}")
+        }
+    }
+
+    /** A payment page that credits the balance. */
+    suspend fun topUp(amountRub: Int): String? = withContext(Dispatchers.IO) {
+        val body = JsonUtil.toJson(mapOf("amount_rub" to amountRub))
+            .toRequestBody("application/json".toMediaType())
+        call<PurchaseResult>(authed("/app/topup")?.post(body))?.paymentUrl
+    }
+
+    /**
+     * A Telegram link that attaches this account to the user's Telegram.
+     *
+     * The whole flow is one tap: the user cannot be expected to know the
+     * bot's name, let alone find it by search and paste a code into it.
+     */
+    suspend fun telegramLinkUrl(): String? = withContext(Dispatchers.IO) {
+        call<UrlResponse>(
+            authed("/app/auth/telegram-link")?.post(ByteArray(0).toRequestBody())
+        )?.url
+    }
+
     /**
      * Tell the backend to forget this device, then forget it locally.
      *

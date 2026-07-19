@@ -436,6 +436,9 @@ fun VpnkaSubscriptionScreen(
     onGetCode: () -> Unit,
     onRenew: () -> Unit,
     onSupport: () -> Unit,
+    onTopUp: () -> Unit,
+    onShowRecovery: () -> Unit,
+    onLinkTelegram: () -> Unit,
     onRetry: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -522,8 +525,14 @@ fun VpnkaSubscriptionScreen(
         }
 
         Spacer(Modifier.height(28.dp))
-        TextButton(onClick = onRenew) { Text("Продлить в боте") }
+        TextButton(onClick = onRenew) { Text("Купить подписку") }
+        TextButton(onClick = onTopUp) { Text("Пополнить баланс") }
         TextButton(onClick = onSupport) { Text("Связаться с оператором") }
+        TextButton(onClick = onShowRecovery) { Text("Код восстановления") }
+        // Optional, and worded as such: the account works without Telegram.
+        // Linking is for people who also want the bot, or who arrived from
+        // it and would otherwise end up with two separate accounts.
+        TextButton(onClick = onLinkTelegram) { Text("Подключить Telegram") }
         if (signedIn) {
             TextButton(onClick = onSignOut) { Text("Выйти из аккаунта") }
         } else {
@@ -789,5 +798,224 @@ private fun VpnkaTariffCard(
                 TextButton(onClick = onTopUp) { Text("Пополнить баланс в боте") }
             }
         }
+    }
+}
+
+/**
+ * «Поддержка» — the same ticket an operator answers, without Telegram.
+ *
+ * Messages are the ticket's own rows, not a copy: an agent sees one
+ * conversation whether the client is typing here or in the bot, and nothing
+ * has to be kept in sync between two stores.
+ */
+@Composable
+fun VpnkaSupportScreen(
+    loading: Boolean,
+    sending: Boolean,
+    messages: List<VpnkaAccount.SupportMessage>,
+    onSend: (String) -> Unit,
+    onBack: () -> Unit,
+) {
+    var draft by remember { mutableStateOf("") }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+    ) {
+        Text(
+            text = "Поддержка",
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Light,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(Modifier.height(16.dp))
+
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            when {
+                loading && messages.isEmpty() ->
+                    CircularProgressIndicator(modifier = Modifier.size(28.dp))
+
+                messages.isEmpty() -> Text(
+                    text = "Напишите, что случилось — оператор ответит здесь.",
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                else -> LazyColumn {
+                    items(messages) { message ->
+                        VpnkaBubble(message)
+                        Spacer(Modifier.height(8.dp))
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        OutlinedTextField(
+            value = draft,
+            onValueChange = { draft = it.take(4000) },
+            label = { Text("Сообщение") },
+            enabled = !sending,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(8.dp))
+        Button(
+            onClick = {
+                onSend(draft)
+                draft = ""
+            },
+            enabled = draft.isNotBlank() && !sending,
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text(if (sending) "Отправляем…" else "Отправить") }
+
+        TextButton(onClick = onBack) { Text("← Назад") }
+    }
+}
+
+@Composable
+private fun VpnkaBubble(message: VpnkaAccount.SupportMessage) {
+    val mine = message.fromMe
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start,
+    ) {
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(12.dp))
+                .background(
+                    if (mine) MaterialTheme.colorScheme.primaryContainer
+                    else MaterialTheme.colorScheme.surfaceVariant
+                )
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+        ) {
+            Text(
+                text = message.body,
+                fontSize = 14.sp,
+                color = if (mine) MaterialTheme.colorScheme.onPrimaryContainer
+                else MaterialTheme.colorScheme.onSurface,
+            )
+        }
+    }
+}
+
+/**
+ * «Пополнить баланс» — a card payment that credits the balance.
+ *
+ * The balance is what lets a purchase be one tap and no browser. Amounts are
+ * fixed rather than free-typed: RuKassa has a floor, and a field that lets
+ * someone enter 50 ₽ only to be refused is a worse experience than three
+ * buttons that all work.
+ */
+@Composable
+fun VpnkaTopUpScreen(
+    busy: Boolean,
+    error: String?,
+    onTopUp: (Int) -> Unit,
+    onBack: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(24.dp),
+    ) {
+        Spacer(Modifier.height(16.dp))
+        Text(
+            text = "Пополнить баланс",
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Light,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "Оплата картой или через СБП. С баланса подписка покупается " +
+                "в одно нажатие.",
+            fontSize = 14.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(20.dp))
+
+        listOf(300, 500, 1000, 2000).forEach { amount ->
+            Button(
+                onClick = { onTopUp(amount) },
+                enabled = !busy,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("$amount ₽") }
+            Spacer(Modifier.height(8.dp))
+        }
+
+        if (error != null) {
+            Spacer(Modifier.height(8.dp))
+            Text(error, fontSize = 13.sp, color = MaterialTheme.colorScheme.error)
+        }
+
+        Spacer(Modifier.height(24.dp))
+        TextButton(onClick = onBack) { Text("← Назад") }
+    }
+}
+
+/**
+ * The recovery code, and the one moment it is worth reading.
+ *
+ * Shown on demand rather than on first launch: a code presented to someone
+ * who has nothing yet to lose is a code nobody writes down. The wording is
+ * blunt because the consequence is — the server keeps only a hash, so if
+ * this is lost with the phone, the account is unreachable.
+ */
+@Composable
+fun VpnkaRecoveryScreen(code: String?, onBack: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(24.dp),
+    ) {
+        Spacer(Modifier.height(16.dp))
+        Text(
+            text = "Код восстановления",
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Light,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(Modifier.height(16.dp))
+
+        if (code == null) {
+            Text(
+                text = "Код недоступен на этом устройстве. Он выдаётся один раз " +
+                    "при создании аккаунта — если вы вошли по коду с другого " +
+                    "телефона, используйте тот же код.",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .padding(20.dp),
+            ) {
+                Text(
+                    text = code,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Medium,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            Spacer(Modifier.height(16.dp))
+            Text(
+                text = "Запишите его. Это единственный способ вернуть подписку, " +
+                    "если телефон потеряется или приложение будет переустановлено — " +
+                    "у нас код не хранится, только его отпечаток.",
+                fontSize = 14.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
+        Spacer(Modifier.height(24.dp))
+        TextButton(onClick = onBack) { Text("← Назад") }
     }
 }

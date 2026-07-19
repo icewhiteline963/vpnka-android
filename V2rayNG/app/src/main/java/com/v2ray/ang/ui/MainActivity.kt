@@ -256,6 +256,26 @@ class MainActivity : HelperBaseComponentActivity() {
         var shopLoading by remember { mutableStateOf(false) }
         var shopError by remember { mutableStateOf<String?>(null) }
         var buying by remember { mutableStateOf(false) }
+        var showSupport by rememberSaveable { mutableStateOf(false) }
+        var showTopUp by rememberSaveable { mutableStateOf(false) }
+        var showRecovery by rememberSaveable { mutableStateOf(false) }
+        var supportMessages by remember {
+            mutableStateOf<List<VpnkaAccount.SupportMessage>>(emptyList())
+        }
+        var supportLoading by remember { mutableStateOf(false) }
+        var supportSending by remember { mutableStateOf(false) }
+        var supportReload by remember { mutableIntStateOf(0) }
+        var topUpBusy by remember { mutableStateOf(false) }
+        var topUpError by remember { mutableStateOf<String?>(null) }
+
+        LaunchedEffect(showSupport, supportReload) {
+            if (showSupport) {
+                supportLoading = true
+                supportMessages = VpnkaAccount.fetchSupport()
+                supportLoading = false
+            }
+        }
+
         var subs by remember { mutableStateOf(MmkvManager.vpnkaSubscriptions()) }
         var selectedSub by remember { mutableStateOf(MmkvManager.selectedSubscriptionGuid()) }
 
@@ -372,6 +392,57 @@ class MainActivity : HelperBaseComponentActivity() {
             )
         }
 
+        if (showSupport && !showServers) {
+            BackHandler { showSupport = false }
+            VpnkaSupportScreen(
+                loading = supportLoading,
+                sending = supportSending,
+                messages = supportMessages,
+                onSend = { text ->
+                    supportSending = true
+                    lifecycleScope.launch {
+                        VpnkaAccount.sendSupport(text)
+                        supportSending = false
+                        supportReload++
+                    }
+                },
+                onBack = { showSupport = false },
+            )
+            return
+        }
+
+        if (showTopUp && !showServers) {
+            BackHandler { showTopUp = false }
+            VpnkaTopUpScreen(
+                busy = topUpBusy,
+                error = topUpError,
+                onTopUp = { amount ->
+                    topUpBusy = true
+                    topUpError = null
+                    lifecycleScope.launch {
+                        val url = VpnkaAccount.topUp(amount)
+                        topUpBusy = false
+                        if (url != null) {
+                            Utils.openUri(this@MainActivity, url)
+                        } else {
+                            topUpError = "Не удалось создать платёж — попробуйте позже"
+                        }
+                    }
+                },
+                onBack = { showTopUp = false },
+            )
+            return
+        }
+
+        if (showRecovery && !showServers) {
+            BackHandler { showRecovery = false }
+            VpnkaRecoveryScreen(
+                code = MmkvManager.getRecoveryCode(),
+                onBack = { showRecovery = false },
+            )
+            return
+        }
+
         if (showShop && !showServers) {
             BackHandler { showShop = false }
             VpnkaShopScreen(
@@ -461,7 +532,15 @@ class MainActivity : HelperBaseComponentActivity() {
                 },
                 onGetCode = { navigateTo("vpnka_app_code") },
                 onRenew = { showShop = true },
-                onSupport = { navigateTo("vpnka_support") },
+                onSupport = { showSupport = true },
+                onTopUp = { showTopUp = true },
+                onShowRecovery = { showRecovery = true },
+                onLinkTelegram = {
+                    lifecycleScope.launch {
+                        val url = VpnkaAccount.telegramLinkUrl()
+                        if (url != null) Utils.openUri(this@MainActivity, url)
+                    }
+                },
                 onRetry = { subReload++ },
                 onBack = { showSubscription = false },
             )
