@@ -224,10 +224,22 @@ class MainActivity : HelperBaseComponentActivity() {
         // server UI lives behind the long-press escape hatch below. Wrapping
         // rather than editing MainScreen keeps their releases mergeable as-is.
         var showServers by rememberSaveable { mutableStateOf(false) }
+        var showSettings by rememberSaveable { mutableStateOf(false) }
         val uiState by mainViewModel.uiState.collectAsStateWithLifecycle()
         val servers by mainViewModel
             .serversForGroup(uiState.selectedGroupId)
             .collectAsStateWithLifecycle()
+
+        if (showSettings && !showServers) {
+            BackHandler { showSettings = false }
+            VpnkaSettingsScreen(
+                onPerAppProxy = { navigateTo("per_app_proxy") },
+                onRoutingSettings = { navigateTo("routing_setting") },
+                onOpenAdvanced = { showServers = true },
+                onBack = { showSettings = false },
+            )
+            return
+        }
 
         if (!showServers) {
             val options = servers.map {
@@ -260,14 +272,17 @@ class MainActivity : HelperBaseComponentActivity() {
                 onRefreshSubscription = ::importConfigViaSub,
                 onSpeedTest = mainViewModel::testAllRealPing,
                 onCheckUpdate = { navigateTo("check_update") },
-                onOpenAdvanced = { showServers = true },
+                onOpenSettings = { showSettings = true },
             )
             return
         }
 
         // Hardware back returns to the simple screen instead of leaving the
         // app — otherwise the advanced view is a one-way door.
-        BackHandler { showServers = false }
+        BackHandler {
+            showServers = false
+            showSettings = false
+        }
 
         MainScreen(
             mainViewModel = mainViewModel,

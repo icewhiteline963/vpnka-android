@@ -1,9 +1,7 @@
 package com.v2ray.ang.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -53,7 +51,6 @@ data class VpnkaServerOption(
  * screen placed in front of theirs rather than a rewrite of it, so taking
  * upstream releases stays a matter of merging their files unchanged.
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun VpnkaHomeScreen(
     isRunning: Boolean,
@@ -66,7 +63,7 @@ fun VpnkaHomeScreen(
     onRefreshSubscription: () -> Unit,
     onSpeedTest: () -> Unit,
     onCheckUpdate: () -> Unit,
-    onOpenAdvanced: () -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val selected = servers.firstOrNull { it.guid == selectedGuid }
@@ -79,20 +76,11 @@ fun VpnkaHomeScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Spacer(Modifier.height(24.dp))
-        // Long-press is the way back to v2rayNG's full UI — subscriptions,
-        // routing, per-app rules. Deliberately unobtrusive rather than
-        // removed: this screen exists to hide that complexity, but someone
-        // eventually needs it, and an app you can't get out of is worse than
-        // a cluttered one.
         Text(
             text = "VPNka",
             fontSize = 26.sp,
             fontWeight = FontWeight.Light,
             color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.combinedClickable(
-                onClick = {},
-                onLongClick = onOpenAdvanced,
-            ),
         )
 
         Spacer(Modifier.height(32.dp))
@@ -237,8 +225,90 @@ fun VpnkaHomeScreen(
         TextButton(onClick = onSpeedTest, enabled = !isTesting) {
             Text(if (isTesting) "Проверяем…" else "Тест скорости")
         }
-        TextButton(onClick = onCheckUpdate) {
-            Text("Проверить обновление")
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+        ) {
+            TextButton(onClick = onOpenSettings) { Text("Настройки") }
+            TextButton(onClick = onCheckUpdate) { Text("Обновление") }
         }
+    }
+}
+
+/**
+ * A short settings list — the few things a VPNka user actually changes.
+ *
+ * Every row opens a screen v2rayNG already has; none of this is new
+ * behaviour, it's about reach. The full upstream UI is the last row rather
+ * than the default, and rather than the long-press it used to be: hiding it
+ * behind a gesture meant "how do I get to X" had no answer you could give
+ * over the phone.
+ */
+@Composable
+fun VpnkaSettingsScreen(
+    onPerAppProxy: () -> Unit,
+    onRoutingSettings: () -> Unit,
+    onOpenAdvanced: () -> Unit,
+    onBack: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+    ) {
+        Spacer(Modifier.height(16.dp))
+        Text(
+            text = "Настройки",
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Light,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(Modifier.height(24.dp))
+
+        VpnkaSettingsRow(
+            title = "Приложения через VPN",
+            subtitle = "Выбрать, каким приложениям идти через VPN, а каким напрямую",
+            onClick = onPerAppProxy,
+        )
+        VpnkaSettingsRow(
+            title = "Маршрутизация",
+            subtitle = "Какие сайты идут напрямую, минуя VPN",
+            onClick = onRoutingSettings,
+        )
+        VpnkaSettingsRow(
+            title = "Расширенный режим",
+            subtitle = "Полный интерфейс: подписки, импорт, журнал",
+            onClick = onOpenAdvanced,
+        )
+
+        Spacer(Modifier.weight(1f))
+        TextButton(onClick = onBack) { Text("← Назад") }
+    }
+}
+
+@Composable
+private fun VpnkaSettingsRow(
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 14.dp, horizontal = 4.dp),
+    ) {
+        Text(
+            text = title,
+            fontSize = 16.sp,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            text = subtitle,
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
