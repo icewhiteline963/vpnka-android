@@ -95,8 +95,8 @@ fun VpnkaHomeScreen(
         Text(
             text = "VPNka",
             fontSize = 26.sp,
-            fontWeight = FontWeight.Light,
-            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = VpnkaWeight.Extra,
+            color = VpnkaColors.TextStrong,
         )
 
         // Shown when the launch-time check found something. A banner rather
@@ -108,7 +108,7 @@ fun VpnkaHomeScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.primaryContainer)
+                    .background(VpnkaColors.CardServer)
                     .clickable(onClick = onCheckUpdate)
                     .padding(horizontal = 16.dp, vertical = 12.dp),
             ) {
@@ -116,7 +116,7 @@ fun VpnkaHomeScreen(
                     text = "Доступно обновление $updateVersion — нажмите, чтобы установить",
                     fontSize = 14.sp,
                     textAlign = TextAlign.Center,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    color = VpnkaColors.TextStrong,
                 )
             }
         }
@@ -133,7 +133,7 @@ fun VpnkaHomeScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .background(VpnkaColors.CardSpeed)
                         .clickable { subExpanded = true }
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -141,12 +141,12 @@ fun VpnkaHomeScreen(
                     Text(
                         text = currentSub?.name ?: "Подписка",
                         fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        color = VpnkaColors.TextStrong,
                     )
                     Text(
                         text = "▾",
                         fontSize = 14.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = VpnkaColors.TextMuted,
                     )
                 }
                 DropdownMenu(
@@ -189,14 +189,14 @@ fun VpnkaHomeScreen(
                 Text(
                     text = if (isRunning) "Отключить" else "Подключить",
                     fontSize = 21.sp,
-                    fontWeight = FontWeight.Medium,
+                    fontWeight = VpnkaWeight.Extra,
                     textAlign = TextAlign.Center,
                     // Always the surface colour, never white. White worked
                     // on the solid green circle this replaced; on a
                     // translucent flower the page shows through, so in the
                     // light theme white text would sit on a near-white
                     // background and vanish.
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = VpnkaColors.TextStrong,
                 )
             }
         }
@@ -206,9 +206,9 @@ fun VpnkaHomeScreen(
         Text(
             text = if (isRunning) "Защищено" else "Не подключено",
             fontSize = 17.sp,
-            fontWeight = FontWeight.Medium,
+            fontWeight = VpnkaWeight.Extra,
             color = if (isRunning) connectedColor
-            else MaterialTheme.colorScheme.onSurfaceVariant,
+            else VpnkaColors.TextMuted,
         )
 
         Spacer(Modifier.height(28.dp))
@@ -220,7 +220,7 @@ fun VpnkaHomeScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .background(VpnkaColors.CardSpeed)
                 .clickable(enabled = servers.isNotEmpty()) { expanded = !expanded }
                 .padding(horizontal = 16.dp, vertical = 14.dp),
         ) {
@@ -233,12 +233,12 @@ fun VpnkaHomeScreen(
                     text = selected?.name
                         ?: if (servers.isEmpty()) "Загрузка серверов…" else "Выбрать сервер",
                     fontSize = 16.sp,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = VpnkaColors.TextStrong,
                 )
                 Text(
                     text = if (expanded) "▲" else "▼",
                     fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = VpnkaColors.TextMuted,
                 )
             }
         }
@@ -261,7 +261,7 @@ fun VpnkaHomeScreen(
                     // button off the screen; the list scrolls inside.
                     .heightIn(max = 260.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                    .background(VpnkaColors.CardSpeed),
             ) {
                 LazyColumn {
                     items(servers, key = { it.guid }) { option ->
@@ -283,19 +283,19 @@ fun VpnkaHomeScreen(
                                     fontSize = 15.sp,
                                     fontWeight = if (option.guid == selectedGuid)
                                         FontWeight.Bold else FontWeight.Normal,
-                                    color = MaterialTheme.colorScheme.onSurface,
+                                    color = VpnkaColors.TextStrong,
                                 )
                                 if (option.delay.isNotBlank()) {
                                     Text(
                                         text = option.delay,
                                         fontSize = 13.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        color = VpnkaColors.TextMuted,
                                     )
                                 }
                             }
                         }
                         HorizontalDivider(
-                            color = MaterialTheme.colorScheme.surface,
+                            color = androidx.compose.ui.graphics.Color.White,
                             thickness = 1.dp,
                         )
                     }
@@ -392,7 +392,7 @@ private fun VpnkaSettingsRow(
         Text(
             text = title,
             fontSize = 16.sp,
-            color = MaterialTheme.colorScheme.onSurface,
+            color = VpnkaColors.TextStrong,
         )
         Spacer(Modifier.height(2.dp))
         Text(
@@ -462,7 +462,7 @@ fun VpnkaSubscriptionScreen(
                     Text(
                         text = "Не удалось получить данные — проверьте интернет",
                         fontSize = 15.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = VpnkaColors.TextMuted,
                     )
                     Spacer(Modifier.height(12.dp))
                     TextButton(onClick = onRetry) { Text("Повторить") }
@@ -472,8 +472,8 @@ fun VpnkaSubscriptionScreen(
                     Text(
                         text = "Подписка не активна",
                         fontSize = 17.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = VpnkaWeight.Extra,
+                        color = VpnkaColors.TextMuted,
                     )
                     info.balanceRub?.let {
                         Spacer(Modifier.height(12.dp))
@@ -548,7 +548,7 @@ fun VpnkaSubscriptionScreen(
             Text(
                 text = "Сейчас работает пробный доступ на сутки.",
                 fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = VpnkaColors.TextMuted,
             )
         }
 
@@ -569,7 +569,7 @@ private fun VpnkaSignIn(
         text = "Войдите, чтобы видеть свои подписки здесь и в боте, " +
             "и чтобы это устройство можно было отключить отдельно.",
         fontSize = 14.sp,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        color = VpnkaColors.TextMuted,
     )
     Spacer(Modifier.height(20.dp))
 
@@ -591,7 +591,7 @@ private fun VpnkaSignIn(
         Text(
             text = error,
             fontSize = 13.sp,
-            color = MaterialTheme.colorScheme.error,
+            color = VpnkaColors.Warning,
         )
     }
 
@@ -605,7 +605,7 @@ private fun VpnkaSignIn(
             CircularProgressIndicator(
                 modifier = Modifier.size(18.dp),
                 strokeWidth = 2.dp,
-                color = MaterialTheme.colorScheme.onPrimary,
+                color = androidx.compose.ui.graphics.Color.White,
             )
         } else {
             Text("Войти")
@@ -643,7 +643,7 @@ private fun VpnkaPlanCard(plan: VpnkaAccount.Plan) {
                 append(devices)
             },
             fontSize = 13.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = VpnkaColors.TextMuted,
         )
     }
 }
@@ -720,7 +720,7 @@ fun VpnkaShopScreen(
                 Text(
                     text = "Не удалось загрузить тарифы — проверьте интернет",
                     fontSize = 15.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = VpnkaColors.TextMuted,
                 )
                 Spacer(Modifier.height(12.dp))
                 TextButton(onClick = onRetry) { Text("Повторить") }
@@ -731,7 +731,7 @@ fun VpnkaShopScreen(
                     Text(
                         text = error,
                         fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.error,
+                        color = VpnkaColors.Warning,
                     )
                     Spacer(Modifier.height(12.dp))
                 }
@@ -757,14 +757,14 @@ private fun VpnkaTariffCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .background(VpnkaColors.CardSpeed)
             .padding(16.dp),
     ) {
         Text(
             text = tariff.name,
             fontSize = 16.sp,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = VpnkaWeight.Extra,
+            color = VpnkaColors.TextStrong,
         )
         Spacer(Modifier.height(4.dp))
         Text(
@@ -776,7 +776,7 @@ private fun VpnkaTariffCard(
                 append(" · ${tariff.durationDays} дн · ${tariff.deviceLimit} устр.")
             },
             fontSize = 13.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = VpnkaColors.TextMuted,
         )
         Spacer(Modifier.height(12.dp))
 
@@ -832,7 +832,7 @@ fun VpnkaSupportScreen(
                 messages.isEmpty() -> Text(
                     text = "Напишите, что случилось — оператор ответит здесь.",
                     fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = VpnkaColors.TextMuted,
                 )
 
                 else -> LazyColumn {
@@ -877,16 +877,16 @@ private fun VpnkaBubble(message: VpnkaAccount.SupportMessage) {
             modifier = Modifier
                 .clip(RoundedCornerShape(12.dp))
                 .background(
-                    if (mine) MaterialTheme.colorScheme.primaryContainer
-                    else MaterialTheme.colorScheme.surfaceVariant
+                    if (mine) VpnkaColors.CardServer
+                    else VpnkaColors.CardSpeed
                 )
                 .padding(horizontal = 14.dp, vertical = 10.dp),
         ) {
             Text(
                 text = message.body,
                 fontSize = 14.sp,
-                color = if (mine) MaterialTheme.colorScheme.onPrimaryContainer
-                else MaterialTheme.colorScheme.onSurface,
+                color = if (mine) VpnkaColors.TextStrong
+                else VpnkaColors.TextStrong,
             )
         }
     }
@@ -917,7 +917,7 @@ fun VpnkaTopUpScreen(
             text = "Оплата картой или через СБП. С баланса подписка покупается " +
                 "в одно нажатие.",
             fontSize = 14.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = VpnkaColors.TextMuted,
         )
         Spacer(Modifier.height(20.dp))
 
@@ -932,7 +932,7 @@ fun VpnkaTopUpScreen(
 
         if (error != null) {
             Spacer(Modifier.height(8.dp))
-            Text(error, fontSize = 13.sp, color = MaterialTheme.colorScheme.error)
+            Text(error, fontSize = 13.sp, color = VpnkaColors.Warning)
         }
 
         }
@@ -962,23 +962,23 @@ fun VpnkaRecoveryScreen(code: String?, onBack: () -> Unit) {
                     "при создании аккаунта — если вы вошли по коду с другого " +
                     "телефона, используйте тот же код.",
                 fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = VpnkaColors.TextMuted,
             )
         } else {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .background(VpnkaColors.CardSpeed)
                     .padding(20.dp),
             ) {
                 Text(
                     text = code,
                     fontSize = 22.sp,
-                    fontWeight = FontWeight.Medium,
+                    fontWeight = VpnkaWeight.Extra,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth(),
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = VpnkaColors.TextStrong,
                 )
             }
             Spacer(Modifier.height(16.dp))
@@ -987,7 +987,7 @@ fun VpnkaRecoveryScreen(code: String?, onBack: () -> Unit) {
                     "если телефон потеряется или приложение будет переустановлено — " +
                     "у нас код не хранится, только его отпечаток.",
                 fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = VpnkaColors.TextMuted,
             )
         }
 

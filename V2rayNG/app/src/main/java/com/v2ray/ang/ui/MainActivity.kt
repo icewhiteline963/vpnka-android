@@ -707,14 +707,6 @@ class MainActivity : HelperBaseComponentActivity() {
                 // Real subscription, not the handoff's «Премиум · 214 дней»:
                 // the plan the user actually holds and the days actually
                 // left, or a plain word when there is no purchase yet.
-                planTitle = subInfo?.let { info ->
-                    val days = info.daysLeft
-                    when {
-                        !info.active -> "Пробный доступ"
-                        days != null -> "${info.tariff ?: "Подписка"} · $days ${pluralDays(days)}"
-                        else -> info.tariff ?: "Подписка"
-                    }
-                } ?: "Пробный доступ",
                 trialHoursLeft = subInfo?.takeIf { !it.active }?.trialHoursLeft,
                 subscriptionName = subs.firstOrNull { it.first == selectedSub }?.second
                     ?: subs.firstOrNull()?.second,

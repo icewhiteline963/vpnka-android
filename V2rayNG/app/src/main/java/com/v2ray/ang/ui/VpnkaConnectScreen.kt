@@ -99,7 +99,6 @@ private fun hueRotate(degrees: Float): ColorFilter {
 fun VpnkaConnectScreen(
     isRunning: Boolean,
     isLoading: Boolean,
-    planTitle: String,
     trialHoursLeft: Int?,
     subscriptionName: String?,
     canSwitchSubscription: Boolean,
@@ -148,11 +147,7 @@ fun VpnkaConnectScreen(
             )
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            VpnkaHeader(
-                planTitle = planTitle,
-                trialHoursLeft = trialHoursLeft,
-                onOpenProfile = onOpenProfile,
-            )
+            VpnkaHeader(onOpenProfile = onOpenProfile)
 
             Column(
                 modifier = Modifier
@@ -222,13 +217,13 @@ fun VpnkaConnectScreen(
                 // decides which servers exist at all. Only offered as a
                 // switch when there is more than one — otherwise it is a
                 // label saying which plan is carrying the traffic.
-                if (subscriptionName != null) {
-                    VpnkaPlanRow(
-                        name = subscriptionName,
-                        canSwitch = canSwitchSubscription,
-                        onChange = onChangeSubscription,
-                    )
-                }
+                VpnkaPlanRow(
+                    name = subscriptionName,
+                    trialHoursLeft = trialHoursLeft,
+                    canSwitch = canSwitchSubscription,
+                    onChange = onChangeSubscription,
+                    onOpenProfile = onOpenProfile,
+                )
                 VpnkaServerCard(
                     name = serverName,
                     delay = serverDelay,
@@ -240,62 +235,27 @@ fun VpnkaConnectScreen(
 }
 
 @Composable
-private fun VpnkaHeader(
-    planTitle: String,
-    trialHoursLeft: Int?,
-    onOpenProfile: () -> Unit,
-) {
+private fun VpnkaHeader(onOpenProfile: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 20.dp, end = 20.dp, top = 62.dp)
-            // The whole row opens the account. It carries the plan and the
-            // trial countdown, so it is already where someone looks to find
-            // out about their subscription.
-            .clickable(onClick = onOpenProfile),
+            .padding(start = 20.dp, end = 20.dp, top = 62.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // A person, not the product logo. The logo is on the connect button
-        // a few centimetres below and says «this is VPNka»; repeating it here
-        // says nothing, while a person says «your account is behind this».
+        // Only the account, nothing else. The plan moved down to its own row
+        // above the server, where it sits next to the thing it governs; the
+        // trial countdown went with it. A header that repeated either was
+        // saying the same thing twice on one screen.
         Box(
             modifier = Modifier
                 .size(38.dp)
                 .clip(CircleShape)
-                .background(Color.White),
+                .background(Color.White)
+                .clickable(onClick = onOpenProfile),
             contentAlignment = Alignment.Center,
         ) {
             VpnkaPersonGlyph()
         }
-        Spacer(Modifier.size(10.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            if (trialHoursLeft != null) {
-                // Loud on purpose: this is a countdown to the app going
-                // quiet, and the muted plan colour used elsewhere would let
-                // it pass for decoration.
-                Text(
-                    text = "До конца $trialHoursLeft ${pluralHours(trialHoursLeft)}, " +
-                        "авторизуйтесь чтобы получить подписку!",
-                    fontFamily = VpnkaFonts.nunito900,
-                    fontWeight = VpnkaWeight.Black,
-                    fontSize = 12.sp,
-                    color = VpnkaColors.Warning,
-                )
-            } else {
-                Text(
-                    text = planTitle,
-                    fontFamily = VpnkaFonts.nunito800,
-                    fontWeight = VpnkaWeight.Extra,
-                    fontSize = 14.sp,
-                    color = VpnkaColors.TextStrong,
-                )
-            }
-        }
-        Text(
-            text = "›",
-            fontSize = 20.sp,
-            color = VpnkaColors.TextFaint,
-        )
     }
 }
 
@@ -469,18 +429,19 @@ private fun VpnkaTrafficCard(
 
 @Composable
 private fun VpnkaPlanRow(
-    name: String,
+    name: String?,
+    trialHoursLeft: Int?,
     canSwitch: Boolean,
     onChange: () -> Unit,
+    onOpenProfile: () -> Unit,
 ) {
+    val onTrial = trialHoursLeft != null
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(20.dp))
             .background(VpnkaColors.CardSpeed)
-            .then(
-                if (canSwitch) Modifier.clickable(onClick = onChange) else Modifier
-            )
+            .clickable(onClick = if (onTrial) onOpenProfile else onChange)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -493,15 +454,31 @@ private fun VpnkaPlanRow(
                 letterSpacing = 1.sp,
                 color = VpnkaColors.TextFaint,
             )
-            Text(
-                text = name,
-                fontFamily = VpnkaFonts.nunito800,
-                fontWeight = VpnkaWeight.Extra,
-                fontSize = 15.sp,
-                color = VpnkaColors.TextStrong,
-            )
+            if (onTrial) {
+                // The countdown lives here rather than in the header: it is
+                // about the subscription, and this is the subscription row.
+                // Loud on purpose — it counts down to the app going quiet,
+                // and the muted colours around it would let it pass for
+                // decoration.
+                Text(
+                    text = "До конца $trialHoursLeft ${pluralHours(trialHoursLeft)}, " +
+                        "авторизуйтесь чтобы получить подписку!",
+                    fontFamily = VpnkaFonts.nunito900,
+                    fontWeight = VpnkaWeight.Black,
+                    fontSize = 13.sp,
+                    color = VpnkaColors.Warning,
+                )
+            } else {
+                Text(
+                    text = name ?: "Пробный доступ",
+                    fontFamily = VpnkaFonts.nunito800,
+                    fontWeight = VpnkaWeight.Extra,
+                    fontSize = 15.sp,
+                    color = VpnkaColors.TextStrong,
+                )
+            }
         }
-        if (canSwitch) {
+        if (canSwitch && !onTrial) {
             Text(
                 text = "Сменить ›",
                 fontFamily = VpnkaFonts.nunito800,
