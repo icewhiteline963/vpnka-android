@@ -42,6 +42,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.VpnkaAccount
 
 /** One entry in the server picker. */
