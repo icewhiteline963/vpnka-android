@@ -136,6 +136,7 @@ import com.v2ray.ang.extension.toastSuccess
 import com.v2ray.ang.handler.AngConfigManager
 import com.v2ray.ang.util.QRCodeDecoder
 import androidx.compose.ui.graphics.asImageBitmap
+import com.v2ray.ang.handler.ExpiryReminder
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsChangeManager
 import com.v2ray.ang.handler.SettingsManager
@@ -232,6 +233,7 @@ class MainActivity : HelperBaseComponentActivity() {
         // Before anything draws: the palette is read during composition, and
         // applying it later would show the light screen first and repaint.
         VpnkaColors.dark = MmkvManager.isDarkTheme()
+        ExpiryReminder.schedule(this)
 
         onBackPressedDispatcher.addCallback(this) {
             if (!closeTopVpnkaScreen()) {

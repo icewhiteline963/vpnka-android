@@ -941,6 +941,15 @@ object MmkvManager {
      * night-mode setting: this palette is ours, not the system's, and a
      * user who runs the phone dark may still want the warm one here.
      */
+    /**
+     * Which expiry stage the user has already been told about (3, 1, or 0
+     * for none). Stored rather than derived so a twice-daily check sends
+     * one notification per stage instead of one per check.
+     */
+    fun getExpiryReminded(): Int = decodeSettingsString(VPNKA_EXPIRY_STAGE)?.toIntOrNull() ?: 0
+
+    fun setExpiryReminded(stage: Int) = encodeSettings(VPNKA_EXPIRY_STAGE, stage.toString())
+
     fun isDarkTheme(): Boolean = decodeSettingsBool(VPNKA_DARK_THEME, false)
 
     fun setDarkTheme(on: Boolean) = encodeSettings(VPNKA_DARK_THEME, on)
@@ -954,6 +963,7 @@ object MmkvManager {
     }
     private const val VPNKA_SUB_PREFIX = "https://get.vpnka.io/sub/"
     private const val VPNKA_DARK_THEME = "vpnka_dark_theme"
+    private const val VPNKA_EXPIRY_STAGE = "vpnka_expiry_stage"
 
     /**
      * This install's account token, or null when signed out.
