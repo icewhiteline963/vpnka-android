@@ -174,40 +174,39 @@ fun VpnkaConnectScreen(
                 updateAvailable = updateVersion != null,
                 onCheckUpdate = onCheckUpdate,
                 topPadding = headerTop,
+                // Status sits on the icons' line — it is the one fact the
+                // screen exists to state, and it belongs at the top of it
+                // rather than floating above the button.
+                status = if (isRunning) "ЗАЩИЩЕНО" else "НЕ ЗАЩИЩЕНО",
+                statusColor = accent,
             )
 
+            Text(
+                text = when {
+                    isLoading -> "Подключаемся…"
+                    isRunning -> "Ваш трафик зашифрован 🌼"
+                    else -> "Нажмите на цветочек"
+                },
+                fontFamily = VpnkaFonts.nunito800,
+                fontWeight = VpnkaWeight.Extra,
+                fontSize = 15.sp,
+                color = VpnkaColors.TextMuted,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp),
+            )
+
+            // What is left between the header and the traffic cards, with
+            // the button centred in it: the two lines above no longer pull
+            // it off centre the way they did when they shared this column.
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .fillMaxWidth()
-                    // Settled after a few passes: centred was slightly low
-                    // against the rows below, this lifts it back by 15dp.
-                    .padding(bottom = 15.dp),
+                    .fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
-                Text(
-                    text = if (isRunning) "ЗАЩИЩЕНО" else "НЕ ЗАЩИЩЕНО",
-                    fontFamily = VpnkaFonts.manrope700,
-                    fontWeight = VpnkaWeight.Bold,
-                    fontSize = 13.sp,
-                    letterSpacing = 2.5.sp,
-                    color = accent,
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = when {
-                        isLoading -> "Подключаемся…"
-                        isRunning -> "Ваш трафик зашифрован 🌼"
-                        else -> "Нажмите на цветочек"
-                    },
-                    fontFamily = VpnkaFonts.nunito800,
-                    fontWeight = VpnkaWeight.Extra,
-                    fontSize = 15.sp,
-                    color = VpnkaColors.TextMuted,
-                )
-                Spacer(Modifier.height(8.dp))
-
                 VpnkaConnectButton(
                     isRunning = isRunning,
                     isLoading = isLoading,
@@ -285,6 +284,8 @@ private fun VpnkaHeader(
     updateAvailable: Boolean,
     onCheckUpdate: () -> Unit,
     topPadding: Dp,
+    status: String,
+    statusColor: Color,
 ) {
     Row(
         modifier = Modifier
@@ -307,7 +308,16 @@ private fun VpnkaHeader(
             VpnkaPersonGlyph()
         }
 
-        Spacer(modifier = Modifier.weight(1f))
+        Text(
+            text = status,
+            fontFamily = VpnkaFonts.manrope700,
+            fontWeight = VpnkaWeight.Bold,
+            fontSize = 13.sp,
+            letterSpacing = 2.5.sp,
+            color = statusColor,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.weight(1f),
+        )
 
         // App update, top right. Always present — tapping it re-checks even
         // when we already believe we're current, because the check runs once
