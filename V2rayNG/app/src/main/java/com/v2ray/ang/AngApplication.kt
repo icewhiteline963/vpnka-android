@@ -23,6 +23,16 @@ class AngApplication : Application() {
          * that failed for want of network must get another try.
          */
         var vpnkaNeedsTrialFetch: Boolean = false
+
+        /**
+         * Set when the app was reopened by the post-payment link.
+         *
+         * The subscription itself arrives through the payment webhook, not
+         * through the link, so there is nothing to install here — this only
+         * tells MainActivity to show the profile and re-read it, which is
+         * what someone who just paid is looking for.
+         */
+        var vpnkaJustPaid: Boolean = false
     }
 
     /**

@@ -206,6 +206,10 @@
                 <data android:scheme="vpnka" />
                 <data android:host="install-config" />
                 <data android:host="install-sub" />
+                <!-- Coming back from a card payment. The payment page is a
+                     browser journey, so the only way home is a link the
+                     browser can follow. -->
+                <data android:host="paid" />
             </intent-filter>
         </activity>
         <activity

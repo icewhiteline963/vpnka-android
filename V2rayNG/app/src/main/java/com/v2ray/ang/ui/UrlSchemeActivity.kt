@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Bundle
 import androidx.compose.runtime.Composable
 import androidx.lifecycle.lifecycleScope
+import com.v2ray.ang.AngApplication
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.R
 import com.v2ray.ang.extension.toast
@@ -39,6 +40,15 @@ class UrlSchemeActivity : BaseComponentActivity() {
                             val uri: Uri? = intent.data
                             val shareUrl = uri?.getQueryParameter("url").orEmpty()
                             parseUri(shareUrl, uri?.fragment)
+                        }
+
+                        // Back from a card payment. Nothing to parse — the
+                        // subscription arrives via the webhook, not via this
+                        // link — so this only asks MainActivity to open the
+                        // profile and re-read it. No toast: the user did
+                        // nothing wrong, they just paid.
+                        "paid" -> {
+                            AngApplication.vpnkaJustPaid = true
                         }
 
                         else -> {

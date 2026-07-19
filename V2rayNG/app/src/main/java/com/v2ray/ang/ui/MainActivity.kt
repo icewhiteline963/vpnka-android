@@ -223,7 +223,19 @@ class MainActivity : HelperBaseComponentActivity() {
             AngApplication.vpnkaNeedsTrialFetch = false
             importConfigViaSub()
         }
+
+        // Reopened by the post-payment link. The subscription is settled by
+        // the webhook rather than by the link, so the honest thing is to
+        // re-read the profile — which is also exactly what someone who just
+        // paid opens the app to see.
+        if (AngApplication.vpnkaJustPaid) {
+            AngApplication.vpnkaJustPaid = false
+            vpnkaOpenProfileAfterPayment = true
+        }
     }
+
+    /** Set by the post-payment link; consumed on the next composition. */
+    private var vpnkaOpenProfileAfterPayment = false
 
     @Composable
     override fun ScreenContent() {
@@ -246,6 +258,15 @@ class MainActivity : HelperBaseComponentActivity() {
         var buying by remember { mutableStateOf(false) }
         var subs by remember { mutableStateOf(MmkvManager.vpnkaSubscriptions()) }
         var selectedSub by remember { mutableStateOf(MmkvManager.selectedSubscriptionGuid()) }
+
+        LaunchedEffect(Unit) {
+            if (vpnkaOpenProfileAfterPayment) {
+                vpnkaOpenProfileAfterPayment = false
+                showShop = false
+                showSubscription = true
+                subReload++
+            }
+        }
 
         LaunchedEffect(showShop) {
             if (showShop) {
