@@ -101,6 +101,8 @@ fun VpnkaConnectScreen(
     isLoading: Boolean,
     planTitle: String,
     trialHoursLeft: Int?,
+    subscriptionName: String?,
+    canSwitchSubscription: Boolean,
     serverName: String,
     serverDelay: String,
     sessionSeconds: Long,
@@ -213,6 +215,17 @@ fun VpnkaConnectScreen(
                         label = "ОТДАНО",
                         bytes = upBytes,
                         modifier = Modifier.weight(1f),
+                    )
+                }
+                // Above the server, because it is the wider choice: the plan
+                // decides which servers exist at all. Only offered as a
+                // switch when there is more than one — otherwise it is a
+                // label saying which plan is carrying the traffic.
+                if (subscriptionName != null) {
+                    VpnkaPlanRow(
+                        name = subscriptionName,
+                        canSwitch = canSwitchSubscription,
+                        onChange = onChangeSubscription,
                     )
                 }
                 VpnkaServerCard(
@@ -448,6 +461,52 @@ private fun VpnkaTrafficCard(
                 fontWeight = VpnkaWeight.Semi,
                 fontSize = 12.sp,
                 color = VpnkaColors.TextUnit,
+            )
+        }
+    }
+}
+
+@Composable
+private fun VpnkaPlanRow(
+    name: String,
+    canSwitch: Boolean,
+    onChange: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(VpnkaColors.CardSpeed)
+            .then(
+                if (canSwitch) Modifier.clickable(onClick = onChange) else Modifier
+            )
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "ПОДПИСКА",
+                fontFamily = VpnkaFonts.manrope700,
+                fontWeight = VpnkaWeight.Bold,
+                fontSize = 10.sp,
+                letterSpacing = 1.sp,
+                color = VpnkaColors.TextFaint,
+            )
+            Text(
+                text = name,
+                fontFamily = VpnkaFonts.nunito800,
+                fontWeight = VpnkaWeight.Extra,
+                fontSize = 15.sp,
+                color = VpnkaColors.TextStrong,
+            )
+        }
+        if (canSwitch) {
+            Text(
+                text = "Сменить ›",
+                fontFamily = VpnkaFonts.nunito800,
+                fontWeight = VpnkaWeight.Extra,
+                fontSize = 13.sp,
+                color = VpnkaColors.Accent,
             )
         }
     }
@@ -717,40 +776,15 @@ fun VpnkaSecondaryButton(
 fun VpnkaServersScreen(
     servers: List<VpnkaServerOption>,
     selectedGuid: String?,
-    subscriptions: List<VpnkaSubOption>,
-    selectedSubGuid: String?,
     isLoading: Boolean,
     isTesting: Boolean,
     onSelectServer: (String) -> Unit,
-    onSelectSubscription: (String) -> Unit,
     onRefresh: () -> Unit,
     onSpeedTest: () -> Unit,
     onBack: () -> Unit,
 ) {
     VpnkaPage(title = "Сервер", onBack = onBack) {
         // Only when there is a real choice — a picker with one entry is noise.
-        if (subscriptions.size > 1) {
-            Text(
-                text = "ПОДПИСКА",
-                fontFamily = VpnkaFonts.manrope700,
-                fontWeight = VpnkaWeight.Bold,
-                fontSize = 11.sp,
-                letterSpacing = 1.sp,
-                color = VpnkaColors.TextFaint,
-            )
-            Spacer(Modifier.height(8.dp))
-            subscriptions.forEach { sub ->
-                VpnkaChoiceRow(
-                    title = sub.name,
-                    subtitle = null,
-                    selected = sub.guid == selectedSubGuid,
-                    onClick = { onSelectSubscription(sub.guid) },
-                )
-                Spacer(Modifier.height(6.dp))
-            }
-            Spacer(Modifier.height(16.dp))
-        }
-
         Text(
             text = "СЕРВЕРЫ",
             fontFamily = VpnkaFonts.manrope700,
@@ -831,6 +865,27 @@ private fun VpnkaChoiceRow(
                 fontSize = 18.sp,
                 color = VpnkaColors.Accent,
             )
+        }
+    }
+}
+
+/** Choosing which plan carries the traffic. */
+@Composable
+fun VpnkaPlansScreen(
+    subscriptions: List<VpnkaSubOption>,
+    selectedGuid: String?,
+    onSelect: (String) -> Unit,
+    onBack: () -> Unit,
+) {
+    VpnkaPage(title = "Подписка", onBack = onBack) {
+        subscriptions.forEach { sub ->
+            VpnkaChoiceRow(
+                title = sub.name,
+                subtitle = null,
+                selected = sub.guid == selectedGuid,
+                onClick = { onSelect(sub.guid) },
+            )
+            Spacer(Modifier.height(8.dp))
         }
     }
 }

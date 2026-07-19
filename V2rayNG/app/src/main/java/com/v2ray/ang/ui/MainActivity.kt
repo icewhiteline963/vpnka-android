@@ -230,6 +230,7 @@ class MainActivity : HelperBaseComponentActivity() {
                 showTopUp -> showTopUp = false
                 showRecovery -> showRecovery = false
                 showServerPicker -> showServerPicker = false
+                showPlanPicker -> showPlanPicker = false
                 showShop -> showShop = false
                 showSubscription -> showSubscription = false
                 showServers -> {
@@ -279,6 +280,7 @@ class MainActivity : HelperBaseComponentActivity() {
     private var showTopUp by mutableStateOf(false)
     private var showRecovery by mutableStateOf(false)
     private var showServerPicker by mutableStateOf(false)
+    private var showPlanPicker by mutableStateOf(false)
 
     /** Set by the post-payment link; consumed on the next composition. */
     private var vpnkaOpenProfileAfterPayment = false
@@ -449,7 +451,7 @@ class MainActivity : HelperBaseComponentActivity() {
         // most recently added enabled callback first. Belt and braces: if
         // either mechanism is delivered, back stays inside the app.
         val anyOverlay = showSupport || showTopUp || showRecovery ||
-            showServerPicker || showShop || showSubscription ||
+            showServerPicker || showPlanPicker || showShop || showSubscription ||
             showSettings || showServers
         BackHandler(enabled = anyOverlay) {
             when {
@@ -457,6 +459,7 @@ class MainActivity : HelperBaseComponentActivity() {
                 showTopUp -> showTopUp = false
                 showRecovery -> showRecovery = false
                 showServerPicker -> showServerPicker = false
+                showPlanPicker -> showPlanPicker = false
                 showShop -> showShop = false
                 showSubscription -> showSubscription = false
                 showServers -> {
@@ -618,6 +621,23 @@ class MainActivity : HelperBaseComponentActivity() {
             return
         }
 
+        if (showPlanPicker && !showServers) {
+            VpnkaPlansScreen(
+                subscriptions = subs.map { (guid, name) -> VpnkaSubOption(guid, name) },
+                selectedGuid = selectedSub,
+                onSelect = { guid ->
+                    MmkvManager.selectSubscription(guid)
+                    selectedSub = guid
+                    showPlanPicker = false
+                    // A different plan means a different set of servers, so
+                    // the list has to be refetched rather than reused.
+                    importConfigViaSub()
+                },
+                onBack = { showPlanPicker = false },
+            )
+            return
+        }
+
         if (showServerPicker && !showServers) {
             val pickerOptions = servers.map {
                 VpnkaServerOption(
@@ -629,20 +649,11 @@ class MainActivity : HelperBaseComponentActivity() {
             VpnkaServersScreen(
                 servers = pickerOptions,
                 selectedGuid = uiState.selectedGuid,
-                subscriptions = subs.map { (guid, name) -> VpnkaSubOption(guid, name) },
-                selectedSubGuid = selectedSub,
                 isLoading = uiState.isLoading,
                 isTesting = uiState.isTesting,
                 onSelectServer = {
                     setSelectServer(it)
                     showServerPicker = false
-                },
-                onSelectSubscription = { guid ->
-                    MmkvManager.selectSubscription(guid)
-                    selectedSub = guid
-                    // A different plan means a different set of servers, so
-                    // the list has to be refetched rather than reused.
-                    importConfigViaSub()
                 },
                 onRefresh = ::importConfigViaSub,
                 onSpeedTest = mainViewModel::testAllRealPing,
@@ -705,6 +716,10 @@ class MainActivity : HelperBaseComponentActivity() {
                     }
                 } ?: "Пробный доступ",
                 trialHoursLeft = subInfo?.takeIf { !it.active }?.trialHoursLeft,
+                subscriptionName = subs.firstOrNull { it.first == selectedSub }?.second
+                    ?: subs.firstOrNull()?.second,
+                canSwitchSubscription = subs.size > 1,
+                onChangeSubscription = { showPlanPicker = true },
                 serverName = options.firstOrNull { it.guid == uiState.selectedGuid }
                     ?.name ?: "Выбрать сервер",
                 serverDelay = options.firstOrNull { it.guid == uiState.selectedGuid }
