@@ -153,7 +153,14 @@ object HttpUtil {
             if (currentUrl == null) continue
             val client = buildOkHttpClient(request.timeout, request.httpPort, request.proxyUsername, request.proxyPassword, followRedirects = false)
             val finalUserAgent = if (request.userAgent.isNullOrBlank()) {
-                "v2rayNG/${BuildConfig.VERSION_NAME}"
+                // Identify as ourselves, not as v2rayNG. The backend decides
+                // what to serve by UA: our fork gets the xray config array
+                // (whose first entry is the «🌍 Авто» balancer the home
+                // screen is built around), while real v2rayNG installs out
+                // there keep the base64 list they work with today. Format
+                // matters — the device-counting regex expects
+                // `Vendor/<version>`.
+                "VPNka/${BuildConfig.VERSION_NAME}"
             } else {
                 request.userAgent
             }
