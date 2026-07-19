@@ -63,6 +63,7 @@ fun VpnkaHomeScreen(
     selectedGuid: String?,
     onToggle: () -> Unit,
     onSelectServer: (String) -> Unit,
+    onRefreshSubscription: () -> Unit,
     onSpeedTest: () -> Unit,
     onCheckUpdate: () -> Unit,
     onOpenAdvanced: () -> Unit,
@@ -167,6 +168,15 @@ fun VpnkaHomeScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+        }
+
+        Spacer(Modifier.height(8.dp))
+        // Right under the picker, because that's the list it refills. Without
+        // it the only way to re-fetch is the hidden advanced screen — and a
+        // stale list is exactly what a user stares at when the server set
+        // changed on our side.
+        TextButton(onClick = onRefreshSubscription, enabled = !isLoading) {
+            Text(if (isLoading) "Обновляем…" else "Обновить список серверов")
         }
 
         if (expanded && servers.isNotEmpty()) {

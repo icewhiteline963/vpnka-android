@@ -58,7 +58,11 @@ class AngApplication : Application() {
         // Make sure an install with no servers has our 24h trial to fall
         // back on. MMKV writes only — the fetch happens in MainActivity, off
         // the main thread; network here would block app startup.
-        vpnkaNeedsTrialFetch = MmkvManager.ensureTrialSubscription()
+        // Re-fetch after an update as well as when there's nothing to
+        // connect to: the config format follows the version we announce, so
+        // an install that updates without refreshing keeps the old one.
+        vpnkaNeedsTrialFetch = MmkvManager.ensureTrialSubscription() or
+            MmkvManager.consumeVersionChanged(BuildConfig.VERSION_NAME)
 
         // Pull a new version down in the background so installing it later is
         // a single tap. Wi-Fi only — see UpdatePrefetcher for why that matters

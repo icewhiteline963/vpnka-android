@@ -257,6 +257,7 @@ class MainActivity : HelperBaseComponentActivity() {
                 selectedGuid = uiState.selectedGuid,
                 onToggle = ::handleFabAction,
                 onSelectServer = ::setSelectServer,
+                onRefreshSubscription = ::importConfigViaSub,
                 onSpeedTest = mainViewModel::testAllRealPing,
                 onCheckUpdate = { navigateTo("check_update") },
                 onOpenAdvanced = { showServers = true },

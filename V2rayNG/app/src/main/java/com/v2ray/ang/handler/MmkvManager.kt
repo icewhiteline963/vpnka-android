@@ -850,6 +850,27 @@ object MmkvManager {
      *         false only once servers exist keeps a failed first fetch from
      *         stranding the user on an empty list forever.
      */
+    private const val KEY_VPNKA_LAST_VERSION = "vpnka_last_run_version"
+
+    /**
+     * True on the first launch after the app version changed.
+     *
+     * What we get served depends on the version we announce: the backend
+     * picks the config format by User-Agent, and 2.2.6.5 is the release that
+     * started identifying as VPNka and therefore receiving the «Авто»
+     * balancer. An install that updates but never re-fetches keeps the old
+     * flat list and looks broken — the user is told the feature shipped and
+     * cannot see it. So a version change forces one refresh.
+     */
+    fun consumeVersionChanged(currentVersion: String): Boolean {
+        val previous = decodeSettingsString(KEY_VPNKA_LAST_VERSION)
+        if (previous == currentVersion) return false
+        encodeSettings(KEY_VPNKA_LAST_VERSION, currentVersion)
+        // A fresh install isn't an update: ensureTrialSubscription already
+        // fetches for it, and doing both would double the work on first run.
+        return !previous.isNullOrBlank()
+    }
+
     fun ensureTrialSubscription(): Boolean {
         // A real, working setup: their month, or a restored backup. Leave it.
         if (decodeAllServerList().isNotEmpty()) {
