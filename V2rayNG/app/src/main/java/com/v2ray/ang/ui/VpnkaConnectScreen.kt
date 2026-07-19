@@ -116,7 +116,7 @@ fun VpnkaConnectScreen(
     onOpenProfile: () -> Unit,
     onChangeSubscription: () -> Unit,
     onChangeServer: () -> Unit,
-    updateAvailable: Boolean,
+    updateVersion: String?,
     onCheckUpdate: () -> Unit,
     onPerAppProxy: () -> Unit,
     expiryDaysLeft: Int?,
@@ -168,7 +168,7 @@ fun VpnkaConnectScreen(
         Column(modifier = Modifier.fillMaxSize()) {
             VpnkaHeader(
                 onOpenProfile = onOpenProfile,
-                updateAvailable = updateAvailable,
+                updateAvailable = updateVersion != null,
                 onCheckUpdate = onCheckUpdate,
                 topPadding = headerTop,
             )
@@ -243,6 +243,13 @@ fun VpnkaConnectScreen(
                         bytes = upBytes,
                         modifier = Modifier.weight(1f),
                     )
+                }
+                // The launch check already knew this; until now it only lit
+                // a dot on a button in the corner, which is indistinguishable
+                // from not checking at all. Say it in words, where the eye
+                // already is.
+                if (updateVersion != null) {
+                    VpnkaUpdateBanner(version = updateVersion, onClick = onCheckUpdate)
                 }
                 if (expiryDaysLeft != null && expiryDaysLeft <= 3) {
                     VpnkaExpiryBanner(daysLeft = expiryDaysLeft, onRenew = onRenew)
@@ -323,6 +330,39 @@ private fun VpnkaHeader(
                 )
             }
         }
+    }
+}
+
+/** A new build is out, said plainly rather than hinted at with a dot. */
+@Composable
+private fun VpnkaUpdateBanner(version: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(VpnkaColors.Accent.copy(alpha = 0.14f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Доступна версия $version",
+                fontFamily = VpnkaFonts.nunito800,
+                fontWeight = VpnkaWeight.Extra,
+                fontSize = 15.sp,
+                color = VpnkaColors.Accent,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = "Нажмите, чтобы установить",
+                fontFamily = VpnkaFonts.manrope600,
+                fontWeight = VpnkaWeight.Semi,
+                fontSize = 12.sp,
+                color = VpnkaColors.TextMuted,
+            )
+        }
+        Text(text = "›", fontSize = 18.sp, color = VpnkaColors.Accent)
     }
 }
 

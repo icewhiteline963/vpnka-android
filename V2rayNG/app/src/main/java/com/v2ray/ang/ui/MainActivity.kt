@@ -944,7 +944,7 @@ class MainActivity : HelperBaseComponentActivity() {
                     .mapNotNull { it.daysLeft }
                     .minOrNull(),
                 onRenew = { showShop = true },
-                updateAvailable = updateVersion != null,
+                updateVersion = updateVersion,
                 onCheckUpdate = {
                     startActivity(
                         Intent(this@MainActivity, CheckUpdateActivity::class.java)
