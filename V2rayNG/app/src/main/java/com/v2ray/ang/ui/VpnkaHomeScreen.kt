@@ -482,35 +482,13 @@ fun VpnkaSubscriptionScreen(
                 }
 
                 else -> {
-                    // Every live purchase, not just the newest. Some accounts
-                    // hold more than one, and showing a single subscription
-                    // leaves the user counting days on one they aren't using.
-                    val plans = info.subscriptions.orEmpty()
-                    if (plans.size > 1) {
-                        plans.forEachIndexed { index, plan ->
-                            if (index > 0) Spacer(Modifier.height(4.dp))
-                            VpnkaPlanCard(plan)
-                        }
-                    } else {
-                        VpnkaInfoRow(
-                            "Состояние",
-                            if (info.frozen) "Заморожена" else "Активна",
-                        )
-                        info.daysLeft?.let {
-                            VpnkaInfoRow("Осталось", "$it ${pluralDays(it)}")
-                        }
-                        info.tariff?.let { VpnkaInfoRow("Тариф", it) }
-                        if (info.devicesLimit != null) {
-                            VpnkaInfoRow(
-                                "Устройства",
-                                "${info.devicesUsed ?: 0} из ${info.devicesLimit}",
-                            )
-                        }
-                    }
-                    // Roubles, converted server-side. The raw balance is in
-                    // the platform currency, and the app used to print that
-                    // number with a ₽ sign on it — a wrong figure about
-                    // money, which is the kind a user acts on.
+                    // The plans themselves live behind «Мои подписки» on the
+                    // main screen. Repeating the list here meant two places
+                    // to keep in step and two places to read the same thing.
+                    VpnkaInfoRow(
+                        "Подписок",
+                        "${info.subscriptions.orEmpty().size}",
+                    )
                     info.balanceRub?.let {
                         VpnkaInfoRow("Баланс", "$it ₽")
                     }
@@ -519,26 +497,27 @@ fun VpnkaSubscriptionScreen(
         }
 
         Spacer(Modifier.height(28.dp))
-        // Always offered, not only when signed out. Accounts are created
-        // automatically now, so someone whose app storage was cleared —
-        // a reinstall, «очистить данные» — silently lands in a fresh empty
-        // account. Without this button there was no way back to the one
-        // holding their subscription: the sign-in form only appeared when
-        // signed out, and the app never is.
+        // Own rows rather than Material TextButtons. Those carry no colour
+        // or size of their own — they take the theme's, which is the small
+        // pale grey that kept coming back however many Text() colours were
+        // replaced. This was the actual source of it.
+        //
+        // Always offered, not only when signed out: accounts are created
+        // automatically, so someone whose app storage was cleared silently
+        // lands in a fresh empty account, and the sign-in form only ever
+        // appeared when signed out — which the app never is.
         if (signedIn && !showSignIn) {
-            TextButton(onClick = { showSignIn = true }) {
-                Text("Войти в другой аккаунт")
-            }
+            VpnkaMenuRow("Войти в другой аккаунт") { showSignIn = true }
         }
-        TextButton(onClick = onRenew) { Text("Купить подписку") }
-        TextButton(onClick = onTopUp) { Text("Пополнить баланс") }
-        TextButton(onClick = onSupport) { Text("Связаться с оператором") }
-        TextButton(onClick = onOpenSettings) { Text("Настройки приложения") }
-        TextButton(onClick = onShowRecovery) { Text("Код восстановления") }
+        VpnkaMenuRow("Купить подписку", onRenew)
+        VpnkaMenuRow("Пополнить баланс", onTopUp)
+        VpnkaMenuRow("Связаться с оператором", onSupport)
+        VpnkaMenuRow("Настройки приложения", onOpenSettings)
+        VpnkaMenuRow("Код восстановления", onShowRecovery)
         // Optional, and worded as such: the account works without Telegram.
         // Linking is for people who also want the bot, or who arrived from
         // it and would otherwise end up with two separate accounts.
-        TextButton(onClick = onLinkTelegram) { Text("Подключить Telegram") }
+        VpnkaMenuRow("Подключить Telegram", onLinkTelegram)
         if (signedIn) {
             TextButton(onClick = onSignOut) { Text("Выйти из аккаунта") }
         } else {
@@ -992,5 +971,33 @@ fun VpnkaRecoveryScreen(code: String?, onBack: () -> Unit) {
         }
 
         }
+    }
+}
+
+
+/** A menu line in the app's own type, not Material's defaults. */
+@Composable
+private fun VpnkaMenuRow(title: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = title,
+            fontFamily = VpnkaFonts.nunito800,
+            fontWeight = VpnkaWeight.Extra,
+            fontSize = 17.sp,
+            color = VpnkaColors.TextStrong,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = "›",
+            fontSize = 18.sp,
+            color = VpnkaColors.TextFaint,
+        )
     }
 }

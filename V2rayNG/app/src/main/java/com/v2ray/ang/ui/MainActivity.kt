@@ -324,7 +324,12 @@ class MainActivity : HelperBaseComponentActivity() {
         }
 
         var subs by remember { mutableStateOf(MmkvManager.vpnkaSubscriptions()) }
-        var selectedSub by remember { mutableStateOf(MmkvManager.selectedSubscriptionGuid()) }
+        // Which plan is active comes from the viewmodel, not from a second
+        // copy kept here. Two sources of truth for this is what put the
+        // server list and the config on different subscriptions.
+        val selectedSub = uiState.selectedGroupId.ifBlank {
+            MmkvManager.selectedSubscriptionGuid()
+        }
 
         LaunchedEffect(Unit) {
             if (vpnkaOpenProfileAfterPayment) {
@@ -378,7 +383,6 @@ class MainActivity : HelperBaseComponentActivity() {
                 if (plans.isNotEmpty()) {
                     val switched = MmkvManager.syncSubscriptions(plans)
                     subs = MmkvManager.vpnkaSubscriptions()
-                    selectedSub = MmkvManager.selectedSubscriptionGuid()
                     if (switched != null) {
                         // Same path a manual refresh takes, so the user sees
                         // the familiar spinner and toasts rather than servers
@@ -696,8 +700,13 @@ class MainActivity : HelperBaseComponentActivity() {
                 subscriptions = subs.map { (guid, name) -> VpnkaSubOption(guid, name) },
                 selectedGuid = selectedSub,
                 onSelect = { guid ->
-                    MmkvManager.selectSubscription(guid)
-                    selectedSub = guid
+                    // The viewmodel's own switch, not just the storage key.
+                    // Writing the key alone left uiState.selectedGroupId on
+                    // the previous plan, so the server list stayed with the
+                    // old subscription while the app believed it was on the
+                    // new one — pick a server there and you connect through
+                    // the wrong profile.
+                    mainViewModel.subscriptionIdChanged(guid)
                     showPlanPicker = false
                     // A different plan means a different set of servers, so
                     // the list has to be refetched rather than reused.
