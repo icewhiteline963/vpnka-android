@@ -278,34 +278,6 @@ class MainActivity : HelperBaseComponentActivity() {
             }
         }
 
-        // Session clock and live speed for the connect screen. Ticked here
-        // rather than in the viewmodel so it stops when the screen goes away:
-        // reading the core's counters resets them, and a poller running
-        // behind a closed screen would quietly eat the numbers the speed
-        // notification is trying to show.
-        var sessionSeconds by remember { mutableLongStateOf(0L) }
-        var downMbps by remember { mutableStateOf<Double?>(null) }
-        var upMbps by remember { mutableStateOf<Double?>(null) }
-
-        LaunchedEffect(uiState.isRunning) {
-            if (!uiState.isRunning) {
-                sessionSeconds = 0L
-                downMbps = null
-                upMbps = null
-                VpnkaSession.elapsedSeconds(false, System.currentTimeMillis())
-                return@LaunchedEffect
-            }
-            while (true) {
-                val now = System.currentTimeMillis()
-                sessionSeconds = VpnkaSession.elapsedSeconds(true, now)
-                VpnkaSession.sampleSpeed(now)?.let {
-                    downMbps = it.downMbps
-                    upMbps = it.upMbps
-                }
-                kotlinx.coroutines.delay(1000)
-            }
-        }
-
         var subs by remember { mutableStateOf(MmkvManager.vpnkaSubscriptions()) }
         var selectedSub by remember { mutableStateOf(MmkvManager.selectedSubscriptionGuid()) }
 
@@ -393,6 +365,35 @@ class MainActivity : HelperBaseComponentActivity() {
             }
         }
         val uiState by mainViewModel.uiState.collectAsStateWithLifecycle()
+
+        // Session clock and live speed for the connect screen. Ticked here
+        // rather than in the viewmodel so it stops when the screen goes away:
+        // reading the core's counters resets them, and a poller running
+        // behind a closed screen would quietly eat the numbers the speed
+        // notification is trying to show.
+        var sessionSeconds by remember { mutableLongStateOf(0L) }
+        var downMbps by remember { mutableStateOf<Double?>(null) }
+        var upMbps by remember { mutableStateOf<Double?>(null) }
+
+        LaunchedEffect(uiState.isRunning) {
+            if (!uiState.isRunning) {
+                sessionSeconds = 0L
+                downMbps = null
+                upMbps = null
+                VpnkaSession.elapsedSeconds(false, System.currentTimeMillis())
+                return@LaunchedEffect
+            }
+            while (true) {
+                val now = System.currentTimeMillis()
+                sessionSeconds = VpnkaSession.elapsedSeconds(true, now)
+                VpnkaSession.sampleSpeed(now)?.let {
+                    downMbps = it.downMbps
+                    upMbps = it.upMbps
+                }
+                kotlinx.coroutines.delay(1000)
+            }
+        }
+
         val servers by mainViewModel
             .serversForGroup(uiState.selectedGroupId)
             .collectAsStateWithLifecycle()
