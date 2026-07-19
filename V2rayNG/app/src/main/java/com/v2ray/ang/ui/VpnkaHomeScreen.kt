@@ -21,6 +21,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -56,6 +58,9 @@ data class VpnkaServerOption(
  * screen placed in front of theirs rather than a rewrite of it, so taking
  * upstream releases stays a matter of merging their files unchanged.
  */
+/** One subscription the account holds, as the home picker shows it. */
+data class VpnkaSubOption(val guid: String, val name: String)
+
 @Composable
 fun VpnkaHomeScreen(
     isRunning: Boolean,
@@ -70,9 +75,13 @@ fun VpnkaHomeScreen(
     onCheckUpdate: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenSubscription: () -> Unit,
+    subscriptions: List<VpnkaSubOption> = emptyList(),
+    selectedSubGuid: String? = null,
+    onSelectSubscription: (String) -> Unit = {},
     updateVersion: String? = null,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    var subExpanded by remember { mutableStateOf(false) }
     val selected = servers.firstOrNull { it.guid == selectedGuid }
     val connectedColor = Color(0xFF2E7D32)
 
@@ -109,6 +118,51 @@ fun VpnkaHomeScreen(
                     textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
+            }
+        }
+
+        // Which plan is carrying the traffic, above the button that starts
+        // it. Only shown when there is a real choice: a single subscription
+        // needs no picker, and the trial-only case is already explained on
+        // the profile screen.
+        if (subscriptions.size > 1) {
+            Spacer(Modifier.height(20.dp))
+            val currentSub = subscriptions.firstOrNull { it.guid == selectedSubGuid }
+            Box(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .clickable { subExpanded = true }
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        text = currentSub?.name ?: "Подписка",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = "▾",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                DropdownMenu(
+                    expanded = subExpanded,
+                    onDismissRequest = { subExpanded = false },
+                ) {
+                    subscriptions.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option.name, fontSize = 14.sp) },
+                            onClick = {
+                                subExpanded = false
+                                onSelectSubscription(option.guid)
+                            },
+                        )
+                    }
+                }
             }
         }
 
@@ -607,5 +661,133 @@ private fun VpnkaInfoRow(label: String, value: String) {
             fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurface,
         )
+    }
+}
+
+/**
+ * «Купить подписку» — the shop, without leaving the app.
+ *
+ * Prices arrive already converted to roubles and already discounted for
+ * this account, so nothing here recomputes money. The two buttons are
+ * whatever the server says this client can actually use: balance when they
+ * have enough, card when the amount clears RuKassa's floor. Offering a
+ * button that the purchase call would then refuse is worse than not
+ * offering it.
+ */
+@Composable
+fun VpnkaShopScreen(
+    loading: Boolean,
+    buying: Boolean,
+    tariffs: List<VpnkaAccount.Tariff>,
+    error: String?,
+    onBuy: (Int, String) -> Unit,
+    onTopUp: () -> Unit,
+    onRetry: () -> Unit,
+    onBack: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(24.dp),
+    ) {
+        Spacer(Modifier.height(16.dp))
+        Text(
+            text = "Купить подписку",
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Light,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(Modifier.height(20.dp))
+
+        when {
+            loading -> CircularProgressIndicator(modifier = Modifier.size(32.dp))
+
+            tariffs.isEmpty() -> {
+                Text(
+                    text = "Не удалось загрузить тарифы — проверьте интернет",
+                    fontSize = 15.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(12.dp))
+                TextButton(onClick = onRetry) { Text("Повторить") }
+            }
+
+            else -> {
+                if (error != null) {
+                    Text(
+                        text = error,
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                }
+                tariffs.forEach { tariff ->
+                    VpnkaTariffCard(tariff, buying, onBuy, onTopUp)
+                    Spacer(Modifier.height(8.dp))
+                }
+            }
+        }
+
+        Spacer(Modifier.height(24.dp))
+        TextButton(onClick = onBack) { Text("← Назад") }
+    }
+}
+
+@Composable
+private fun VpnkaTariffCard(
+    tariff: VpnkaAccount.Tariff,
+    buying: Boolean,
+    onBuy: (Int, String) -> Unit,
+    onTopUp: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(16.dp),
+    ) {
+        Text(
+            text = tariff.name,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            text = buildString {
+                append("${tariff.priceRub} ₽")
+                // The full price only appears when a friend discount is live,
+                // so the discount is visible rather than merely applied.
+                tariff.priceRubFull?.let { append("  (вместо $it ₽)") }
+                append(" · ${tariff.durationDays} дн · ${tariff.deviceLimit} устр.")
+            },
+            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(12.dp))
+
+        Row {
+            if (tariff.canPayBalance) {
+                Button(
+                    onClick = { onBuy(tariff.id, "balance") },
+                    enabled = !buying,
+                ) { Text("С баланса") }
+                Spacer(Modifier.height(0.dp))
+            }
+            if (tariff.canPayCard) {
+                TextButton(
+                    onClick = { onBuy(tariff.id, "card") },
+                    enabled = !buying,
+                ) { Text("Картой") }
+            }
+            // Neither route is open: too little balance and too small an
+            // amount for the processor. Say what would fix it instead of
+            // showing a card with no way forward.
+            if (!tariff.canPayBalance && !tariff.canPayCard) {
+                TextButton(onClick = onTopUp) { Text("Пополнить баланс в боте") }
+            }
+        }
     }
 }

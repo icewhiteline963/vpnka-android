@@ -239,6 +239,21 @@ class MainActivity : HelperBaseComponentActivity() {
         var signedIn by remember { mutableStateOf(VpnkaAccount.isSignedIn()) }
         var signingIn by remember { mutableStateOf(false) }
         var signInError by remember { mutableStateOf<String?>(null) }
+        var showShop by rememberSaveable { mutableStateOf(false) }
+        var tariffs by remember { mutableStateOf<List<VpnkaAccount.Tariff>>(emptyList()) }
+        var shopLoading by remember { mutableStateOf(false) }
+        var shopError by remember { mutableStateOf<String?>(null) }
+        var buying by remember { mutableStateOf(false) }
+        var subs by remember { mutableStateOf(MmkvManager.vpnkaSubscriptions()) }
+        var selectedSub by remember { mutableStateOf(MmkvManager.selectedSubscriptionGuid()) }
+
+        LaunchedEffect(showShop) {
+            if (showShop) {
+                shopLoading = true
+                tariffs = VpnkaAccount.fetchTariffs().orEmpty()
+                shopLoading = false
+            }
+        }
 
         // Fetch only while the screen is open, and again on retry. Polling
         // it in the background would spend requests on a card nobody is
@@ -259,8 +274,19 @@ class MainActivity : HelperBaseComponentActivity() {
                 // phone: the profile carries the subscription token, so we
                 // can swap the shipped trial for the real thing instead of
                 // asking the user to copy a URL out of the bot.
-                fetched?.subscriptionToken?.let { token ->
-                    if (MmkvManager.adoptSubscription(token)) {
+                // One group per plan. The profile lists them newest-expiry
+                // first, so the fallback selection lands on the longest-lived
+                // subscription rather than an arbitrary one.
+                val plans = fetched?.subscriptions.orEmpty()
+                    .mapNotNull { plan ->
+                        val token = plan.groupToken ?: return@mapNotNull null
+                        token to (plan.tariff ?: "VPNka")
+                    }
+                if (plans.isNotEmpty()) {
+                    val switched = MmkvManager.syncSubscriptions(plans)
+                    subs = MmkvManager.vpnkaSubscriptions()
+                    selectedSub = MmkvManager.selectedSubscriptionGuid()
+                    if (switched != null) {
                         // Same path a manual refresh takes, so the user sees
                         // the familiar spinner and toasts rather than servers
                         // appearing out of nowhere.
@@ -325,6 +351,52 @@ class MainActivity : HelperBaseComponentActivity() {
             )
         }
 
+        if (showShop && !showServers) {
+            BackHandler { showShop = false }
+            VpnkaShopScreen(
+                loading = shopLoading,
+                buying = buying,
+                tariffs = tariffs,
+                error = shopError,
+                onBuy = { tariffId, method ->
+                    buying = true
+                    shopError = null
+                    lifecycleScope.launch {
+                        val result = VpnkaAccount.purchase(tariffId, method)
+                        buying = false
+                        result.fold(
+                            onSuccess = { purchase ->
+                                if (purchase.settled) {
+                                    // Paid from balance: the subscription
+                                    // exists now, so pull the profile and let
+                                    // the sync above add its group.
+                                    showShop = false
+                                    subReload++
+                                } else {
+                                    // Card: the hosted page is a browser
+                                    // journey. Nothing to do here but send
+                                    // them there — the webhook settles it,
+                                    // and reopening the profile picks it up.
+                                    purchase.paymentUrl?.let { Utils.openUri(this@MainActivity, it) }
+                                }
+                            },
+                            onFailure = { failure ->
+                                shopError = when (failure) {
+                                    is VpnkaAccount.NotEnoughBalanceException ->
+                                        "Не хватает баланса — оплатите картой или пополните в боте"
+                                    else -> "Не удалось оформить — попробуйте ещё раз"
+                                }
+                            },
+                        )
+                    }
+                },
+                onTopUp = { navigateTo("vpnka_month") },
+                onRetry = { showShop = false; showShop = true },
+                onBack = { showShop = false },
+            )
+            return
+        }
+
         if (showSubscription && !showServers) {
             BackHandler { showSubscription = false }
             VpnkaSubscriptionScreen(
@@ -367,7 +439,7 @@ class MainActivity : HelperBaseComponentActivity() {
                     }
                 },
                 onGetCode = { navigateTo("vpnka_app_code") },
-                onRenew = { navigateTo("vpnka_month") },
+                onRenew = { showShop = true },
                 onSupport = { navigateTo("vpnka_support") },
                 onRetry = { subReload++ },
                 onBack = { showSubscription = false },
@@ -421,6 +493,15 @@ class MainActivity : HelperBaseComponentActivity() {
                 onCheckUpdate = { navigateTo("check_update") },
                 onOpenSettings = { showSettings = true },
                 onOpenSubscription = { showSubscription = true },
+                subscriptions = subs.map { (guid, name) -> VpnkaSubOption(guid, name) },
+                selectedSubGuid = selectedSub,
+                onSelectSubscription = { guid ->
+                    MmkvManager.selectSubscription(guid)
+                    selectedSub = guid
+                    // Switching plans changes which servers exist, so the
+                    // list has to be refetched rather than reused.
+                    importConfigViaSub()
+                },
                 updateVersion = updateVersion,
             )
             return

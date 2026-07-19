@@ -924,6 +924,84 @@ object MmkvManager {
     }
 
     /**
+     * One v2rayNG subscription group per plan the account holds.
+     *
+     * A client can hold several subscriptions at once — a year on ten
+     * devices next to a leftover month on one — and they are separate
+     * things on the server, each with its own key and device count. Modelling
+     * them as separate groups means switching between them is v2rayNG's own
+     * group selector, which already knows how to fetch, list and remember a
+     * selection. The alternative, one blended group, would hide from the user
+     * which plan is actually carrying their traffic.
+     *
+     * Plans that vanish (expired, refunded) have their groups removed, so the
+     * picker can't offer a subscription the server would refuse. The trial
+     * group is dropped as soon as a real plan exists — it's a 24h grant the
+     * account has outgrown, and leaving it in the list invites someone to
+     * select it and conclude the app is broken.
+     *
+     * @return the guid to select, or null to leave the current selection be.
+     */
+    fun syncSubscriptions(plans: List<Pair<String, String>>): String? {
+        if (plans.isEmpty()) return null
+
+        val wanted = plans.associate { (token, label) ->
+            (VPNKA_SUB_PREFIX + token) to label
+        }
+        val existing = decodeSubscriptions()
+
+        // Drop what the account no longer has, plus the shipped trial.
+        existing
+            .filter {
+                val url = it.subscription.url
+                url == VPNKA_TRIAL_SUB_URL ||
+                    (url.startsWith(VPNKA_SUB_PREFIX) && url !in wanted)
+            }
+            .forEach { removeSubscription(it.guid) }
+
+        var firstGuid: String? = null
+        for ((url, label) in wanted) {
+            val already = decodeSubscriptions().firstOrNull { it.subscription.url == url }
+            val guid = already?.guid ?: Utils.getUuid()
+            encodeSubscription(
+                guid,
+                SubscriptionItem(
+                    remarks = label,
+                    url = url,
+                    enabled = true,
+                    autoUpdate = true,
+                ),
+            )
+            if (firstGuid == null) firstGuid = guid
+        }
+
+        // Keep the user's choice if it still exists; otherwise fall to the
+        // first plan, which the caller orders by expiry so it's the longest-
+        // lived one rather than an arbitrary pick.
+        val selected = decodeSettingsString(CACHE_SUBSCRIPTION_ID)
+        val stillValid = selected != null &&
+            decodeSubscriptions().any { it.guid == selected }
+        if (!stillValid && firstGuid != null) {
+            encodeSettings(CACHE_SUBSCRIPTION_ID, firstGuid)
+            return firstGuid
+        }
+        return null
+    }
+
+    /** The subscription groups belonging to us, for the home picker. */
+    fun vpnkaSubscriptions(): List<Pair<String, String>> =
+        decodeSubscriptions()
+            .filter {
+                it.subscription.url.startsWith(VPNKA_SUB_PREFIX) ||
+                    it.subscription.url == VPNKA_TRIAL_SUB_URL
+            }
+            .map { it.guid to it.subscription.remarks }
+
+    fun selectedSubscriptionGuid(): String? = decodeSettingsString(CACHE_SUBSCRIPTION_ID)
+
+    fun selectSubscription(guid: String) = encodeSettings(CACHE_SUBSCRIPTION_ID, guid)
+
+    /**
      * Point the app at the subscription belonging to the account that just
      * signed in, replacing the trial it shipped with.
      *
