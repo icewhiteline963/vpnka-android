@@ -982,7 +982,7 @@ fun VpnkaTopUpScreen(
         )
         Spacer(Modifier.height(20.dp))
 
-        listOf(300, 500, 1000, 2000).forEach { amount ->
+        listOf(300, 500, 1000, 2000, 6000, 10000).forEach { amount ->
             Button(
                 onClick = { onTopUp(amount) },
                 enabled = !busy,
