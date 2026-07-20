@@ -497,4 +497,9 @@
         <item>WebDAV</item>
     </string-array>
 
+    <string name="vpnka_notif_connected">VPNka — connected</string>
+    <string name="vpnka_notif_connecting">VPNka — connecting…</string>
+    <string name="vpnka_notif_disconnect">Disconnect</string>
+    <string name="vpnka_notif_reconnect">Reconnect</string>
+    <string name="vpnka_notif_channel">VPNka connection</string>
 </resources>

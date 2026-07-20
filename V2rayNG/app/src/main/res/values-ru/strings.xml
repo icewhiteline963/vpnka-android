@@ -488,4 +488,9 @@
         <item>WebDAV</item>
     </string-array>
 
+    <string name="vpnka_notif_connected">Впнка — подключено</string>
+    <string name="vpnka_notif_connecting">Впнка — подключаемся…</string>
+    <string name="vpnka_notif_disconnect">Отключить</string>
+    <string name="vpnka_notif_reconnect">Переподключить</string>
+    <string name="vpnka_notif_channel">Подключение Впнки</string>
 </resources>

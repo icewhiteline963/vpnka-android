@@ -34,6 +34,10 @@ object NotificationManager {
     private const val QUERY_INTERVAL_MS = 3000L
 
     private var lastQueryTime = 0L
+
+    /** Имя активного сервера. Живёт здесь, потому что updateNotification
+     *  вызывается из тика скорости и профиля уже не видит. */
+    private var currentRemarks: String? = null
     private var mBuilder: NotificationCompat.Builder? = null
     private var speedNotificationJob: Job? = null
     private var mNotificationManager: NotificationManager? = null
@@ -90,9 +94,18 @@ object NotificationManager {
                 ""
             }
 
+        currentRemarks = currentConfig?.remarks
         mBuilder = NotificationCompat.Builder(service, channelId)
             .setSmallIcon(R.drawable.ic_stat_name)
-            .setContentTitle(currentConfig?.remarks)
+            // Заголовок говорит состояние, а не имя конфига. Апстрим ставил
+            // сюда remarks сервера — строка вида «🌍 Авто · VPNka» отвечает
+            // на вопрос «какой сервер», хотя из шторки спрашивают другое:
+            // включено или нет. Сервер уехал в текст, к скорости.
+            .setContentTitle(service.getString(R.string.vpnka_notif_connected))
+            .setContentText(currentConfig?.remarks)
+            // Фирменный оранжевый: им система красит силуэт цветка и имя
+            // приложения. Тот же Accent, что у кнопки подключения.
+            .setColor(0xFFE8850C.toInt())
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setOngoing(true)
             .setShowWhen(false)
@@ -100,12 +113,12 @@ object NotificationManager {
             .setContentIntent(contentPendingIntent)
             .addAction(
                 R.drawable.ic_delete_24dp,
-                service.getString(R.string.notification_action_stop_v2ray),
+                service.getString(R.string.vpnka_notif_disconnect),
                 stopV2RayPendingIntent
             )
             .addAction(
                 R.drawable.ic_restore_24dp,
-                service.getString(R.string.title_service_restart),
+                service.getString(R.string.vpnka_notif_reconnect),
                 restartV2RayPendingIntent
             )
 
@@ -122,6 +135,7 @@ object NotificationManager {
         service.stopForeground(Service.STOP_FOREGROUND_REMOVE)
 
         mBuilder = null
+        currentRemarks = null
         speedNotificationJob?.cancel()
         speedNotificationJob = null
         mNotificationManager = null
@@ -174,8 +188,15 @@ object NotificationManager {
             // anyway. The numbers in the notification text say the same
             // thing, legibly.
             mBuilder?.setSmallIcon(R.drawable.ic_stat_name)
-            mBuilder?.setStyle(NotificationCompat.BigTextStyle().bigText(contentText))
-            mBuilder?.setContentText(contentText)
+            // Сервер остаётся в строке вместе со скоростью: заголовок занят
+            // состоянием, а «куда идёт трафик» — единственное, что ещё
+            // стоит показывать, пока туннель работает.
+            val server = currentRemarks
+            val line = if (contentText.isNullOrBlank()) server
+            else if (server.isNullOrBlank()) contentText
+            else "$server · $contentText"
+            mBuilder?.setStyle(NotificationCompat.BigTextStyle().bigText(line))
+            mBuilder?.setContentText(line)
             getNotificationManager()?.notify(NOTIFICATION_ID, mBuilder?.build())
         }
     }

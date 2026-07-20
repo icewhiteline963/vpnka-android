@@ -202,7 +202,9 @@ object AppConfig {
 
     /** Notification channel IDs and names. */
     const val RAY_NG_CHANNEL_ID = "RAY_NG_M_CH_ID"
-    const val RAY_NG_CHANNEL_NAME = "v2rayNG Background Service"
+    // Видно пользователю в системных настройках уведомлений —
+    // апстримное имя там выглядело чужой службой.
+    const val RAY_NG_CHANNEL_NAME = "Подключение Впнки"
 
     /** Protocols Scheme **/
     const val VMESS = "vmess://"
