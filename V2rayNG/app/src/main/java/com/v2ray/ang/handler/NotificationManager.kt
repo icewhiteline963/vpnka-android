@@ -106,7 +106,9 @@ object NotificationManager {
             // Фирменный оранжевый: им система красит силуэт цветка и имя
             // приложения. Тот же Accent, что у кнопки подключения.
             .setColor(0xFFE8850C.toInt())
-            .setPriority(NotificationCompat.PRIORITY_MIN)
+            // PRIORITY_MIN прятал значок в строке состояния на Android
+            // младше 8 — там каналов нет и решает только приоритет.
+            .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
             .setShowWhen(false)
             .setOnlyAlertOnce(true)
@@ -160,12 +162,24 @@ object NotificationManager {
     private fun createNotificationChannel(): String {
         val channelId = AppConfig.RAY_NG_CHANNEL_ID
         val channelName = AppConfig.RAY_NG_CHANNEL_NAME
+        // Апстримный канал сносим: он был IMPORTANCE_NONE, то есть «не
+        // показывать нигде», и именно поэтому значка в строке состояния не
+        // было ни у кого. Переоткрыть его с другой важностью нельзя —
+        // Android хранит настройки канала за пользователем, — так что
+        // старый удаляется, а уведомление переезжает на новый id.
+        getNotificationManager()?.deleteNotificationChannel(
+            AppConfig.RAY_NG_CHANNEL_ID_LEGACY
+        )
+
+        // LOW, а не MIN: MIN показывает плашку только в шторке и прячет
+        // значок сверху. Для VPN значок сверху — это и есть смысл: с одного
+        // взгляда видно, что туннель поднят. Звука и всплытия при LOW нет.
         val chan = NotificationChannel(
             channelId,
-            channelName, NotificationManager.IMPORTANCE_HIGH
+            channelName, NotificationManager.IMPORTANCE_LOW
         )
         chan.lightColor = Color.DKGRAY
-        chan.importance = NotificationManager.IMPORTANCE_NONE
+        chan.setShowBadge(false)
         chan.lockscreenVisibility = Notification.VISIBILITY_PRIVATE
         getNotificationManager()?.createNotificationChannel(chan)
         return channelId

@@ -201,7 +201,16 @@ object AppConfig {
     const val MSG_TRAFFIC_TOTALS = 75
 
     /** Notification channel IDs and names. */
-    const val RAY_NG_CHANNEL_ID = "RAY_NG_M_CH_ID"
+    /**
+     * Канал апстрима. Оставлен только чтобы его удалить: он был создан с
+     * IMPORTANCE_NONE, а важность уже созданного канала Android менять не
+     * даёт — настройками канала владеет пользователь. Поэтому новый канал
+     * заводится под новым id, иначе на всех существующих установках
+     * уведомление так и осталось бы скрытым.
+     */
+    const val RAY_NG_CHANNEL_ID_LEGACY = "RAY_NG_M_CH_ID"
+
+    const val RAY_NG_CHANNEL_ID = "VPNKA_CONNECTION_CH"
     // Видно пользователю в системных настройках уведомлений —
     // апстримное имя там выглядело чужой службой.
     const val RAY_NG_CHANNEL_NAME = "Подключение Впнки"
