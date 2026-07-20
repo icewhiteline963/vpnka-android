@@ -68,30 +68,6 @@ object VpnkaAccount {
 
     private data class TokenResponse(@SerializedName("token") val token: String?)
 
-    data class Tariff(
-        @SerializedName("id") val id: Int = 0,
-        @SerializedName("name") val name: String = "",
-        @SerializedName("description") val description: String? = null,
-        @SerializedName("duration_days") val durationDays: Int = 0,
-        @SerializedName("device_limit") val deviceLimit: Int = 0,
-        @SerializedName("price_rub") val priceRub: Int = 0,
-        @SerializedName("price_rub_full") val priceRubFull: Int? = null,
-        @SerializedName("can_pay_balance") val canPayBalance: Boolean = false,
-        @SerializedName("can_pay_card") val canPayCard: Boolean = false,
-    )
-
-    private data class Shop(
-        @SerializedName("balance_usdt") val balance: String? = null,
-        @SerializedName("tariffs") val tariffs: List<Tariff>? = null,
-    )
-
-    data class PurchaseResult(
-        @SerializedName("settled") val settled: Boolean = false,
-        @SerializedName("subscription_url") val subscriptionUrl: String? = null,
-        @SerializedName("payment_url") val paymentUrl: String? = null,
-        @SerializedName("amount_rub") val amountRub: Int? = null,
-    )
-
     private fun http() = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
@@ -295,73 +271,6 @@ object VpnkaAccount {
         }
     }
 
-    /** What this account may buy, priced for this account. */
-    suspend fun fetchTariffs(): List<Tariff>? = withContext(Dispatchers.IO) {
-        val token = MmkvManager.getAccountToken() ?: return@withContext null
-        try {
-            http().newCall(
-                Request.Builder()
-                    .url("$BASE/app/tariffs")
-                    .header("Authorization", "Bearer $token")
-                    .get()
-                    .build()
-            ).execute().use { resp ->
-                if (!resp.isSuccessful) {
-                    LogUtil.w(AppConfig.TAG, "tariffs: HTTP ${resp.code}")
-                    return@withContext null
-                }
-                JsonUtil.fromJsonSafe(resp.body?.string().orEmpty(), Shop::class.java)
-                    ?.tariffs
-            }
-        } catch (e: Exception) {
-            LogUtil.w(AppConfig.TAG, "tariffs failed: ${e.message}")
-            null
-        }
-    }
-
-    /**
-     * Buy a tariff.
-     *
-     * `method` is "balance" (settles immediately) or "card" (returns a URL
-     * to open in a browser). Anything the server refuses comes back as a
-     * failure carrying the reason, because the reasons differ in what the
-     * user should do next: top up, pick a bigger plan, or try later.
-     */
-    suspend fun purchase(tariffId: Int, method: String): Result<PurchaseResult> =
-        withContext(Dispatchers.IO) {
-            val token = MmkvManager.getAccountToken()
-                ?: return@withContext Result.failure(IllegalStateException("signed out"))
-            val body = JsonUtil.toJson(mapOf("tariff_id" to tariffId, "method" to method))
-                .toRequestBody("application/json".toMediaType())
-            try {
-                http().newCall(
-                    Request.Builder()
-                        .url("$BASE/app/purchase")
-                        .header("Authorization", "Bearer $token")
-                        .post(body)
-                        .build()
-                ).execute().use { resp ->
-                    val raw = resp.body?.string().orEmpty()
-                    if (resp.code == 402) {
-                        return@withContext Result.failure(NotEnoughBalanceException())
-                    }
-                    if (!resp.isSuccessful) {
-                        return@withContext Result.failure(
-                            IllegalStateException("HTTP ${resp.code}")
-                        )
-                    }
-                    JsonUtil.fromJsonSafe(raw, PurchaseResult::class.java)
-                        ?.let { Result.success(it) }
-                        ?: Result.failure(IllegalStateException("bad response"))
-                }
-            } catch (e: Exception) {
-                LogUtil.w(AppConfig.TAG, "purchase failed: ${e.message}")
-                Result.failure(e)
-            }
-        }
-
-    class NotEnoughBalanceException : Exception()
-
     data class SupportMessage(
         @SerializedName("id") val id: Long = 0,
         @SerializedName("from_me") val fromMe: Boolean = false,
@@ -485,12 +394,6 @@ object VpnkaAccount {
     /** The URL this plan's config lives at — what the QR encodes. */
     fun subscriptionUrl(groupToken: String): String = "$BASE/sub/g/$groupToken"
 
-    /** A payment page that credits the balance. */
-    suspend fun topUp(amountRub: Int): String? = withContext(Dispatchers.IO) {
-        val body = JsonUtil.toJson(mapOf("amount_rub" to amountRub))
-            .toRequestBody("application/json".toMediaType())
-        call<PurchaseResult>(authed("/app/topup")?.post(body))?.paymentUrl
-    }
 
     /**
      * A Telegram link that attaches this account to the user's Telegram.

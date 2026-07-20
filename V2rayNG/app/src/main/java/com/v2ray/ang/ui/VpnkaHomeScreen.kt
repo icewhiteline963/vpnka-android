@@ -547,13 +547,12 @@ fun VpnkaSubscriptionScreen(
                 subtitle = "Если аккаунт заведён здесь, в приложении",
             )
         }
-        // Buying and topping up both need an account to charge. Without one
-        // they lead to the Telegram sign-in rather than to a shop that
-        // cannot complete — the destination is the missing step, not a
-        // refusal at the end of one.
-        // Both need an account to charge, and until Telegram is attached
-        // there isn't one worth charging — the rows above are the way in.
-        // Offering a shop that cannot complete is worse than not offering it.
+        // Both open the bot, which is where the money is handled — the app
+        // sells nothing itself. Shown only once Telegram is attached, because
+        // a purchase made in the bot is credited to the Telegram account: an
+        // unlinked user would pay and then find this app still on an unpaid
+        // account, with a subscription they cannot see. The rows above are
+        // the way in, and they come first for that reason.
         if (telegramLinked) {
             VpnkaMenuRow("Купить подписку", onRenew)
             VpnkaMenuRow("Пополнить баланс", onTopUp)
@@ -720,154 +719,6 @@ private fun VpnkaInfoRow(label: String, value: String) {
 }
 
 /**
- * «Купить подписку» — the shop, without leaving the app.
- *
- * Prices arrive already converted to roubles and already discounted for
- * this account, so nothing here recomputes money. The two buttons are
- * whatever the server says this client can actually use: balance when they
- * have enough, card when the amount clears RuKassa's floor. Offering a
- * button that the purchase call would then refuse is worse than not
- * offering it.
- */
-@Composable
-fun VpnkaShopScreen(
-    loading: Boolean,
-    buying: Boolean,
-    tariffs: List<VpnkaAccount.Tariff>,
-    error: String?,
-    onBuy: (Int, String) -> Unit,
-    onTopUp: () -> Unit,
-    onRetry: () -> Unit,
-    onBack: () -> Unit,
-) {
-    VpnkaPage(title = "Купить подписку", onBack = onBack) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState()),
-        ) {
-
-        when {
-            loading -> CircularProgressIndicator(modifier = Modifier.size(32.dp))
-
-            tariffs.isEmpty() -> {
-                Text(
-                    text = "Не удалось загрузить тарифы — проверьте интернет",
-                    fontSize = 15.sp,
-                    color = VpnkaColors.TextMuted,
-                )
-                Spacer(Modifier.height(12.dp))
-                TextButton(onClick = onRetry) { Text("Повторить") }
-            }
-
-            else -> {
-                if (error != null) {
-                    Text(
-                        text = error,
-                        fontSize = 13.sp,
-                        color = VpnkaColors.Warning,
-                    )
-                    Spacer(Modifier.height(12.dp))
-                }
-                tariffs.forEach { tariff ->
-                    VpnkaTariffCard(tariff, buying, onBuy, onTopUp)
-                    Spacer(Modifier.height(8.dp))
-                }
-            }
-        }
-
-        }
-    }
-}
-
-@Composable
-private fun VpnkaTariffCard(
-    tariff: VpnkaAccount.Tariff,
-    buying: Boolean,
-    onBuy: (Int, String) -> Unit,
-    onTopUp: () -> Unit,
-) {
-    // Compact by design: name and price share the top line, the terms sit
-    // under them as one quiet line, and the actions are plain tappable text
-    // rather than Material buttons — those brought their own height, ripple
-    // and padding, which is what made these cards tower over everything else
-    // on the screen.
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(VpnkaColors.CardSpeed)
-            .padding(horizontal = 14.dp, vertical = 11.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = tariff.name,
-                fontFamily = VpnkaFonts.nunito800,
-                fontWeight = VpnkaWeight.Extra,
-                fontSize = 15.sp,
-                color = VpnkaColors.TextStrong,
-                modifier = Modifier.weight(1f),
-            )
-            Text(
-                text = "${tariff.priceRub} ₽",
-                fontFamily = VpnkaFonts.nunito800,
-                fontWeight = VpnkaWeight.Extra,
-                fontSize = 15.sp,
-                color = VpnkaColors.TextStrong,
-            )
-        }
-        Spacer(Modifier.height(2.dp))
-        Text(
-            text = buildString {
-                append("${tariff.durationDays} дн · ${tariff.deviceLimit} устр.")
-                // The full price only appears when a friend discount is live,
-                // so the discount is visible rather than merely applied.
-                tariff.priceRubFull?.let { append(" · вместо $it ₽") }
-            },
-            fontSize = 12.sp,
-            color = VpnkaColors.TextMuted,
-        )
-        Spacer(Modifier.height(8.dp))
-
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (tariff.canPayBalance) {
-                VpnkaTariffAction("С баланса", !buying) {
-                    onBuy(tariff.id, "balance")
-                }
-                Spacer(Modifier.width(18.dp))
-            }
-            if (tariff.canPayCard) {
-                VpnkaTariffAction("Картой", !buying) { onBuy(tariff.id, "card") }
-            }
-            // Neither route is open: too little balance and too small an
-            // amount for the processor. Say what would fix it instead of
-            // showing a card with no way forward.
-            if (!tariff.canPayBalance && !tariff.canPayCard) {
-                VpnkaTariffAction("Пополнить баланс", true, onTopUp)
-            }
-        }
-    }
-}
-
-@Composable
-private fun VpnkaTariffAction(
-    label: String,
-    enabled: Boolean,
-    onClick: () -> Unit,
-) {
-    Text(
-        text = label,
-        fontFamily = VpnkaFonts.nunito800,
-        fontWeight = VpnkaWeight.Extra,
-        fontSize = 13.sp,
-        color = if (enabled) VpnkaColors.Accent else VpnkaColors.TextFaint,
-        modifier = Modifier
-            .clickable(enabled = enabled, onClick = onClick)
-            .padding(vertical = 2.dp),
-    )
-}
-
-/**
  * «Поддержка» — the same ticket an operator answers, without Telegram.
  *
  * Messages are the ticket's own rows, not a copy: an agent sees one
@@ -980,53 +831,6 @@ private fun VpnkaBubble(message: VpnkaAccount.SupportMessage) {
                 color = if (mine) VpnkaColors.TextStrong
                 else VpnkaColors.TextStrong,
             )
-        }
-    }
-}
-
-/**
- * «Пополнить баланс» — a card payment that credits the balance.
- *
- * The balance is what lets a purchase be one tap and no browser. Amounts are
- * fixed rather than free-typed: RuKassa has a floor, and a field that lets
- * someone enter 50 ₽ only to be refused is a worse experience than three
- * buttons that all work.
- */
-@Composable
-fun VpnkaTopUpScreen(
-    busy: Boolean,
-    error: String?,
-    onTopUp: (Int) -> Unit,
-    onBack: () -> Unit,
-) {
-    VpnkaPage(title = "Пополнить баланс", onBack = onBack) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState()),
-        ) {
-        Text(
-            text = "Оплата картой или через СБП. С баланса подписка покупается " +
-                "в одно нажатие.",
-            fontSize = 14.sp,
-            color = VpnkaColors.TextMuted,
-        )
-        Spacer(Modifier.height(20.dp))
-
-        listOf(300, 500, 1000, 2000, 6000, 10000).forEach { amount ->
-            Button(
-                onClick = { onTopUp(amount) },
-                enabled = !busy,
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("$amount ₽") }
-            Spacer(Modifier.height(8.dp))
-        }
-
-        if (error != null) {
-            Spacer(Modifier.height(8.dp))
-            Text(error, fontSize = 13.sp, color = VpnkaColors.Warning)
-        }
-
         }
     }
 }

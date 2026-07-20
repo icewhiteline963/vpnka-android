@@ -299,13 +299,11 @@ class MainActivity : HelperBaseComponentActivity() {
         openedTicket != null -> { openedTicket = null; true }
         showTickets -> { showTickets = false; true }
         showSupport -> { showSupport = false; true }
-        showTopUp -> { showTopUp = false; true }
         showRecovery -> { showRecovery = false; true }
         showServerPicker -> { showServerPicker = false; true }
         showPlanPicker -> { showPlanPicker = false; true }
         openedPlan != null -> { openedPlan = null; true }
         showPlansList -> { showPlansList = false; true }
-        showShop -> { showShop = false; true }
         showSettings -> { showSettings = false; true }
         showSubscription -> { showSubscription = false; true }
         showServers -> { showServers = false; true }
@@ -324,9 +322,9 @@ class MainActivity : HelperBaseComponentActivity() {
         android.util.Log.i(
             "VPNKA_BACK",
             "handled=$handled sub=$showSubscription settings=$showSettings " +
-                "servers=$showServers shop=$showShop plans=$showPlansList " +
+                "servers=$showServers plans=$showPlansList " +
                 "plan=${openedPlan != null} support=$showSupport " +
-                "topup=$showTopUp recovery=$showRecovery",
+                "recovery=$showRecovery",
         )
         return handled
     }
@@ -334,7 +332,11 @@ class MainActivity : HelperBaseComponentActivity() {
     private var showServers by mutableStateOf(false)
     private var showSettings by mutableStateOf(false)
     private var showSubscription by mutableStateOf(false)
-    private var showShop by mutableStateOf(false)
+    // Mirrors subInfo.telegramLinked so code outside the composition can
+    // ask the question. `goBuyOrLink` runs from a click handler that has no
+    // access to composable state, and sending an unlinked user to the shop
+    // is the one mistake that costs them money.
+    private var vpnkaTelegramLinked by mutableStateOf(false)
     private var showSupport by mutableStateOf(false)
     private var showTickets by mutableStateOf(false)
     // Telegram link the user asked for while the tunnel was down. Held until
@@ -342,7 +344,6 @@ class MainActivity : HelperBaseComponentActivity() {
     private var askVpnForTelegram by mutableStateOf(false)
     private var telegramLinkPending by mutableStateOf(false)
     private var openedTicket by mutableStateOf<VpnkaAccount.SupportTicket?>(null)
-    private var showTopUp by mutableStateOf(false)
     private var showRecovery by mutableStateOf(false)
     private var showServerPicker by mutableStateOf(false)
     private var showPlanPicker by mutableStateOf(false)
@@ -363,19 +364,12 @@ class MainActivity : HelperBaseComponentActivity() {
         var signedIn by remember { mutableStateOf(VpnkaAccount.isSignedIn()) }
         var signingIn by remember { mutableStateOf(false) }
         var signInError by remember { mutableStateOf<String?>(null) }
-        var tariffs by remember { mutableStateOf<List<VpnkaAccount.Tariff>>(emptyList()) }
-        var shopLoading by remember { mutableStateOf(false) }
-        var shopError by remember { mutableStateOf<String?>(null) }
-        var shopReload by remember { mutableIntStateOf(0) }
-        var buying by remember { mutableStateOf(false) }
         var supportMessages by remember {
             mutableStateOf<List<VpnkaAccount.SupportMessage>>(emptyList())
         }
         var supportLoading by remember { mutableStateOf(false) }
         var supportSending by remember { mutableStateOf(false) }
         var supportReload by remember { mutableIntStateOf(0) }
-        var topUpBusy by remember { mutableStateOf(false) }
-        var topUpError by remember { mutableStateOf<String?>(null) }
 
         LaunchedEffect(showSupport, supportReload) {
             if (showSupport) {
@@ -390,24 +384,8 @@ class MainActivity : HelperBaseComponentActivity() {
         LaunchedEffect(Unit) {
             if (vpnkaOpenProfileAfterPayment) {
                 vpnkaOpenProfileAfterPayment = false
-                showShop = false
                 showSubscription = true
                 subReload++
-            }
-        }
-
-        // `shopReload` is what makes «Повторить» work. The retry used to be
-        // `showShop = false; showShop = true` in one lambda: state is not
-        // read back mid-composition, so the effect's key never changed value
-        // and the fetch never re-ran. The button looked alive and did
-        // nothing, which on a failed tariff load is the one moment the user
-        // has no other way forward.
-        LaunchedEffect(showShop, shopReload) {
-            if (showShop) {
-                shopLoading = true
-                shopError = null
-                tariffs = VpnkaAccount.fetchTariffs().orEmpty()
-                shopLoading = false
             }
         }
 
@@ -424,6 +402,7 @@ class MainActivity : HelperBaseComponentActivity() {
                 subLoading = showSubscription
                 val fetched = VpnkaAccount.fetchInfo()
                 subInfo = fetched
+                vpnkaTelegramLinked = fetched?.telegramLinked == true
                 // A null answer with a token still stored is just a network
                 // failure; a null answer *and* no token means the backend
                 // told us the session is gone — the user revoked this device
@@ -585,9 +564,9 @@ class MainActivity : HelperBaseComponentActivity() {
         // Compose registers this one later, and Android dispatches to the
         // most recently added enabled callback first. Belt and braces: if
         // either mechanism is delivered, back stays inside the app.
-        val anyOverlay = showSupport || showTopUp || showRecovery ||
+        val anyOverlay = showSupport || showRecovery ||
             showServerPicker || showPlanPicker || showPlansList ||
-            openedPlan != null || showShop || showSubscription ||
+            openedPlan != null || showSubscription ||
             showSettings || showServers || showTickets || openedTicket != null
         BackHandler(enabled = anyOverlay) { closeTopVpnkaScreen() }
 
@@ -644,77 +623,10 @@ class MainActivity : HelperBaseComponentActivity() {
             return
         }
 
-        if (showTopUp && !showServers) {
-            VpnkaTopUpScreen(
-                busy = topUpBusy,
-                error = topUpError,
-                onTopUp = { amount ->
-                    topUpBusy = true
-                    topUpError = null
-                    lifecycleScope.launch {
-                        val url = VpnkaAccount.topUp(amount)
-                        topUpBusy = false
-                        if (url != null) {
-                            Utils.openUri(this@MainActivity, url)
-                        } else {
-                            topUpError = "Не удалось создать платёж — попробуйте позже"
-                        }
-                    }
-                },
-                onBack = { showTopUp = false },
-            )
-            return
-        }
-
         if (showRecovery && !showServers) {
             VpnkaRecoveryScreen(
                 code = MmkvManager.getRecoveryCode(),
                 onBack = { showRecovery = false },
-            )
-            return
-        }
-
-        if (showShop && !showServers) {
-            VpnkaShopScreen(
-                loading = shopLoading,
-                buying = buying,
-                tariffs = tariffs,
-                error = shopError,
-                onBuy = { tariffId, method ->
-                    buying = true
-                    shopError = null
-                    lifecycleScope.launch {
-                        val result = VpnkaAccount.purchase(tariffId, method)
-                        buying = false
-                        result.fold(
-                            onSuccess = { purchase ->
-                                if (purchase.settled) {
-                                    // Paid from balance: the subscription
-                                    // exists now, so pull the profile and let
-                                    // the sync above add its group.
-                                    showShop = false
-                                    subReload++
-                                } else {
-                                    // Card: the hosted page is a browser
-                                    // journey. Nothing to do here but send
-                                    // them there — the webhook settles it,
-                                    // and reopening the profile picks it up.
-                                    purchase.paymentUrl?.let { Utils.openUri(this@MainActivity, it) }
-                                }
-                            },
-                            onFailure = { failure ->
-                                shopError = when (failure) {
-                                    is VpnkaAccount.NotEnoughBalanceException ->
-                                        "Не хватает баланса — оплатите картой или пополните в боте"
-                                    else -> "Не удалось оформить — попробуйте ещё раз"
-                                }
-                            },
-                        )
-                    }
-                },
-                onTopUp = { navigateTo("vpnka_month") },
-                onRetry = { shopReload++ },
-                onBack = { showShop = false },
             )
             return
         }
@@ -788,12 +700,13 @@ class MainActivity : HelperBaseComponentActivity() {
                         VpnkaAccount.signOut()
                         signedIn = false
                         subInfo = null
+                        vpnkaTelegramLinked = false
                     }
                 },
                 onGetCode = { navigateTo("vpnka_app_code") },
-                onRenew = { showShop = true },
+                onRenew = { navigateTo("vpnka_buy") },
                 onSupport = { showSupport = true },
-                onTopUp = { showTopUp = true },
+                onTopUp = { navigateTo("vpnka_topup") },
                 onShowRecovery = { showRecovery = true },
                 onOpenSettings = { showSettings = true },
                 onLinkTelegram = { openTelegramLinkGuarded() },
@@ -893,7 +806,7 @@ class MainActivity : HelperBaseComponentActivity() {
                 onOpenPlan = { openedPlan = it },
                 onBuy = {
                     showPlansList = false
-                    showShop = true
+                    goBuyOrLink()
                 },
                 onBack = { showPlansList = false },
             )
@@ -1019,7 +932,7 @@ class MainActivity : HelperBaseComponentActivity() {
                     .filter { !it.frozen }
                     .mapNotNull { it.daysLeft }
                     .minOrNull(),
-                onRenew = { showShop = true },
+                onRenew = { goBuyOrLink() },
                 // The plan the traffic is actually on, not merely the first
                 // one: the row names that subscription, so the numbers under
                 // it have to describe the same one.
@@ -1119,6 +1032,33 @@ class MainActivity : HelperBaseComponentActivity() {
             // Straight to the card that mints a sign-in code, so the user
             // doesn't have to find «Профиль» in the bot's menu while holding
             // a half-filled code field open in the app.
+            // Buying and topping up happen in the bot, not here.
+            //
+            // Routed through `goBuyOrLink` rather than opened directly: money
+            // spent in the bot lands on the Telegram account, so someone who
+            // has not linked yet would pay and then find the app still on an
+            // unpaid account. Linking first is the missing step, not a
+            // refusal.
+            //
+            // Not a UI preference: Google Play requires its own billing for
+            // anything sold inside an app, and Play stopped paying out to
+            // Russian accounts entirely at the end of 2024 — so a shop in
+            // the app is both a policy violation and a dead end for the
+            // money. The bot already holds tariffs, balance, promo codes,
+            // the referral discount and RuKassa; one place to buy is one
+            // place to keep correct.
+            //
+            // The payload lands the user on the matching card rather than
+            // the bot's home screen: they tapped «купить», and making them
+            // find it again is where people give up.
+            "vpnka_buy" -> {
+                Utils.openUri(this, "https://t.me/vpnka_io_bot?start=buy")
+                return
+            }
+            "vpnka_topup" -> {
+                Utils.openUri(this, "https://t.me/vpnka_io_bot?start=topup")
+                return
+            }
             "vpnka_app_code" -> {
                 Utils.openUri(this, "https://t.me/vpnka_io_bot?start=appcode")
                 return
@@ -1419,6 +1359,19 @@ class MainActivity : HelperBaseComponentActivity() {
      * «Подключить Telegram» with the tunnel down opened a browser that
      * timed out — and the failure looked like ours. Ask first, then open.
      */
+    /**
+     * «Купить» from anywhere that a signed-out user can also reach.
+     *
+     * A purchase made in the bot is credited to the Telegram account. Send
+     * an unlinked user straight there and they pay real money onto an
+     * account this app is not signed into — the subscription exists, and
+     * they cannot see it. So the link comes first; the shop is one tap
+     * further, and that tap is the one that makes the payment land.
+     */
+    private fun goBuyOrLink() {
+        if (vpnkaTelegramLinked) navigateTo("vpnka_buy") else openTelegramLinkGuarded()
+    }
+
     private fun openTelegramLinkGuarded() {
         if (mainViewModel.uiState.value.isRunning) {
             openTelegramLink()
