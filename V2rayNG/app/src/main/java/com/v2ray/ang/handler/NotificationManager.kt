@@ -31,7 +31,6 @@ object NotificationManager {
     private const val NOTIFICATION_PENDING_INTENT_CONTENT = 0
     private const val NOTIFICATION_PENDING_INTENT_STOP_V2RAY = 1
     private const val NOTIFICATION_PENDING_INTENT_RESTART_V2RAY = 2
-    private const val NOTIFICATION_ICON_THRESHOLD = 3000
     private const val QUERY_INTERVAL_MS = 3000L
 
     private var lastQueryTime = 0L
@@ -135,7 +134,7 @@ object NotificationManager {
         speedNotificationJob?.let {
             it.cancel()
             speedNotificationJob = null
-            updateNotification("", 0, 0)
+            updateNotification("")
         }
     }
 
@@ -159,20 +158,22 @@ object NotificationManager {
     }
 
     /**
-     * Updates the notification with the given content text and traffic data.
-     * @param contentText The content text.
-     * @param proxyTraffic The proxy traffic.
-     * @param directTraffic The direct traffic.
+     * Updates the notification's text.
+     *
+     * The traffic totals used to be arguments as well — they chose between
+     * three small icons. There is one icon now, so they were carried in only
+     * to be ignored.
      */
-    private fun updateNotification(contentText: String?, proxyTraffic: Long, directTraffic: Long) {
+    private fun updateNotification(contentText: String?) {
         if (mBuilder != null) {
-            if (proxyTraffic < NOTIFICATION_ICON_THRESHOLD && directTraffic < NOTIFICATION_ICON_THRESHOLD) {
-                mBuilder?.setSmallIcon(R.drawable.ic_stat_name)
-            } else if (proxyTraffic > directTraffic) {
-                mBuilder?.setSmallIcon(R.drawable.ic_stat_proxy)
-            } else {
-                mBuilder?.setSmallIcon(R.drawable.ic_stat_direct)
-            }
+            // Our flower, always — upstream swapped in an arrow here to hint
+            // whether proxy or direct traffic dominated. That hint is dropped
+            // on purpose: it cost us the brand mark in the shade for most of
+            // the time the tunnel is actually carrying traffic, and at 24dp
+            // in monochrome the two arrows were near-indistinguishable
+            // anyway. The numbers in the notification text say the same
+            // thing, legibly.
+            mBuilder?.setSmallIcon(R.drawable.ic_stat_name)
             mBuilder?.setStyle(NotificationCompat.BigTextStyle().bigText(contentText))
             mBuilder?.setContentText(contentText)
             getNotificationManager()?.notify(NOTIFICATION_ID, mBuilder?.build())
@@ -265,7 +266,7 @@ object NotificationManager {
                 directUplink / sinceLastQueryInSeconds,
                 directDownlink / sinceLastQueryInSeconds
             )
-            updateNotification(text.toString(), proxyTotal, directTotal)
+            updateNotification(text.toString())
         }
         lastQueryTime = queryTime
         return zeroSpeed
