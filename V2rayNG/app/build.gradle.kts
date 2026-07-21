@@ -19,14 +19,14 @@ android {
         applicationId = "io.vpnka.android"
         minSdk = 24
         targetSdk = 37
-        versionCode = 768
+        versionCode = 769
         // Upstream's version plus a fourth segment for our own builds, so we
         // can ship a fix without waiting for a v2rayNG release. Digits and
         // dots only: UpdateCheckerManager.compareVersions calls toInt() on
         // every segment, so a tag like "2.2.6-vpnka1" would throw and take
         // the whole update check down with it.
         // On merging upstream: take their number, re-append our segment.
-        versionName = "2.7.8.0"
+        versionName = "2.7.9.0"
 
         val abiFilterList = (properties["ABI_FILTERS"] as? String)?.split(';')
         splits {
@@ -36,12 +36,14 @@ android {
                 if (!abiFilterList.isNullOrEmpty()) {
                     include(*abiFilterList.toTypedArray())
                 } else {
-                    include(
-                        "arm64-v8a",
-                        "armeabi-v7a",
-                        "x86_64",
-                        "x86"
-                    )
+                    // Только то, что реально скачивают. По логам мостов за
+                    // всю историю: universal (ссылка vpnka.apk) — почти всё,
+                    // arm64 — встроенный апдейтер (32 МБ вместо 72), а
+                    // x86/x86_64/armeabi-v7a — ноль загрузок. x86* это
+                    // эмуляторы, armeabi-v7a — 32-битные телефоны, которых у
+                    // аудитории не нашлось; у кого он всё же будет — поставит
+                    // universal, он ставится на любую архитектуру.
+                    include("arm64-v8a")
                 }
                 isUniversalApk = abiFilterList.isNullOrEmpty()
             }
