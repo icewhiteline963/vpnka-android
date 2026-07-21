@@ -19,14 +19,24 @@ android {
         applicationId = "io.vpnka.android"
         minSdk = 24
         targetSdk = 37
-        versionCode = 769
+        versionCode = 770
         // Upstream's version plus a fourth segment for our own builds, so we
         // can ship a fix without waiting for a v2rayNG release. Digits and
         // dots only: UpdateCheckerManager.compareVersions calls toInt() on
         // every segment, so a tag like "2.2.6-vpnka1" would throw and take
         // the whole update check down with it.
         // On merging upstream: take their number, re-append our segment.
-        versionName = "2.7.9.0"
+        versionName = "2.7.9.1"
+
+        // Ни одной x86-загрузки за всю историю логов (это эмуляторы и
+        // Chromebook, не телефоны). abiFilters выкидывает их нативные
+        // библиотеки из ВСЕХ сборок, включая universal — в отличие от
+        // splits ниже, который управляет только тем, какие отдельные apk
+        // генерятся. Так vpnka.apk (universal) худеет с ~72 до ~40 МБ,
+        // сохраняя обе ARM-архитектуры: arm64 и старый 32-битный armeabi-v7a.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
 
         val abiFilterList = (properties["ABI_FILTERS"] as? String)?.split(';')
         splits {
@@ -36,13 +46,11 @@ android {
                 if (!abiFilterList.isNullOrEmpty()) {
                     include(*abiFilterList.toTypedArray())
                 } else {
-                    // Только то, что реально скачивают. По логам мостов за
-                    // всю историю: universal (ссылка vpnka.apk) — почти всё,
-                    // arm64 — встроенный апдейтер (32 МБ вместо 72), а
-                    // x86/x86_64/armeabi-v7a — ноль загрузок. x86* это
-                    // эмуляторы, armeabi-v7a — 32-битные телефоны, которых у
-                    // аудитории не нашлось; у кого он всё же будет — поставит
-                    // universal, он ставится на любую архитектуру.
+                    // Отдельным файлом собираем только arm64 — его тянет
+                    // встроенный апдейтер (32 МБ против ~40 у universal).
+                    // universal ниже покрывает обе ARM-архитектуры; x86
+                    // отсечён abiFilters в defaultConfig, качать его было
+                    // некому.
                     include("arm64-v8a")
                 }
                 isUniversalApk = abiFilterList.isNullOrEmpty()
