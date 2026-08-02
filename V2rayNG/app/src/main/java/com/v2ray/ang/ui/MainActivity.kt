@@ -736,7 +736,10 @@ class MainActivity : HelperBaseComponentActivity() {
             return
         }
 
-        if (showSubscription && !showServers) {
+        // !showShop: the shop opens from this profile and its block sits below,
+        // so without this guard the profile keeps rendering and «Купить в
+        // приложении» does nothing (same shadowing the settings screens had).
+        if (showSubscription && !showShop && !showServers) {
             VpnkaSubscriptionScreen(
                 loading = subLoading,
                 signedIn = signedIn,
