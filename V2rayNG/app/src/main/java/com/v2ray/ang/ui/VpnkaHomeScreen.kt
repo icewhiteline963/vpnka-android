@@ -667,8 +667,10 @@ fun VpnkaSubscriptionScreen(
         }
         VpnkaMenuRow("Связаться с оператором", onSupport)
         VpnkaMenuRow("Настройки приложения", onOpenSettings)
-        // Only worth showing to someone who has an account to recover.
-        if (telegramLinked) {
+        // Only for an app-only account: the recovery code is its single way
+        // back if the app is lost. Once Telegram is attached, recovery goes
+        // through Telegram instead, so the code is noise — hide it.
+        if (!telegramLinked) {
             VpnkaMenuRow("Код восстановления", onShowRecovery)
         }
         VpnkaMenuRow(
