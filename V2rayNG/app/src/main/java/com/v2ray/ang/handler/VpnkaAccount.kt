@@ -281,6 +281,8 @@ object VpnkaAccount {
         @SerializedName("id") val id: Long = 0,
         @SerializedName("from_me") val fromMe: Boolean = false,
         @SerializedName("body") val body: String = "",
+        // ISO-8601 UTC; the UI shows a date header and a per-message time.
+        @SerializedName("created_at") val createdAt: String = "",
     )
 
     /** One past conversation, as the history list shows it. */

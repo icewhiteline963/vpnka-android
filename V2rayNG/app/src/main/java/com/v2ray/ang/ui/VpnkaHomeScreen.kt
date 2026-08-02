@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
@@ -873,8 +874,19 @@ fun VpnkaSupportScreen(
                 )
 
                 else -> LazyColumn {
-                    items(messages) { message ->
-                        VpnkaBubble(message)
+                    itemsIndexed(messages) { i, message ->
+                        val ts = parseSupportTs(message.createdAt)
+                        val prevTs = messages.getOrNull(i - 1)
+                            ?.let { parseSupportTs(it.createdAt) }
+                        // A date header at the very top of the conversation and
+                        // whenever the day changes between two messages.
+                        if (ts != null &&
+                            (prevTs == null || prevTs.toLocalDate() != ts.toLocalDate())
+                        ) {
+                            SupportDateHeader(ts)
+                            Spacer(Modifier.height(8.dp))
+                        }
+                        VpnkaBubble(message, ts)
                         Spacer(Modifier.height(8.dp))
                     }
                 }
@@ -921,28 +933,85 @@ fun VpnkaSupportScreen(
     }
 }
 
+private val supportTimeFmt = java.time.format.DateTimeFormatter.ofPattern("HH:mm")
+private val supportDateFmt = java.time.format.DateTimeFormatter
+    .ofPattern("d MMMM yyyy", java.util.Locale("ru"))
+
+/** Parse the backend's ISO-8601 UTC timestamp into local wall-clock time. */
+private fun parseSupportTs(iso: String): java.time.LocalDateTime? {
+    if (iso.isBlank()) return null
+    return try {
+        java.time.OffsetDateTime.parse(iso)
+            .atZoneSameInstant(java.time.ZoneId.systemDefault())
+            .toLocalDateTime()
+    } catch (e: Exception) {
+        try {
+            java.time.Instant.parse(iso)
+                .atZone(java.time.ZoneId.systemDefault())
+                .toLocalDateTime()
+        } catch (e2: Exception) {
+            null
+        }
+    }
+}
+
 @Composable
-private fun VpnkaBubble(message: VpnkaAccount.SupportMessage) {
+private fun SupportDateHeader(ts: java.time.LocalDateTime) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            text = ts.format(supportDateFmt),
+            fontFamily = VpnkaFonts.manrope600,
+            fontWeight = VpnkaWeight.Semi,
+            fontSize = 11.sp,
+            color = VpnkaColors.TextFaint,
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .background(VpnkaColors.CardSpeed)
+                .padding(horizontal = 10.dp, vertical = 3.dp),
+        )
+    }
+}
+
+@Composable
+private fun VpnkaBubble(
+    message: VpnkaAccount.SupportMessage,
+    ts: java.time.LocalDateTime?,
+) {
     val mine = message.fromMe
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start,
     ) {
-        Box(
-            modifier = Modifier
-                .clip(RoundedCornerShape(12.dp))
-                .background(
-                    if (mine) VpnkaColors.CardServer
-                    else VpnkaColors.CardSpeed
-                )
-                .padding(horizontal = 14.dp, vertical = 10.dp),
+        Column(
+            horizontalAlignment = if (mine) Alignment.End else Alignment.Start,
         ) {
-            Text(
-                text = message.body,
-                fontSize = 14.sp,
-                color = if (mine) VpnkaColors.TextStrong
-                else VpnkaColors.TextStrong,
-            )
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(
+                        if (mine) VpnkaColors.CardServer
+                        else VpnkaColors.CardSpeed
+                    )
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+            ) {
+                Text(
+                    text = message.body,
+                    fontSize = 14.sp,
+                    color = VpnkaColors.TextStrong,
+                )
+            }
+            if (ts != null) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = ts.format(supportTimeFmt),
+                    fontSize = 10.sp,
+                    color = VpnkaColors.TextFaint,
+                    modifier = Modifier.padding(horizontal = 6.dp),
+                )
+            }
         }
     }
 }
@@ -1113,8 +1182,17 @@ fun VpnkaTicketThreadScreen(
             )
 
             else -> LazyColumn {
-                items(messages) { message ->
-                    VpnkaBubble(message)
+                itemsIndexed(messages) { i, message ->
+                    val ts = parseSupportTs(message.createdAt)
+                    val prevTs = messages.getOrNull(i - 1)
+                        ?.let { parseSupportTs(it.createdAt) }
+                    if (ts != null &&
+                        (prevTs == null || prevTs.toLocalDate() != ts.toLocalDate())
+                    ) {
+                        SupportDateHeader(ts)
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    VpnkaBubble(message, ts)
                     Spacer(Modifier.height(8.dp))
                 }
             }
