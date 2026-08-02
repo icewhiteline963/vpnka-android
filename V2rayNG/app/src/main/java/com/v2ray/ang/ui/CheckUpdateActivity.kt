@@ -144,7 +144,7 @@ fun CheckUpdateScreen(onBackClick: () -> Unit) {
         AlertDialog(
             onDismissRequest = { showUpdateDialog = false },
             title = { Text(stringResource(R.string.update_new_version_found, result.latestVersion ?: "")) },
-            text = { Text(result.releaseNotes ?: "") },
+            text = { Text("Скачать и установить новую версию?") },
             confirmButton = {
                 TextButton(onClick = {
                     showUpdateDialog = false
