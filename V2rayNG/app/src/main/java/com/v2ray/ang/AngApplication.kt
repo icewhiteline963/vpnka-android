@@ -15,6 +15,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsManager
+import com.v2ray.ang.handler.UpdateNotifier
 import com.v2ray.ang.handler.UpdatePrefetcher
 
 class AngApplication : Application() {
@@ -134,5 +135,10 @@ class AngApplication : Application() {
         // a single tap. Wi-Fi only — see UpdatePrefetcher for why that matters
         // more for us than for most apps.
         UpdatePrefetcher.schedule(this)
+
+        // The cheap half of the same idea: a daily manifest check on any
+        // network that posts a notification when a release is out — the
+        // prefetcher above only wakes on Wi-Fi and can miss it for days.
+        UpdateNotifier.schedule(this)
     }
 }

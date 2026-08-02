@@ -31,5 +31,11 @@ enum class NotificationChannelType(
         channelName = "Окончание подписки",
         notificationId = 14,
         importance = android.app.NotificationManager.IMPORTANCE_DEFAULT
+    ),
+    UPDATE_AVAILABLE(
+        channelId = "update_available_channel",
+        channelName = "Обновление приложения",
+        notificationId = 15,
+        importance = android.app.NotificationManager.IMPORTANCE_DEFAULT
     )
 }
