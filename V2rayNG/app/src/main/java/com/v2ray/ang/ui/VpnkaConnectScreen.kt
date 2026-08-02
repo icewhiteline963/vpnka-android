@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -974,6 +975,10 @@ fun VpnkaPage(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(start = 20.dp, end = 20.dp, top = 62.dp, bottom = 24.dp)
+                // Lift content above the on-screen keyboard — otherwise the IME
+                // covers the bottom controls (the support screen's «Отправить»
+                // button was hidden behind it).
+                .imePadding()
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
