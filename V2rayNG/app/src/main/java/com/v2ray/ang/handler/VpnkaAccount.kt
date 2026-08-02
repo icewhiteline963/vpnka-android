@@ -438,6 +438,82 @@ object VpnkaAccount {
     /** The URL this plan's config lives at — what the QR encodes. */
     fun subscriptionUrl(groupToken: String): String = "$BASE/sub/g/$groupToken"
 
+    // --- in-app shop ------------------------------------------------------
+
+    data class Tariff(
+        @SerializedName("id") val id: Long = 0,
+        @SerializedName("name") val name: String = "",
+        @SerializedName("description") val description: String? = null,
+        @SerializedName("duration_days") val durationDays: Int = 0,
+        @SerializedName("device_limit") val deviceLimit: Int? = null,
+        @SerializedName("traffic_limit_gb") val trafficLimitGb: Int? = null,
+        @SerializedName("price_rub") val priceRub: Int = 0,
+        // Struck-through original when a friend discount is live.
+        @SerializedName("price_rub_full") val priceRubFull: Int? = null,
+        @SerializedName("can_pay_balance") val canPayBalance: Boolean = false,
+        @SerializedName("can_pay_card") val canPayCard: Boolean = false,
+    )
+
+    private data class TariffList(
+        @SerializedName("tariffs") val tariffs: List<Tariff>?,
+    )
+
+    suspend fun fetchTariffs(): List<Tariff> = withContext(Dispatchers.IO) {
+        call<TariffList>(authed("/app/tariffs")?.get())?.tariffs.orEmpty()
+    }
+
+    /** Outcome of a purchase attempt — settled from balance, a card URL to
+     *  open, or a message to show. */
+    sealed class PurchaseResult {
+        data class Settled(val subscriptionUrl: String?) : PurchaseResult()
+        data class PayByCard(val url: String) : PurchaseResult()
+        data class Failed(val message: String) : PurchaseResult()
+    }
+
+    private data class PurchaseResponse(
+        @SerializedName("settled") val settled: Boolean = false,
+        @SerializedName("subscription_url") val subscriptionUrl: String? = null,
+        @SerializedName("payment_url") val paymentUrl: String? = null,
+    )
+
+    suspend fun purchase(tariffId: Long, method: String): PurchaseResult =
+        withContext(Dispatchers.IO) {
+            val body = JsonUtil.toJson(
+                mapOf("tariff_id" to tariffId, "method" to method)
+            ).toRequestBody("application/json".toMediaType())
+            val req = authed("/app/purchase")?.post(body)?.build()
+                ?: return@withContext PurchaseResult.Failed("Нужен вход в аккаунт")
+            try {
+                http().newCall(req).execute().use { resp ->
+                    val text = resp.body?.string().orEmpty()
+                    when {
+                        resp.isSuccessful -> {
+                            val obj = JsonUtil.fromJsonSafe(
+                                text, PurchaseResponse::class.java
+                            )
+                            when {
+                                obj?.settled == true ->
+                                    PurchaseResult.Settled(obj.subscriptionUrl)
+                                obj?.paymentUrl != null ->
+                                    PurchaseResult.PayByCard(obj.paymentUrl)
+                                else ->
+                                    PurchaseResult.Failed("Не удалось оформить покупку")
+                            }
+                        }
+                        resp.code == 402 ->
+                            PurchaseResult.Failed("Недостаточно средств на балансе")
+                        resp.code == 503 ->
+                            PurchaseResult.Failed("Платёжная система недоступна, попробуйте позже")
+                        else ->
+                            PurchaseResult.Failed("Оплата недоступна (код ${resp.code})")
+                    }
+                }
+            } catch (e: Exception) {
+                LogUtil.w(AppConfig.TAG, "purchase failed: ${e.message}")
+                PurchaseResult.Failed("Нет связи с сервером")
+            }
+        }
+
 
     /**
      * A Telegram link that attaches this account to the user's Telegram.

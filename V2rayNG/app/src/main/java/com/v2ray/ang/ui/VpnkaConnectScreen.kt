@@ -39,6 +39,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -1550,6 +1551,129 @@ fun VpnkaPlanDetailScreen(
                     TextButton(onClick = { renaming = null }) { Text("Отмена") }
                 },
             )
+        }
+    }
+}
+
+/**
+ * Buying a subscription without leaving the app.
+ *
+ * Tariffs and prices come from the same source the bot uses. Paying from
+ * balance settles instantly; paying by card opens the processor's page and
+ * returns to /paid/app. The card invoice is built server-side by the exact
+ * call the bot makes — the app only ever opens the URL it is handed, so there
+ * is nothing different to generate here.
+ */
+@Composable
+fun VpnkaShopScreen(
+    tariffs: List<VpnkaAccount.Tariff>,
+    loading: Boolean,
+    buyingId: Long?,
+    onBuyBalance: (Long) -> Unit,
+    onBuyCard: (Long) -> Unit,
+    onBack: () -> Unit,
+) {
+    VpnkaPage(title = "Купить подписку", onBack = onBack) {
+        when {
+            loading -> {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(top = 40.dp),
+                    contentAlignment = Alignment.Center,
+                ) { CircularProgressIndicator(modifier = Modifier.size(28.dp)) }
+            }
+            tariffs.isEmpty() -> {
+                Spacer(Modifier.height(24.dp))
+                Text(
+                    text = "Сейчас нет доступных тарифов.",
+                    fontFamily = VpnkaFonts.manrope600,
+                    fontWeight = VpnkaWeight.Semi,
+                    fontSize = 14.sp,
+                    color = VpnkaColors.TextMuted,
+                )
+            }
+            else -> LazyColumn(modifier = Modifier.weight(1f)) {
+                item { Spacer(Modifier.height(8.dp)) }
+                items(tariffs) { t ->
+                    val busy = buyingId == t.id
+                    VpnkaCard {
+                        Text(
+                            text = t.name,
+                            fontFamily = VpnkaFonts.nunito800,
+                            fontWeight = VpnkaWeight.Extra,
+                            fontSize = 17.sp,
+                            color = VpnkaColors.TextStrong,
+                        )
+                        if (!t.description.isNullOrBlank()) {
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                text = t.description,
+                                fontFamily = VpnkaFonts.manrope600,
+                                fontWeight = VpnkaWeight.Semi,
+                                fontSize = 13.sp,
+                                color = VpnkaColors.TextMuted,
+                            )
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = buildString {
+                                append("${t.durationDays} ${pluralDays(t.durationDays)}")
+                                t.deviceLimit?.let { append(" · $it устройств") }
+                                t.trafficLimitGb?.let { append(" · $it ГБ") }
+                            },
+                            fontFamily = VpnkaFonts.manrope600,
+                            fontWeight = VpnkaWeight.Semi,
+                            fontSize = 13.sp,
+                            color = VpnkaColors.TextFaint,
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "${t.priceRub} ₽",
+                                fontFamily = VpnkaFonts.nunito800,
+                                fontWeight = VpnkaWeight.Extra,
+                                fontSize = 20.sp,
+                                color = VpnkaColors.TextStrong,
+                            )
+                            t.priceRubFull?.let {
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    text = "$it ₽",
+                                    fontFamily = VpnkaFonts.manrope600,
+                                    fontWeight = VpnkaWeight.Semi,
+                                    fontSize = 14.sp,
+                                    color = VpnkaColors.TextFaint,
+                                    textDecoration = TextDecoration.LineThrough,
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        if (t.canPayBalance) {
+                            VpnkaPrimaryButton(
+                                text = if (busy) "Оплата…" else "Оплатить с баланса",
+                                onClick = { if (!busy) onBuyBalance(t.id) },
+                                enabled = !busy,
+                            )
+                            Spacer(Modifier.height(8.dp))
+                        }
+                        if (t.canPayCard) {
+                            VpnkaSecondaryButton(
+                                text = if (busy) "Оплата…" else "Оплатить картой",
+                                onClick = { if (!busy) onBuyCard(t.id) },
+                            )
+                        }
+                        if (!t.canPayBalance && !t.canPayCard) {
+                            Text(
+                                text = "Оплата этого тарифа сейчас недоступна",
+                                fontFamily = VpnkaFonts.manrope600,
+                                fontWeight = VpnkaWeight.Semi,
+                                fontSize = 12.sp,
+                                color = VpnkaColors.TextFaint,
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
+            }
         }
     }
 }

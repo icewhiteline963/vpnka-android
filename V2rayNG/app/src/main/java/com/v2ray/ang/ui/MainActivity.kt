@@ -323,6 +323,7 @@ class MainActivity : HelperBaseComponentActivity() {
         showServerPicker -> { showServerPicker = false; true }
         showPlanPicker -> { showPlanPicker = false; true }
         openedPlan != null -> { openedPlan = null; true }
+        showShop -> { showShop = false; true }
         showPlansList -> { showPlansList = false; true }
         showNotificationSettings -> { showNotificationSettings = false; true }
         showSettings -> { showSettings = false; true }
@@ -370,6 +371,7 @@ class MainActivity : HelperBaseComponentActivity() {
     private var showServerPicker by mutableStateOf(false)
     private var showPlanPicker by mutableStateOf(false)
     private var showPlansList by mutableStateOf(false)
+    private var showShop by mutableStateOf(false)
     private var openedPlan by mutableStateOf<VpnkaAccount.Plan?>(null)
 
     /** Set by the post-payment link; consumed on the next composition. */
@@ -587,7 +589,7 @@ class MainActivity : HelperBaseComponentActivity() {
         // most recently added enabled callback first. Belt and braces: if
         // either mechanism is delivered, back stays inside the app.
         val anyOverlay = showSupport || showRecovery ||
-            showServerPicker || showPlanPicker || showPlansList ||
+            showServerPicker || showPlanPicker || showPlansList || showShop ||
             openedPlan != null || showSubscription ||
             showSettings || showNotificationSettings ||
             showServers || showTickets || openedTicket != null
@@ -778,6 +780,7 @@ class MainActivity : HelperBaseComponentActivity() {
                 },
                 onGetCode = { navigateTo("vpnka_app_code") },
                 onRenew = { navigateTo("vpnka_buy") },
+                onBuyInApp = { showShop = true },
                 onSupport = { showSupport = true },
                 onTopUp = { navigateTo("vpnka_topup") },
                 onShowRecovery = { showRecovery = true },
@@ -849,6 +852,56 @@ class MainActivity : HelperBaseComponentActivity() {
                     }
                 },
                 onBack = { openedPlan = null },
+            )
+            return
+        }
+
+        if (showShop && !showServers) {
+            var tariffs by remember { mutableStateOf<List<VpnkaAccount.Tariff>>(emptyList()) }
+            var shopLoading by remember { mutableStateOf(true) }
+            var buyingId by remember { mutableStateOf<Long?>(null) }
+            LaunchedEffect(showShop) {
+                shopLoading = true
+                tariffs = VpnkaAccount.fetchTariffs()
+                shopLoading = false
+            }
+            VpnkaShopScreen(
+                tariffs = tariffs,
+                loading = shopLoading,
+                buyingId = buyingId,
+                onBuyBalance = { id ->
+                    buyingId = id
+                    lifecycleScope.launch {
+                        when (val r = VpnkaAccount.purchase(id, "balance")) {
+                            is VpnkaAccount.PurchaseResult.Settled -> {
+                                toast("Оплачено — подписка активна")
+                                // Pull the new plan's servers and refresh the
+                                // profile so the card reflects the purchase.
+                                subReload++
+                                importConfigViaSub()
+                                showShop = false
+                            }
+                            is VpnkaAccount.PurchaseResult.Failed -> toast(r.message)
+                            else -> {}
+                        }
+                        buyingId = null
+                    }
+                },
+                onBuyCard = { id ->
+                    buyingId = id
+                    lifecycleScope.launch {
+                        when (val r = VpnkaAccount.purchase(id, "card")) {
+                            // The processor's page; paying there returns to
+                            // /paid/app. Same invoice the bot creates.
+                            is VpnkaAccount.PurchaseResult.PayByCard ->
+                                Utils.openUri(this@MainActivity, r.url)
+                            is VpnkaAccount.PurchaseResult.Failed -> toast(r.message)
+                            else -> {}
+                        }
+                        buyingId = null
+                    }
+                },
+                onBack = { showShop = false },
             )
             return
         }

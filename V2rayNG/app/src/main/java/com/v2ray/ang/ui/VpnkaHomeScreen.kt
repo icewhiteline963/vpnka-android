@@ -556,6 +556,7 @@ fun VpnkaSubscriptionScreen(
     onSignOut: () -> Unit,
     onGetCode: () -> Unit,
     onRenew: () -> Unit,
+    onBuyInApp: () -> Unit,
     onSupport: () -> Unit,
     onTopUp: () -> Unit,
     onShowRecovery: () -> Unit,
@@ -655,14 +656,15 @@ fun VpnkaSubscriptionScreen(
                 subtitle = "Если аккаунт заведён здесь, в приложении",
             )
         }
-        // Both open the bot, which is where the money is handled — the app
-        // sells nothing itself. Shown only once Telegram is attached, because
-        // a purchase made in the bot is credited to the Telegram account: an
-        // unlinked user would pay and then find this app still on an unpaid
-        // account, with a subscription they cannot see. The rows above are
-        // the way in, and they come first for that reason.
+        // Buying in the app credits this account directly, so it's offered to
+        // everyone — including an app-only account with no Telegram.
+        VpnkaMenuRow("Купить подписку в приложении", onBuyInApp)
+        // Buying in the bot, on the other hand, is credited to the Telegram
+        // account: an unlinked user would pay there and find this app still on
+        // an unpaid account. So the Telegram buy and the bot top-up are shown
+        // only once Telegram is attached.
         if (telegramLinked) {
-            VpnkaMenuRow("Купить подписку", onRenew)
+            VpnkaMenuRow("Купить подписку в Telegram", onRenew)
             VpnkaMenuRow("Пополнить баланс", onTopUp)
         }
         VpnkaMenuRow("Связаться с оператором", onSupport)
