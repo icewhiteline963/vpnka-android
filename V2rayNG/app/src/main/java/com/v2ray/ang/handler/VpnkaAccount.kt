@@ -419,6 +419,22 @@ object VpnkaAccount {
             }
         }
 
+    /** Give a device a human name (blank clears it). True when saved. */
+    suspend fun renameDevice(
+        groupToken: String, deviceId: Long, label: String,
+    ): Boolean = withContext(Dispatchers.IO) {
+        val body = JsonUtil.toJson(mapOf("label" to label))
+            .toRequestBody("application/json".toMediaType())
+        val req = authed("/app/subscriptions/$groupToken/devices/$deviceId")
+            ?.method("PATCH", body)?.build() ?: return@withContext false
+        try {
+            http().newCall(req).execute().use { it.isSuccessful }
+        } catch (e: Exception) {
+            LogUtil.w(AppConfig.TAG, "rename device failed: ${e.message}")
+            false
+        }
+    }
+
     /** The URL this plan's config lives at — what the QR encodes. */
     fun subscriptionUrl(groupToken: String): String = "$BASE/sub/g/$groupToken"
 

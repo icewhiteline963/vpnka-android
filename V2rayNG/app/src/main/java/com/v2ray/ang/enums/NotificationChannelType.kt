@@ -37,5 +37,11 @@ enum class NotificationChannelType(
         channelName = "Обновление приложения",
         notificationId = 15,
         importance = android.app.NotificationManager.IMPORTANCE_DEFAULT
+    ),
+    SUPPORT_REPLY(
+        channelId = "support_reply_channel",
+        channelName = "Ответ поддержки",
+        notificationId = 16,
+        importance = android.app.NotificationManager.IMPORTANCE_HIGH
     )
 }

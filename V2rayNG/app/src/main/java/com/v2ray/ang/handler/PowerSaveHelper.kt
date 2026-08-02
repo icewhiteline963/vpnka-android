@@ -56,15 +56,31 @@ object PowerSaveHelper {
      */
     fun openExemptionRequest(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return
-        val direct = Intent(
-            Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+
+        val candidates = mutableListOf<Intent>()
+        if (!isExempt(context)) {
+            // Not exempt yet: the one-tap grant dialog.
+            candidates += Intent(
+                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                Uri.parse("package:${context.packageName}"),
+            )
+        }
+        // If we're already exempt the request dialog just flashes and closes
+        // with nothing to grant — which is the "button does nothing" report.
+        // Send the user somewhere they can actually see the state: the battery
+        // list, then the app's own settings as a last resort (always resolves).
+        candidates += Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+        candidates += Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
             Uri.parse("package:${context.packageName}"),
         )
-        val fallback = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-        try {
-            context.startActivity(direct)
-        } catch (_: Exception) {
-            runCatching { context.startActivity(fallback) }
+
+        for (intent in candidates) {
+            // A settings screen belongs in its own task; without this flag the
+            // call silently no-ops when the caller isn't an Activity — the
+            // other half of the dead-button report.
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (runCatching { context.startActivity(intent) }.isSuccess) return
         }
     }
 }

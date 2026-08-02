@@ -138,6 +138,7 @@ import com.v2ray.ang.handler.AngConfigManager
 import com.v2ray.ang.util.QRCodeDecoder
 import androidx.compose.ui.graphics.asImageBitmap
 import com.v2ray.ang.handler.ExpiryReminder
+import com.v2ray.ang.handler.SupportNotifier
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsChangeManager
 import com.v2ray.ang.handler.SettingsManager
@@ -217,6 +218,18 @@ class MainActivity : HelperBaseComponentActivity() {
             }
         }
 
+    companion object {
+        /** Intent extra: which screen to open on launch. */
+        const val EXTRA_OPEN = "vpnka_open"
+        const val OPEN_SUPPORT = "support"
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.getStringExtra(EXTRA_OPEN) == OPEN_SUPPORT) showSupport = true
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         mainViewModel.initialize()
@@ -235,6 +248,12 @@ class MainActivity : HelperBaseComponentActivity() {
         // applying it later would show the light screen first and repaint.
         VpnkaColors.dark = MmkvManager.isDarkTheme()
         ExpiryReminder.schedule(this)
+        SupportNotifier.schedule(this)
+
+        // Launched by tapping a "поддержка ответила" notification: open the
+        // chat rather than the home screen. onNewIntent handles the same for
+        // an app that was already running.
+        if (intent?.getStringExtra(EXTRA_OPEN) == OPEN_SUPPORT) showSupport = true
 
         onBackPressedDispatcher.addCallback(this) {
             if (!closeTopVpnkaScreen()) {
@@ -822,6 +841,13 @@ class MainActivity : HelperBaseComponentActivity() {
                         subReload++
                     }
                 },
+                onRenameDevice = { id, name ->
+                    val token = plan.groupToken ?: return@VpnkaPlanDetailScreen
+                    lifecycleScope.launch {
+                        val ok = VpnkaAccount.renameDevice(token, id, name)
+                        if (ok) deviceReload++ else toast("Не удалось переименовать")
+                    }
+                },
                 onBack = { openedPlan = null },
             )
             return
@@ -847,6 +873,23 @@ class MainActivity : HelperBaseComponentActivity() {
                 // config on the same subscription — two sources of truth
                 // here is what once sent traffic through one plan while the
                 // screen named another.
+                onSelectPlan = { plan ->
+                    // The radio on the plan row: make this subscription the
+                    // one the traffic runs through.
+                    val guid = plan.groupToken?.let { MmkvManager.vpnkaGuidForToken(it) }
+                    if (guid != null) {
+                        mainViewModel.subscriptionIdChanged(guid)
+                        // A plan whose group was never fetched has no servers
+                        // in storage — an empty list and «сервер не выбран» at
+                        // the flower. Fetch instead of showing an empty screen.
+                        if (MmkvManager.decodeServerList(guid).isEmpty()) {
+                            toast("Загружаю серверы подписки…")
+                            importConfigViaSub()
+                        } else {
+                            toast("Активная подписка: ${plan.tariff ?: "выбрана"}")
+                        }
+                    }
+                },
                 onOpenPlan = { openedPlan = it },
                 onBuy = {
                     showPlansList = false

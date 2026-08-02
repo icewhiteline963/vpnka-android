@@ -32,11 +32,17 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -1210,6 +1216,7 @@ fun VpnkaPlansListScreen(
     activeToken: String?,
     trialHoursLeft: Int?,
     onGetFreeMonth: () -> Unit,
+    onSelectPlan: (VpnkaAccount.Plan) -> Unit,
     onOpenPlan: (VpnkaAccount.Plan) -> Unit,
     onBuy: () -> Unit,
     onBack: () -> Unit,
@@ -1263,6 +1270,7 @@ fun VpnkaPlansListScreen(
                     title = plan.tariff ?: "Подписка",
                     subtitle = subtitle,
                     live = live,
+                    onActivate = { onSelectPlan(plan) },
                     onClick = { onOpenPlan(plan) },
                 )
                 Spacer(Modifier.height(8.dp))
@@ -1286,11 +1294,13 @@ private fun VpnkaPlanRow2(
     title: String,
     subtitle: String?,
     live: Boolean,
+    onActivate: () -> Unit,
     onClick: () -> Unit,
 ) {
-    // The whole card is one tap target now — it opens the plan's details.
-    // Copying the subscription lives on a button inside those details, so the
-    // row no longer copies on tap and carries no separate «Детали» button.
+    // Two targets on one card: the radio on the left switches the active
+    // subscription (the traffic runs through the selected one), the rest of
+    // the card opens the plan's details. The radio's own click is consumed, so
+    // tapping it activates without also opening details.
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1300,9 +1310,18 @@ private fun VpnkaPlanRow2(
                 else VpnkaColors.CardSpeed
             )
             .clickable(onClick = onClick)
-            .padding(start = 16.dp, top = 14.dp, bottom = 14.dp, end = 14.dp),
+            .padding(start = 4.dp, top = 8.dp, bottom = 8.dp, end = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        RadioButton(
+            selected = live,
+            onClick = onActivate,
+            colors = RadioButtonDefaults.colors(
+                selectedColor = VpnkaColors.Green,
+                unselectedColor = VpnkaColors.TextFaint,
+            ),
+        )
+        Spacer(Modifier.width(4.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title,
@@ -1384,8 +1403,11 @@ fun VpnkaPlanDetailScreen(
     qr: androidx.compose.ui.graphics.ImageBitmap?,
     onCopySubscription: () -> Unit,
     onRevokeDevice: (Long) -> Unit,
+    onRenameDevice: (Long, String) -> Unit,
     onBack: () -> Unit,
 ) {
+    // The device the user is renaming, if any — drives the dialog below.
+    var renaming by remember { mutableStateOf<VpnkaAccount.Device?>(null) }
     VpnkaPage(title = plan.tariff ?: "Подписка", onBack = onBack) {
         LazyColumn(modifier = Modifier.weight(1f)) {
             item {
@@ -1473,14 +1495,25 @@ fun VpnkaPlanDetailScreen(
                         .padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        text = device.label,
-                        fontFamily = VpnkaFonts.nunito800,
-                        fontWeight = VpnkaWeight.Extra,
-                        fontSize = 15.sp,
-                        color = VpnkaColors.TextStrong,
-                        modifier = Modifier.weight(1f),
-                    )
+                    // Tap the name (or the pencil) to rename the device —
+                    // «iPhone», «OnePlus» — instead of the app string it
+                    // reports for itself (Happ, v2rayNG).
+                    Row(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { renaming = device },
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = device.label,
+                            fontFamily = VpnkaFonts.nunito800,
+                            fontWeight = VpnkaWeight.Extra,
+                            fontSize = 15.sp,
+                            color = VpnkaColors.TextStrong,
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(text = "✎", fontSize = 14.sp, color = VpnkaColors.Accent)
+                    }
                     Text(
                         text = "Отключить",
                         fontFamily = VpnkaFonts.nunito800,
@@ -1492,6 +1525,31 @@ fun VpnkaPlanDetailScreen(
                 }
                 Spacer(Modifier.height(6.dp))
             }
+        }
+
+        renaming?.let { dev ->
+            var name by remember(dev.id) { mutableStateOf(dev.label) }
+            AlertDialog(
+                onDismissRequest = { renaming = null },
+                title = { Text("Название устройства") },
+                text = {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it.take(32) },
+                        singleLine = true,
+                        placeholder = { Text("iPhone, OnePlus…") },
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        onRenameDevice(dev.id, name.trim())
+                        renaming = null
+                    }) { Text("Сохранить") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { renaming = null }) { Text("Отмена") }
+                },
+            )
         }
     }
 }
