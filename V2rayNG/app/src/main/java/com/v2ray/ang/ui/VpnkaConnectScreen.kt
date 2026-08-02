@@ -1403,6 +1403,7 @@ fun VpnkaPlanDetailScreen(
     devicesLoading: Boolean,
     qr: androidx.compose.ui.graphics.ImageBitmap?,
     onCopySubscription: () -> Unit,
+    onShareSubscription: () -> Unit,
     onRevokeDevice: (Long) -> Unit,
     onRenameDevice: (Long, String) -> Unit,
     onBack: () -> Unit,
@@ -1434,6 +1435,11 @@ fun VpnkaPlanDetailScreen(
                     VpnkaSecondaryButton(
                         text = "Копировать подписку",
                         onClick = onCopySubscription,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    VpnkaSecondaryButton(
+                        text = "Поделиться подпиской",
+                        onClick = onShareSubscription,
                     )
                     Spacer(Modifier.height(16.dp))
                 }

@@ -836,6 +836,20 @@ class MainActivity : HelperBaseComponentActivity() {
                         toast("Ссылка на подписку скопирована")
                     }
                 },
+                onShareSubscription = {
+                    plan.groupToken?.let { token ->
+                        val send = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(
+                                Intent.EXTRA_TEXT,
+                                VpnkaAccount.subscriptionUrl(token),
+                            )
+                        }
+                        startActivity(
+                            Intent.createChooser(send, "Поделиться подпиской")
+                        )
+                    }
+                },
                 onRevokeDevice = { id ->
                     val token = plan.groupToken ?: return@VpnkaPlanDetailScreen
                     lifecycleScope.launch {
