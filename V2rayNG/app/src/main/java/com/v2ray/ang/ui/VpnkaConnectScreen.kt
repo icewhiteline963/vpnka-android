@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedTextField
@@ -40,6 +41,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -1575,6 +1577,58 @@ fun VpnkaPlanDetailScreen(
  * call the bot makes — the app only ever opens the URL it is handed, so there
  * is nothing different to generate here.
  */
+@Composable
+fun VpnkaTopUpScreen(
+    balanceRub: Int?,
+    submitting: Boolean,
+    onPay: (Int) -> Unit,
+    onBack: () -> Unit,
+) {
+    var amount by remember { mutableStateOf("") }
+    VpnkaPage(title = "Пополнить баланс", onBack = onBack) {
+        Spacer(Modifier.height(20.dp))
+        if (balanceRub != null) {
+            Text(
+                text = "Текущий баланс: $balanceRub ₽",
+                fontFamily = VpnkaFonts.manrope600,
+                fontWeight = VpnkaWeight.Semi,
+                fontSize = 14.sp,
+                color = VpnkaColors.TextMuted,
+            )
+            Spacer(Modifier.height(18.dp))
+        }
+        Text(
+            text = "Сумма пополнения, ₽",
+            fontSize = 16.sp,
+            color = VpnkaColors.TextStrong,
+        )
+        Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = amount,
+            onValueChange = { amount = it.filter { c -> c.isDigit() }.take(6) },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            placeholder = { Text("например, 300") },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = "Минимум 100 ₽",
+            fontFamily = VpnkaFonts.manrope600,
+            fontWeight = VpnkaWeight.Semi,
+            fontSize = 12.sp,
+            color = VpnkaColors.TextFaint,
+        )
+        Spacer(Modifier.weight(1f))
+        val amt = amount.toIntOrNull() ?: 0
+        VpnkaPrimaryButton(
+            text = if (submitting) "Оплата…" else "Оплатить СБП",
+            onClick = { if (!submitting && amt >= 100) onPay(amt) },
+            enabled = amt >= 100 && !submitting,
+        )
+    }
+}
+
 @Composable
 fun VpnkaShopScreen(
     tariffs: List<VpnkaAccount.Tariff>,

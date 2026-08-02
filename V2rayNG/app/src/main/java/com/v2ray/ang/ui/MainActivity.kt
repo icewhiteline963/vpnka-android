@@ -324,6 +324,7 @@ class MainActivity : HelperBaseComponentActivity() {
         showPlanPicker -> { showPlanPicker = false; true }
         openedPlan != null -> { openedPlan = null; true }
         showShop -> { showShop = false; true }
+        showTopUp -> { showTopUp = false; true }
         showPlansList -> { showPlansList = false; true }
         showNotificationSettings -> { showNotificationSettings = false; true }
         showSettings -> { showSettings = false; true }
@@ -372,6 +373,7 @@ class MainActivity : HelperBaseComponentActivity() {
     private var showPlanPicker by mutableStateOf(false)
     private var showPlansList by mutableStateOf(false)
     private var showShop by mutableStateOf(false)
+    private var showTopUp by mutableStateOf(false)
     private var openedPlan by mutableStateOf<VpnkaAccount.Plan?>(null)
 
     /** Set by the post-payment link; consumed on the next composition. */
@@ -589,7 +591,8 @@ class MainActivity : HelperBaseComponentActivity() {
         // most recently added enabled callback first. Belt and braces: if
         // either mechanism is delivered, back stays inside the app.
         val anyOverlay = showSupport || showRecovery ||
-            showServerPicker || showPlanPicker || showPlansList || showShop ||
+            showServerPicker || showPlanPicker || showPlansList ||
+            showShop || showTopUp ||
             openedPlan != null || showSubscription ||
             showSettings || showNotificationSettings ||
             showServers || showTickets || openedTicket != null
@@ -640,6 +643,14 @@ class MainActivity : HelperBaseComponentActivity() {
                         VpnkaAccount.sendSupport(text)
                         supportSending = false
                         supportReload++
+                    }
+                },
+                onSendImage = { bytes, mime ->
+                    supportSending = true
+                    lifecycleScope.launch {
+                        val ok = VpnkaAccount.sendSupportImage(bytes, mime)
+                        supportSending = false
+                        if (ok) supportReload++ else toast("Не удалось отправить скриншот")
                     }
                 },
                 onHistory = { showTickets = true },
@@ -739,7 +750,7 @@ class MainActivity : HelperBaseComponentActivity() {
         // !showShop: the shop opens from this profile and its block sits below,
         // so without this guard the profile keeps rendering and «Купить в
         // приложении» does nothing (same shadowing the settings screens had).
-        if (showSubscription && !showShop && !showServers) {
+        if (showSubscription && !showShop && !showTopUp && !showServers) {
             VpnkaSubscriptionScreen(
                 loading = subLoading,
                 signedIn = signedIn,
@@ -785,7 +796,7 @@ class MainActivity : HelperBaseComponentActivity() {
                 onRenew = { navigateTo("vpnka_buy") },
                 onBuyInApp = { showShop = true },
                 onSupport = { showSupport = true },
-                onTopUp = { navigateTo("vpnka_topup") },
+                onTopUp = { showTopUp = true },
                 onShowRecovery = { showRecovery = true },
                 onOpenSettings = { showSettings = true },
                 onLinkTelegram = { openTelegramLinkGuarded() },
@@ -923,6 +934,30 @@ class MainActivity : HelperBaseComponentActivity() {
             return
         }
 
+        if (showTopUp && !showServers) {
+            var submitting by remember { mutableStateOf(false) }
+            VpnkaTopUpScreen(
+                balanceRub = subInfo?.balanceRub,
+                submitting = submitting,
+                onPay = { amt ->
+                    submitting = true
+                    lifecycleScope.launch {
+                        val url = VpnkaAccount.topUp(amt)
+                        submitting = false
+                        if (url != null) {
+                            // RuKassa page (СБП/card); returns to /paid/app.
+                            Utils.openUri(this@MainActivity, url)
+                            showTopUp = false
+                        } else {
+                            toast("Не удалось создать платёж")
+                        }
+                    }
+                },
+                onBack = { showTopUp = false },
+            )
+            return
+        }
+
         if (showPlansList && !showServers) {
             VpnkaPlansListScreen(
                 // Finished plans are history, not choices: leaving them in
@@ -962,8 +997,9 @@ class MainActivity : HelperBaseComponentActivity() {
                 },
                 onOpenPlan = { openedPlan = it },
                 onBuy = {
-                    showPlansList = false
-                    goBuyOrLink()
+                    // Our in-app shop, not the Telegram bot. Back from the shop
+                    // returns to this list (its block sits above it).
+                    showShop = true
                 },
                 onBack = { showPlansList = false },
             )

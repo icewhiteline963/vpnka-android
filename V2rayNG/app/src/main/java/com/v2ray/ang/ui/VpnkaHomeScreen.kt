@@ -17,6 +17,14 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.runtime.produceState
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
@@ -844,10 +852,43 @@ fun VpnkaSupportScreen(
     sending: Boolean,
     messages: List<VpnkaAccount.SupportMessage>,
     onSend: (String) -> Unit,
+    onSendImage: (ByteArray, String) -> Unit,
     onHistory: () -> Unit,
     onBack: () -> Unit,
 ) {
     var draft by remember { mutableStateOf("") }
+    val context = LocalContext.current
+
+    fun bytesOf(uri: android.net.Uri): ByteArray? = try {
+        context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+    } catch (e: Exception) {
+        null
+    }
+
+    // Pick a screenshot from the gallery.
+    val picker = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            val mime = context.contentResolver.getType(uri) ?: "image/jpeg"
+            bytesOf(uri)?.let { onSendImage(it, mime) }
+        }
+    }
+
+    // Paste a screenshot straight from the clipboard (works on Android too:
+    // a copied image rides the clipboard as a content:// uri).
+    fun pasteFromClipboard() {
+        val cm = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+            as? android.content.ClipboardManager
+        val uri = cm?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
+        val mime = uri?.let { context.contentResolver.getType(it) } ?: ""
+        if (uri != null && mime.startsWith("image/")) {
+            bytesOf(uri)?.let { onSendImage(it, mime); return }
+        }
+        android.widget.Toast.makeText(
+            context, "В буфере нет картинки", android.widget.Toast.LENGTH_SHORT
+        ).show()
+    }
 
     VpnkaPage(title = "Поддержка", onBack = onBack) {
         Column(modifier = Modifier.fillMaxSize()) {
@@ -920,6 +961,20 @@ fun VpnkaSupportScreen(
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(8.dp))
+        Row(modifier = Modifier.fillMaxWidth()) {
+            VpnkaSecondaryButton(
+                text = "📎 Из галереи",
+                onClick = { picker.launch("image/*") },
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(8.dp))
+            VpnkaSecondaryButton(
+                text = "📋 Вставить",
+                onClick = { pasteFromClipboard() },
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Spacer(Modifier.height(8.dp))
         VpnkaPrimaryButton(
             text = if (sending) "Отправляем…" else "Отправить",
             onClick = {
@@ -976,6 +1031,41 @@ private fun SupportDateHeader(ts: java.time.LocalDateTime) {
 }
 
 @Composable
+private fun SupportAttachment(ref: String) {
+    val bmp by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, ref) {
+        val bytes = VpnkaAccount.fetchSupportImage(ref)
+        value = bytes?.let {
+            runCatching {
+                android.graphics.BitmapFactory
+                    .decodeByteArray(it, 0, it.size)
+                    ?.asImageBitmap()
+            }.getOrNull()
+        }
+    }
+    val image = bmp
+    if (image != null) {
+        Image(
+            bitmap = image,
+            contentDescription = "Скриншот",
+            contentScale = ContentScale.Fit,
+            modifier = Modifier
+                .sizeIn(maxWidth = 220.dp, maxHeight = 280.dp)
+                .clip(RoundedCornerShape(10.dp)),
+        )
+    } else {
+        Box(
+            modifier = Modifier
+                .size(140.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(VpnkaColors.CardSettings),
+            contentAlignment = Alignment.Center,
+        ) {
+            CircularProgressIndicator(modifier = Modifier.size(20.dp))
+        }
+    }
+}
+
+@Composable
 private fun VpnkaBubble(
     message: VpnkaAccount.SupportMessage,
     ts: java.time.LocalDateTime?,
@@ -997,11 +1087,23 @@ private fun VpnkaBubble(
                     )
                     .padding(horizontal = 14.dp, vertical = 10.dp),
             ) {
-                Text(
-                    text = message.body,
-                    fontSize = 14.sp,
-                    color = VpnkaColors.TextStrong,
-                )
+                Column {
+                    message.attachment?.takeIf { it.isNotBlank() }?.let { ref ->
+                        SupportAttachment(ref)
+                    }
+                    // Hide the "📷 Скриншот" placeholder body when it's just the
+                    // stand-in for an image with no caption.
+                    val showText = message.body.isNotBlank() &&
+                        !(message.attachment != null && message.body == "📷 Скриншот")
+                    if (showText) {
+                        if (message.attachment != null) Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = message.body,
+                            fontSize = 14.sp,
+                            color = VpnkaColors.TextStrong,
+                        )
+                    }
+                }
             }
             if (ts != null) {
                 Spacer(Modifier.height(2.dp))

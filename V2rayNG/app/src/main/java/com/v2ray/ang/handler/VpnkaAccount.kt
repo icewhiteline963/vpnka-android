@@ -283,6 +283,9 @@ object VpnkaAccount {
         @SerializedName("body") val body: String = "",
         // ISO-8601 UTC; the UI shows a date header and a per-message time.
         @SerializedName("created_at") val createdAt: String = "",
+        // Opaque ref of an attached screenshot, or null. Fetched via
+        // fetchSupportImage(); the bubble shows it inline.
+        @SerializedName("attachment") val attachment: String? = null,
     )
 
     /** One past conversation, as the history list shows it. */
@@ -348,6 +351,47 @@ object VpnkaAccount {
             .toRequestBody("application/json".toMediaType())
         call<SupportThread>(authed("/app/support")?.post(body)) != null
     }
+
+    /** Attach a screenshot to the conversation. Returns true on 2xx. */
+    suspend fun sendSupportImage(
+        bytes: ByteArray, mime: String, caption: String = "",
+    ): Boolean = withContext(Dispatchers.IO) {
+        val ext = when (mime) {
+            "image/png" -> "png"
+            "image/webp" -> "webp"
+            else -> "jpg"
+        }
+        val part = okhttp3.MultipartBody.Builder()
+            .setType(okhttp3.MultipartBody.FORM)
+            .addFormDataPart(
+                "file", "screenshot.$ext", bytes.toRequestBody(mime.toMediaType()),
+            )
+            .addFormDataPart("text", caption)
+            .build()
+        val req = authed("/app/support/image")?.post(part)?.build()
+            ?: return@withContext false
+        try {
+            http().newCall(req).execute().use { it.isSuccessful }
+        } catch (e: Exception) {
+            LogUtil.w(AppConfig.TAG, "support image failed: ${e.message}")
+            false
+        }
+    }
+
+    /** Download an attached screenshot's bytes (authed), or null. */
+    suspend fun fetchSupportImage(ref: String): ByteArray? =
+        withContext(Dispatchers.IO) {
+            val req = authed("/app/support/attachment/$ref")?.get()?.build()
+                ?: return@withContext null
+            try {
+                http().newCall(req).execute().use { resp ->
+                    if (resp.isSuccessful) resp.body?.bytes() else null
+                }
+            } catch (e: Exception) {
+                LogUtil.w(AppConfig.TAG, "fetch image failed: ${e.message}")
+                null
+            }
+        }
 
     /** Save the expiry-reminder channel prefs + contact email. Empty email
      *  clears it server-side. Returns true on 2xx. */
@@ -477,6 +521,29 @@ object VpnkaAccount {
         @SerializedName("subscription_url") val subscriptionUrl: String? = null,
         @SerializedName("payment_url") val paymentUrl: String? = null,
     )
+
+    private data class TopUpResponse(
+        @SerializedName("payment_url") val paymentUrl: String? = null,
+    )
+
+    /** Start a balance top-up; returns the RuKassa URL to open, or null. */
+    suspend fun topUp(amountRub: Int): String? = withContext(Dispatchers.IO) {
+        val body = JsonUtil.toJson(mapOf("amount_rub" to amountRub))
+            .toRequestBody("application/json".toMediaType())
+        val req = authed("/app/topup")?.post(body)?.build()
+            ?: return@withContext null
+        try {
+            http().newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@use null
+                JsonUtil.fromJsonSafe(
+                    resp.body?.string().orEmpty(), TopUpResponse::class.java
+                )?.paymentUrl
+            }
+        } catch (e: Exception) {
+            LogUtil.w(AppConfig.TAG, "topup failed: ${e.message}")
+            null
+        }
+    }
 
     suspend fun purchase(tariffId: Long, method: String): PurchaseResult =
         withContext(Dispatchers.IO) {
