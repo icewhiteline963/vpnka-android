@@ -639,7 +639,7 @@ class MainActivity : HelperBaseComponentActivity() {
         // profile, and the profile block returns — so while it sat lower the
         // flag was set and the screen never changed. Placed here, back from
         // settings lands on the profile it was opened from.
-        if (showSettings && !showServers) {
+        if (showSettings && !showNotificationSettings && !showServers) {
             VpnkaSettingsScreen(
                 onPerAppProxy = { navigateTo("per_app_proxy") },
                 batteryExempt = PowerSaveHelper.isExempt(this),
@@ -658,7 +658,6 @@ class MainActivity : HelperBaseComponentActivity() {
                         )
                     )
                 },
-                onRoutingSettings = { navigateTo("routing_setting") },
                 onCheckUpdate = { navigateTo("check_update") },
                 onNotificationSettings = { showNotificationSettings = true },
                 onBack = { showSettings = false },

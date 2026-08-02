@@ -344,7 +344,6 @@ fun VpnkaSettingsScreen(
     notificationsEnabled: Boolean,
     onFixNotifications: () -> Unit,
     onNotificationSettings: () -> Unit,
-    onRoutingSettings: () -> Unit,
     onCheckUpdate: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -383,11 +382,6 @@ fun VpnkaSettingsScreen(
             title = "Приложения через VPN",
             subtitle = "Выбрать, каким приложениям идти через VPN, а каким напрямую",
             onClick = onPerAppProxy,
-        )
-        VpnkaSettingsRow(
-            title = "Маршрутизация",
-            subtitle = "Какие сайты идут напрямую, минуя VPN",
-            onClick = onRoutingSettings,
         )
 
         VpnkaSettingsRow(
