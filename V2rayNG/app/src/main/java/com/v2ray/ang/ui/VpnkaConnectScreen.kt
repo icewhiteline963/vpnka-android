@@ -1653,18 +1653,20 @@ fun VpnkaShopScreen(
                             }
                         }
                         Spacer(Modifier.height(12.dp))
-                        if (t.canPayBalance) {
+                        // СБП first and orange (primary path); paying from
+                        // balance is the smaller secondary button below it.
+                        if (t.canPayCard) {
                             VpnkaPrimaryButton(
-                                text = if (busy) "Оплата…" else "Оплатить с баланса",
-                                onClick = { if (!busy) onBuyBalance(t.id) },
+                                text = if (busy) "Оплата…" else "Оплатить СБП",
+                                onClick = { if (!busy) onBuyCard(t.id) },
                                 enabled = !busy,
                             )
-                            Spacer(Modifier.height(8.dp))
+                            if (t.canPayBalance) Spacer(Modifier.height(8.dp))
                         }
-                        if (t.canPayCard) {
+                        if (t.canPayBalance) {
                             VpnkaSecondaryButton(
-                                text = if (busy) "Оплата…" else "Оплатить картой",
-                                onClick = { if (!busy) onBuyCard(t.id) },
+                                text = if (busy) "Оплата…" else "Оплатить с баланса",
+                                onClick = { if (!busy) onBuyBalance(t.id) },
                             )
                         }
                         if (!t.canPayBalance && !t.canPayCard) {
