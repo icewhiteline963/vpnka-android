@@ -802,6 +802,15 @@ class MainActivity : HelperBaseComponentActivity() {
                 devices = devices,
                 devicesLoading = devicesLoading,
                 qr = qr,
+                onCopySubscription = {
+                    plan.groupToken?.let { token ->
+                        Utils.setClipboard(
+                            this@MainActivity,
+                            VpnkaAccount.subscriptionUrl(token),
+                        )
+                        toast("Ссылка на подписку скопирована")
+                    }
+                },
                 onRevokeDevice = { id ->
                     val token = plan.groupToken ?: return@VpnkaPlanDetailScreen
                     lifecycleScope.launch {
@@ -838,25 +847,6 @@ class MainActivity : HelperBaseComponentActivity() {
                 // config on the same subscription — two sources of truth
                 // here is what once sent traffic through one plan while the
                 // screen named another.
-                onSelectPlan = { plan ->
-                    val guid = plan.groupToken?.let { MmkvManager.vpnkaGuidForToken(it) }
-                    if (guid != null) {
-                        mainViewModel.subscriptionIdChanged(guid)
-                        // Switching reads servers from storage — and a plan
-                        // whose group was never fetched has none, which is
-                        // an empty list and «сервер не выбран» at the flower.
-                        // Every plan except the one in use is in exactly
-                        // that state the first time it is picked, so fetch
-                        // instead of showing an empty screen and waiting for
-                        // the user to guess that «обновить» is the answer.
-                        if (MmkvManager.decodeServerList(guid).isEmpty()) {
-                            toast("Загружаю серверы подписки…")
-                            importConfigViaSub()
-                        } else {
-                            toast("Активная подписка: ${plan.tariff ?: "выбрана"}")
-                        }
-                    }
-                },
                 onOpenPlan = { openedPlan = it },
                 onBuy = {
                     showPlansList = false
@@ -1106,15 +1096,15 @@ class MainActivity : HelperBaseComponentActivity() {
             // the bot's home screen: they tapped «купить», and making them
             // find it again is where people give up.
             "vpnka_buy" -> {
-                Utils.openUri(this, "https://t.me/vpnka_io_bot?start=buy")
+                openBotDeepLink("buy")
                 return
             }
             "vpnka_topup" -> {
-                Utils.openUri(this, "https://t.me/vpnka_io_bot?start=topup")
+                openBotDeepLink("topup")
                 return
             }
             "vpnka_app_code" -> {
-                Utils.openUri(this, "https://t.me/vpnka_io_bot?start=appcode")
+                openBotDeepLink("appcode")
                 return
             }
             else -> return
@@ -1438,6 +1428,28 @@ class MainActivity : HelperBaseComponentActivity() {
         lifecycleScope.launch {
             val url = VpnkaAccount.telegramLinkUrl()
             if (url != null) Utils.openUri(this@MainActivity, url)
+        }
+    }
+
+    /**
+     * Open the bot at a start-param IN Telegram, not a browser.
+     *
+     * A t.me/... link (via Utils.openUri) is just https, so Android hands it
+     * to whatever claims https — and on a phone where Telegram hasn't taken
+     * over t.me that's the browser, which is not where «Купить подписку»
+     * should land. tg://resolve names the Telegram app directly; only when it
+     * isn't installed do we fall back to the https link so the button still
+     * works.
+     */
+    private fun openBotDeepLink(start: String) {
+        val tg = Intent(
+            Intent.ACTION_VIEW,
+            android.net.Uri.parse("tg://resolve?domain=vpnka_io_bot&start=$start"),
+        )
+        try {
+            startActivity(tg)
+        } catch (e: android.content.ActivityNotFoundException) {
+            Utils.openUri(this, "https://t.me/vpnka_io_bot?start=$start")
         }
     }
 

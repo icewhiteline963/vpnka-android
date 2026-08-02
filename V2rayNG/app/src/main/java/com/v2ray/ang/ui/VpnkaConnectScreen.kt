@@ -1210,7 +1210,6 @@ fun VpnkaPlansListScreen(
     activeToken: String?,
     trialHoursLeft: Int?,
     onGetFreeMonth: () -> Unit,
-    onSelectPlan: (VpnkaAccount.Plan) -> Unit,
     onOpenPlan: (VpnkaAccount.Plan) -> Unit,
     onBuy: () -> Unit,
     onBack: () -> Unit,
@@ -1256,16 +1255,15 @@ fun VpnkaPlansListScreen(
                     }
                 }.ifBlank { null }
 
-                // Tapping the row switches the traffic to that plan —
-                // the thing a list of plans is for. Details moved to their
-                // own button: reading a plan and using it are different
-                // intentions, and one tap cannot mean both.
+                // The whole card opens the plan — its days, devices, QR and
+                // the copy button. Switching the active plan lives in the
+                // picker on the connect screen, so this list is for reading
+                // and managing a plan, and one tap means exactly that.
                 VpnkaPlanRow2(
                     title = plan.tariff ?: "Подписка",
                     subtitle = subtitle,
                     live = live,
-                    onSelect = { onSelectPlan(plan) },
-                    onDetails = { onOpenPlan(plan) },
+                    onClick = { onOpenPlan(plan) },
                 )
                 Spacer(Modifier.height(8.dp))
             }
@@ -1288,9 +1286,11 @@ private fun VpnkaPlanRow2(
     title: String,
     subtitle: String?,
     live: Boolean,
-    onSelect: () -> Unit,
-    onDetails: () -> Unit,
+    onClick: () -> Unit,
 ) {
+    // The whole card is one tap target now — it opens the plan's details.
+    // Copying the subscription lives on a button inside those details, so the
+    // row no longer copies on tap and carries no separate «Детали» button.
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1298,50 +1298,36 @@ private fun VpnkaPlanRow2(
             .background(
                 if (live) VpnkaColors.Green.copy(alpha = 0.14f)
                 else VpnkaColors.CardSpeed
-            ),
+            )
+            .clickable(onClick = onClick)
+            .padding(start = 16.dp, top = 14.dp, bottom = 14.dp, end = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // The row itself selects. Its tap target stops short of the details
-        // button so the two cannot be confused by a thumb.
-        Row(
-            modifier = Modifier
-                .weight(1f)
-                .clickable(onClick = onSelect)
-                .padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontFamily = VpnkaFonts.nunito800,
+                fontWeight = VpnkaWeight.Extra,
+                fontSize = 15.sp,
+                color = VpnkaColors.TextStrong,
+            )
+            if (subtitle != null) {
                 Text(
-                    text = title,
-                    fontFamily = VpnkaFonts.nunito800,
-                    fontWeight = VpnkaWeight.Extra,
-                    fontSize = 15.sp,
-                    color = VpnkaColors.TextStrong,
+                    text = subtitle,
+                    fontFamily = VpnkaFonts.manrope600,
+                    fontWeight = VpnkaWeight.Semi,
+                    fontSize = 12.sp,
+                    color = if (live) VpnkaColors.Green else VpnkaColors.TextFaint,
                 )
-                if (subtitle != null) {
-                    Text(
-                        text = subtitle,
-                        fontFamily = VpnkaFonts.manrope600,
-                        fontWeight = VpnkaWeight.Semi,
-                        fontSize = 12.sp,
-                        color = if (live) VpnkaColors.Green else VpnkaColors.TextFaint,
-                    )
-                }
-            }
-            if (live) {
-                Text(text = "●", fontSize = 14.sp, color = VpnkaColors.Green)
             }
         }
+        // A chevron, so the whole card reads as «opens».
         Text(
-            text = "Детали ›",
+            text = "›",
             fontFamily = VpnkaFonts.nunito800,
             fontWeight = VpnkaWeight.Extra,
-            fontSize = 13.sp,
-            color = VpnkaColors.Accent,
-            modifier = Modifier
-                .clip(RoundedCornerShape(12.dp))
-                .clickable(onClick = onDetails)
-                .padding(horizontal = 14.dp, vertical = 14.dp),
+            fontSize = 20.sp,
+            color = if (live) VpnkaColors.Green else VpnkaColors.TextFaint,
         )
     }
 }
@@ -1396,6 +1382,7 @@ fun VpnkaPlanDetailScreen(
     devices: List<VpnkaAccount.Device>,
     devicesLoading: Boolean,
     qr: androidx.compose.ui.graphics.ImageBitmap?,
+    onCopySubscription: () -> Unit,
     onRevokeDevice: (Long) -> Unit,
     onBack: () -> Unit,
 ) {
@@ -1419,6 +1406,14 @@ fun VpnkaPlanDetailScreen(
                     }
                 }
                 Spacer(Modifier.height(16.dp))
+
+                if (plan.groupToken != null) {
+                    VpnkaSecondaryButton(
+                        text = "Копировать подписку",
+                        onClick = onCopySubscription,
+                    )
+                    Spacer(Modifier.height(16.dp))
+                }
 
                 if (qr != null) {
                     Text(
