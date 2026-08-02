@@ -54,6 +54,12 @@ object VpnkaAccount {
         // the app registers an account on first launch, so everyone has a
         // token, and only this says whether they are in their real account.
         @SerializedName("telegram_linked") val telegramLinked: Boolean = false,
+        // Expiry-reminder channel prefs + optional contact email, editable on
+        // the notifications settings screen (PATCH /app/settings). Default the
+        // toggles on so they read "enabled" before the profile has loaded.
+        @SerializedName("notify_expiry_in_app") val notifyExpiryInApp: Boolean = true,
+        @SerializedName("notify_expiry_in_telegram") val notifyExpiryInTelegram: Boolean = true,
+        @SerializedName("email") val email: String? = null,
     )
 
     data class Plan(
@@ -339,6 +345,28 @@ object VpnkaAccount {
         val body = JsonUtil.toJson(mapOf("text" to text))
             .toRequestBody("application/json".toMediaType())
         call<SupportThread>(authed("/app/support")?.post(body)) != null
+    }
+
+    /** Save the expiry-reminder channel prefs + contact email. Empty email
+     *  clears it server-side. Returns true on 2xx. */
+    suspend fun saveSettings(
+        inApp: Boolean, inTelegram: Boolean, email: String,
+    ): Boolean = withContext(Dispatchers.IO) {
+        val body = JsonUtil.toJson(
+            mapOf(
+                "notify_expiry_in_app" to inApp,
+                "notify_expiry_in_telegram" to inTelegram,
+                "email" to email,
+            )
+        ).toRequestBody("application/json".toMediaType())
+        val req = authed("/app/settings")?.method("PATCH", body)?.build()
+            ?: return@withContext false
+        try {
+            http().newCall(req).execute().use { it.isSuccessful }
+        } catch (e: Exception) {
+            LogUtil.w(AppConfig.TAG, "settings save failed: ${e.message}")
+            false
+        }
     }
 
     suspend fun fetchTickets(): List<SupportTicket> = withContext(Dispatchers.IO) {

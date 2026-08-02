@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.net.VpnService
 import android.os.Build
 import android.provider.Settings
+import android.widget.Toast
 import android.window.OnBackInvokedDispatcher
 import androidx.core.app.NotificationManagerCompat
 import android.os.Bundle
@@ -304,6 +305,7 @@ class MainActivity : HelperBaseComponentActivity() {
         showPlanPicker -> { showPlanPicker = false; true }
         openedPlan != null -> { openedPlan = null; true }
         showPlansList -> { showPlansList = false; true }
+        showNotificationSettings -> { showNotificationSettings = false; true }
         showSettings -> { showSettings = false; true }
         showSubscription -> { showSubscription = false; true }
         showServers -> { showServers = false; true }
@@ -331,6 +333,7 @@ class MainActivity : HelperBaseComponentActivity() {
 
     private var showServers by mutableStateOf(false)
     private var showSettings by mutableStateOf(false)
+    private var showNotificationSettings by mutableStateOf(false)
     private var showSubscription by mutableStateOf(false)
     // Mirrors subInfo.telegramLinked so code outside the composition can
     // ask the question. `goBuyOrLink` runs from a click handler that has no
@@ -567,7 +570,8 @@ class MainActivity : HelperBaseComponentActivity() {
         val anyOverlay = showSupport || showRecovery ||
             showServerPicker || showPlanPicker || showPlansList ||
             openedPlan != null || showSubscription ||
-            showSettings || showServers || showTickets || openedTicket != null
+            showSettings || showNotificationSettings ||
+            showServers || showTickets || openedTicket != null
         BackHandler(enabled = anyOverlay) { closeTopVpnkaScreen() }
 
         openedTicket?.let { ticket ->
@@ -656,7 +660,58 @@ class MainActivity : HelperBaseComponentActivity() {
                 },
                 onRoutingSettings = { navigateTo("routing_setting") },
                 onCheckUpdate = { navigateTo("check_update") },
+                onNotificationSettings = { showNotificationSettings = true },
                 onBack = { showSettings = false },
+            )
+            return
+        }
+
+        // Above the settings screen it is opened from — same reason the settings
+        // block sits above the profile. Back from here lands on settings.
+        if (showNotificationSettings && !showServers) {
+            val info = subInfo
+            var inApp by remember(info) { mutableStateOf(info?.notifyExpiryInApp ?: true) }
+            var inTg by remember(info) { mutableStateOf(info?.notifyExpiryInTelegram ?: true) }
+            var email by remember(info) { mutableStateOf(info?.email ?: "") }
+            var saving by remember { mutableStateOf(false) }
+            VpnkaNotificationsScreen(
+                inApp = inApp,
+                inTelegram = inTg,
+                telegramLinked = info?.telegramLinked == true,
+                email = email,
+                saving = saving,
+                onInApp = { inApp = it },
+                onInTelegram = { inTg = it },
+                onEmail = { email = it },
+                onSave = {
+                    saving = true
+                    lifecycleScope.launch {
+                        val ok = VpnkaAccount.saveSettings(inApp, inTg, email.trim())
+                        saving = false
+                        if (ok) {
+                            // Reflect the saved values locally so re-opening the
+                            // screen (or the profile) shows them without a refetch.
+                            subInfo = info?.copy(
+                                notifyExpiryInApp = inApp,
+                                notifyExpiryInTelegram = inTg,
+                                email = email.trim().ifEmpty { null },
+                            )
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Сохранено",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                            showNotificationSettings = false
+                        } else {
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Не удалось сохранить",
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
+                    }
+                },
+                onBack = { showNotificationSettings = false },
             )
             return
         }

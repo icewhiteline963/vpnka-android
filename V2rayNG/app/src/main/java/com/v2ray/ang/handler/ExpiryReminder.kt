@@ -76,6 +76,11 @@ object ExpiryReminder {
                 return Result.retry()
             } ?: return Result.success()
 
+            // Respect the in-app notification toggle. The server still delivers
+            // the same expiry notice to the in-app inbox and (if enabled) to
+            // Telegram — this only governs the on-device push.
+            if (!info.notifyExpiryInApp) return Result.success()
+
             val daysLeft = info.subscriptions.orEmpty()
                 .filter { !it.frozen }
                 .mapNotNull { it.daysLeft }

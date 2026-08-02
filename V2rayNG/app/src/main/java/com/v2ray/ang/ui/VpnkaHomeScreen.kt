@@ -21,6 +21,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -341,6 +343,7 @@ fun VpnkaSettingsScreen(
     onFixBattery: () -> Unit,
     notificationsEnabled: Boolean,
     onFixNotifications: () -> Unit,
+    onNotificationSettings: () -> Unit,
     onRoutingSettings: () -> Unit,
     onCheckUpdate: () -> Unit,
     onBack: () -> Unit,
@@ -370,6 +373,11 @@ fun VpnkaSettingsScreen(
                 "Напомним за 3 дня и за сутки до конца подписки"
             else "Без них не придёт напоминание об окончании подписки. Нажмите, чтобы включить",
             onClick = onFixNotifications,
+        )
+        VpnkaSettingsRow(
+            title = "Напоминание о подписке",
+            subtitle = "Где напоминать о конце подписки — в приложении и/или в Telegram — и email для связи",
+            onClick = onNotificationSettings,
         )
         VpnkaSettingsRow(
             title = "Приложения через VPN",
@@ -418,6 +426,112 @@ private fun VpnkaSettingsRow(
             fontWeight = VpnkaWeight.Semi,
             fontSize = 14.sp,
             color = VpnkaColors.TextMuted,
+        )
+    }
+}
+
+/** Expiry-reminder channels + contact email. Backed by GET /app/profile and
+ *  PATCH /app/settings; the Telegram toggle is disabled until a Telegram is
+ *  linked, since there is nowhere to send otherwise. */
+@Composable
+fun VpnkaNotificationsScreen(
+    inApp: Boolean,
+    inTelegram: Boolean,
+    telegramLinked: Boolean,
+    email: String,
+    saving: Boolean,
+    onInApp: (Boolean) -> Unit,
+    onInTelegram: (Boolean) -> Unit,
+    onEmail: (String) -> Unit,
+    onSave: () -> Unit,
+    onBack: () -> Unit,
+) {
+    VpnkaPage(title = "Напоминание о подписке", onBack = onBack) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Spacer(Modifier.height(20.dp))
+            Text(
+                text = "Напомним за 3 дня и за сутки до конца подписки. Выберите, куда:",
+                fontFamily = VpnkaFonts.manrope600,
+                fontWeight = VpnkaWeight.Semi,
+                fontSize = 14.sp,
+                color = VpnkaColors.TextMuted,
+            )
+            Spacer(Modifier.height(20.dp))
+            NotifyToggleRow(
+                title = "В приложении",
+                subtitle = "Уведомление внутри приложения",
+                checked = inApp,
+                enabled = true,
+                onCheckedChange = onInApp,
+            )
+            NotifyToggleRow(
+                title = "В Telegram",
+                subtitle = if (telegramLinked) "Сообщение от нашего бота"
+                else "Сначала привяжите Telegram в профиле",
+                checked = inTelegram && telegramLinked,
+                enabled = telegramLinked,
+                onCheckedChange = onInTelegram,
+            )
+            Spacer(Modifier.height(24.dp))
+            Text(
+                text = "Email для связи (необязательно)",
+                fontSize = 16.sp,
+                color = VpnkaColors.TextStrong,
+            )
+            Spacer(Modifier.height(8.dp))
+            OutlinedTextField(
+                value = email,
+                onValueChange = onEmail,
+                singleLine = true,
+                placeholder = { Text("you@example.com") },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.weight(1f))
+            Button(
+                onClick = onSave,
+                enabled = !saving,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 16.dp),
+            ) {
+                Text(if (saving) "Сохранение…" else "Сохранить")
+            }
+        }
+    }
+}
+
+@Composable
+private fun NotifyToggleRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp, horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title, fontSize = 16.sp, color = VpnkaColors.TextStrong)
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = subtitle,
+                fontFamily = VpnkaFonts.manrope600,
+                fontWeight = VpnkaWeight.Semi,
+                fontSize = 14.sp,
+                color = VpnkaColors.TextMuted,
+            )
+        }
+        Switch(
+            checked = checked,
+            enabled = enabled,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(
+                checkedTrackColor = androidx.compose.ui.graphics.Color(0xFFE8850C),
+            ),
         )
     }
 }
