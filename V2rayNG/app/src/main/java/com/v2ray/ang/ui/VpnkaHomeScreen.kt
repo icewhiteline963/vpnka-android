@@ -650,27 +650,35 @@ fun VpnkaSubscriptionScreen(
         // automatically, so someone whose app storage was cleared silently
         // lands in a fresh empty account, and the sign-in form only ever
         // appeared when signed out — which the app never is.
-        // Two doors that sound the same and are not, which is exactly how
-        // someone with an existing Telegram account ended up being told
-        // «не удалось привязать». Sign-in comes first because most people
-        // arrive from the bot and already have an account; each says who
-        // it is for, in those words.
         //
-        // Both disappear once a Telegram is attached, because both are then
-        // answered. The test is telegramLinked, not signedIn: the app makes
-        // an account on first launch, so signedIn is true for everyone and
-        // hiding on it would take away the only route to linking — the very
-        // gap that produced «не удалось привязать».
+        // One door, not two. «Войти в аккаунт» and «Подключить Telegram» read
+        // as the same thing and differed only by which side already held the
+        // account — a distinction a user can't make about themselves. Now a
+        // single «Подключить Telegram» opens the bot and the backend decides:
+        // it attaches when the Telegram side is empty, or hands back a login
+        // code when the account already lives there (link_telegram →
+        // existing_account). The code entry stays as a quiet secondary link —
+        // for that returned code, and for phones that can't open Telegram.
+        //
+        // Hidden once a Telegram is attached: the whole question is answered.
+        // The test is telegramLinked, not signedIn — the app makes an account
+        // on first launch, so signedIn is true for everyone.
         if (!telegramLinked) {
-            VpnkaMenuRow(
-                "Войти в аккаунт",
-                { showSignIn = true },
-                subtitle = "Если аккаунт уже есть в Telegram — подписки и баланс",
-            )
             VpnkaMenuRow(
                 "Подключить Telegram",
                 onLinkTelegram,
-                subtitle = "Если аккаунт заведён здесь, в приложении",
+                subtitle = "Общий аккаунт с ботом: подписки, баланс и устройства вместе",
+            )
+            Text(
+                text = "Уже есть код из бота? Ввести",
+                fontFamily = VpnkaFonts.manrope600,
+                fontWeight = VpnkaWeight.Semi,
+                fontSize = 13.sp,
+                color = VpnkaColors.Accent,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { showSignIn = true }
+                    .padding(horizontal = 4.dp, vertical = 8.dp),
             )
         }
         // Buying in the app credits this account directly, so it's offered to
