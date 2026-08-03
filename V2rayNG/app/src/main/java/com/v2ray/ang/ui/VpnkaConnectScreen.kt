@@ -125,6 +125,9 @@ fun VpnkaConnectScreen(
     subscriptionName: String?,
     canSwitchSubscription: Boolean,
     paidSubscription: Boolean,
+    freeMonthEnabled: Boolean,
+    claimingFreeMonth: Boolean,
+    onClaimFreeMonth: () -> Unit,
     serverName: String,
     serverDelay: String,
     sessionSeconds: Long,
@@ -322,6 +325,15 @@ fun VpnkaConnectScreen(
                 }
                 if (expiryDaysLeft != null && expiryDaysLeft <= 3) {
                     VpnkaExpiryBanner(daysLeft = expiryDaysLeft, onRenew = onRenew)
+                }
+                // Free month, right where the bot puts it: offered to anyone
+                // without an active paid plan. Tapping claims it in-app (same
+                // trial the bot issues) — no need to leave for Telegram.
+                if (!paidSubscription && freeMonthEnabled) {
+                    VpnkaFreeMonthCard(
+                        claiming = claimingFreeMonth,
+                        onClaim = onClaimFreeMonth,
+                    )
                 }
                 // Card order depends on what the client holds. On a paid plan
                 // the server is the thing worth switching, so it leads; on the
@@ -833,6 +845,46 @@ private fun VpnkaPlanRow(
             )
         }
     }
+}
+
+@Composable
+private fun VpnkaFreeMonthCard(claiming: Boolean, onClaim: () -> Unit) {
+    val white = androidx.compose.ui.graphics.Color.White
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(VpnkaColors.Accent)
+            .clickable(enabled = !claiming, onClick = onClaim)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = if (claiming) "🎁 Оформляем…" else "🎁 Месяц бесплатно",
+                fontFamily = VpnkaFonts.nunito800,
+                fontWeight = VpnkaWeight.Extra,
+                fontSize = 16.sp,
+                color = white,
+                modifier = Modifier.weight(1f),
+            )
+            if (claiming) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    color = white,
+                    strokeWidth = 2.dp,
+                )
+            }
+        }
+        Spacer(Modifier.height(3.dp))
+        Text(
+            text = "30 дней бесплатно, без карты. Нажмите, чтобы получить.",
+            fontFamily = VpnkaFonts.manrope600,
+            fontWeight = VpnkaWeight.Semi,
+            fontSize = 12.sp,
+            color = white.copy(alpha = 0.92f),
+        )
+    }
+    Spacer(Modifier.height(12.dp))
 }
 
 @Composable

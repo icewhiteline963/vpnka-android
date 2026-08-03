@@ -473,6 +473,7 @@ class MainActivity : HelperBaseComponentActivity() {
             }
         }
         var updateVersion by remember { mutableStateOf<String?>(null) }
+        var claimingFreeMonth by remember { mutableStateOf(false) }
         var askBattery by remember { mutableStateOf(PowerSaveHelper.shouldPrompt(this)) }
 
         // Check on every launch. It's a few hundred bytes of JSON, so it can
@@ -1107,6 +1108,31 @@ class MainActivity : HelperBaseComponentActivity() {
                 // the home-screen card order (server first when paid).
                 paidSubscription = subInfo?.subscriptions.orEmpty()
                     .any { !it.frozen && !it.isTrial },
+                freeMonthEnabled = subInfo?.freeMonthEnabled == true,
+                claimingFreeMonth = claimingFreeMonth,
+                onClaimFreeMonth = {
+                    claimingFreeMonth = true
+                    lifecycleScope.launch {
+                        when (val r = VpnkaAccount.claimFreeMonth()) {
+                            is VpnkaAccount.FreeMonthResult.Issued -> {
+                                toast("Готово! Бесплатный месяц активирован")
+                                subReload++
+                                importConfigViaSub()
+                            }
+                            is VpnkaAccount.FreeMonthResult.Already -> {
+                                val d = r.days
+                                toast(
+                                    if (d != null)
+                                        "Месяц уже активен. Новый можно получить через $d дн."
+                                    else "Месяц уже активен"
+                                )
+                            }
+                            is VpnkaAccount.FreeMonthResult.Failed ->
+                                toast("Не удалось получить месяц, попробуйте позже")
+                        }
+                        claimingFreeMonth = false
+                    }
+                },
                 onChangeSubscription = { showPlansList = true },
                 serverName = options.firstOrNull { it.guid == uiState.selectedGuid }
                     ?.name ?: "Выбрать сервер",

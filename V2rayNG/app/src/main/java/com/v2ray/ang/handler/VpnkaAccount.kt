@@ -54,6 +54,9 @@ object VpnkaAccount {
         // the app registers an account on first launch, so everyone has a
         // token, and only this says whether they are in their real account.
         @SerializedName("telegram_linked") val telegramLinked: Boolean = false,
+        // A free-month trial tariff is configured and live. With no active
+        // paid plan, the home screen shows the «Месяц бесплатно» button.
+        @SerializedName("free_month_enabled") val freeMonthEnabled: Boolean = false,
         // Expiry-reminder channel prefs + optional contact email, editable on
         // the notifications settings screen (PATCH /app/settings). Default the
         // toggles on so they read "enabled" before the profile has loaded.
@@ -527,6 +530,41 @@ object VpnkaAccount {
     private data class TopUpResponse(
         @SerializedName("payment_url") val paymentUrl: String? = null,
     )
+
+    /** Outcome of claiming the free month in the app. */
+    sealed class FreeMonthResult {
+        data class Issued(val days: Int) : FreeMonthResult()
+        data class Already(val days: Int?) : FreeMonthResult()
+        object Failed : FreeMonthResult()
+    }
+
+    private data class FreeMonthResponse(
+        @SerializedName("status") val status: String = "",
+        @SerializedName("days") val days: Int? = null,
+    )
+
+    /** Claim the free month — same trial the bot issues. */
+    suspend fun claimFreeMonth(): FreeMonthResult = withContext(Dispatchers.IO) {
+        val req = authed("/app/free-month")
+            ?.post(ByteArray(0).toRequestBody())?.build()
+            ?: return@withContext FreeMonthResult.Failed
+        try {
+            http().newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@use FreeMonthResult.Failed
+                val obj = JsonUtil.fromJsonSafe(
+                    resp.body?.string().orEmpty(), FreeMonthResponse::class.java
+                )
+                when (obj?.status) {
+                    "issued" -> FreeMonthResult.Issued(obj.days ?: 30)
+                    "already" -> FreeMonthResult.Already(obj.days)
+                    else -> FreeMonthResult.Failed
+                }
+            }
+        } catch (e: Exception) {
+            LogUtil.w(AppConfig.TAG, "free month failed: ${e.message}")
+            FreeMonthResult.Failed
+        }
+    }
 
     /** Start a balance top-up; returns the RuKassa URL to open, or null. */
     suspend fun topUp(amountRub: Int): String? = withContext(Dispatchers.IO) {
