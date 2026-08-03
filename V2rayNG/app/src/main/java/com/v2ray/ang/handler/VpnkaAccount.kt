@@ -646,6 +646,9 @@ object VpnkaAccount {
     suspend fun signOut() = withContext(Dispatchers.IO) {
         val token = MmkvManager.getAccountToken()
         MmkvManager.setAccountToken(null)
+        // Drop the account's imported subscriptions and servers too, or the
+        // connect screen keeps presenting the paid interface after logout.
+        MmkvManager.clearVpnkaSubscriptions()
         if (token == null) return@withContext
         try {
             http().newCall(

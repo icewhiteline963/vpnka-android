@@ -808,6 +808,20 @@ class MainActivity : HelperBaseComponentActivity() {
                         signedIn = false
                         subInfo = null
                         vpnkaTelegramLinked = false
+                        // signOut already dropped the account's subscriptions
+                        // and servers from storage; now flush what the UI still
+                        // holds in memory, or the connect screen keeps showing
+                        // the old server/plan and the paid card order.
+                        subs = MmkvManager.vpnkaSubscriptions()
+                        openedPlan = null
+                        showShop = false
+                        showTopUp = false
+                        showRecovery = false
+                        showSupport = false
+                        showSubscription = false
+                        selectNewestOnSync = false
+                        mainViewModel.setupGroupTab(forceRefresh = true)
+                        mainViewModel.reloadServerList()
                     }
                 },
                 onGetCode = { navigateTo("vpnka_app_code") },

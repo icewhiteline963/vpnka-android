@@ -1093,6 +1093,24 @@ object MmkvManager {
             }
             .map { it.guid to it.subscription.remarks }
 
+    /**
+     * Drop every subscription tied to a vpnka account — paid plans, the
+     * client sub and the shipped trial — together with their servers, and
+     * forget the active pick. Sign-out calls this: without it the account's
+     * subscriptions stay imported, so the connect screen keeps showing a
+     * server, a plan name and a working button — the «платный» interface —
+     * for an account no one is signed into any more.
+     */
+    fun clearVpnkaSubscriptions() {
+        decodeSubscriptions()
+            .filter {
+                val url = it.subscription.url
+                url == VPNKA_TRIAL_SUB_URL || url.startsWith(VPNKA_SUB_MATCH)
+            }
+            .forEach { removeSubscription(it.guid) }
+        settingsStorage.remove(CACHE_SUBSCRIPTION_ID)
+    }
+
     fun selectedSubscriptionGuid(): String? = decodeSettingsString(CACHE_SUBSCRIPTION_ID)
 
     /**
