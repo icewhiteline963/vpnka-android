@@ -70,6 +70,8 @@ object VpnkaAccount {
         @SerializedName("devices_used") val devicesUsed: Int? = null,
         @SerializedName("devices_limit") val devicesLimit: Int? = null,
         @SerializedName("frozen") val frozen: Boolean = false,
+        // The free month is a trial-tariff plan; a paid plan is not.
+        @SerializedName("is_trial") val isTrial: Boolean = false,
     )
 
     private data class TokenResponse(@SerializedName("token") val token: String?)

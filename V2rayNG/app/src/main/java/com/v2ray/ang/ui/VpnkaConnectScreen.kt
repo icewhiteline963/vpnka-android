@@ -124,6 +124,7 @@ fun VpnkaConnectScreen(
     trialHoursLeft: Int?,
     subscriptionName: String?,
     canSwitchSubscription: Boolean,
+    paidSubscription: Boolean,
     serverName: String,
     serverDelay: String,
     sessionSeconds: Long,
@@ -322,25 +323,37 @@ fun VpnkaConnectScreen(
                 if (expiryDaysLeft != null && expiryDaysLeft <= 3) {
                     VpnkaExpiryBanner(daysLeft = expiryDaysLeft, onRenew = onRenew)
                 }
-                // Above the server, because it is the wider choice: the plan
-                // decides which servers exist at all. Only offered as a
-                // switch when there is more than one — otherwise it is a
-                // label saying which plan is carrying the traffic.
-                VpnkaPlanRow(
-                    name = subscriptionName,
-                    trialHoursLeft = trialHoursLeft,
-                    daysLeft = activeDaysLeft,
-                    devicesUsed = activeDevicesUsed,
-                    devicesLimit = activeDevicesLimit,
-                    canSwitch = canSwitchSubscription,
-                    onChange = onChangeSubscription,
-                    onOpenProfile = onOpenProfile,
-                )
-                VpnkaServerCard(
-                    name = serverName,
-                    delay = serverDelay,
-                    onChange = onChangeServer,
-                )
+                // Card order depends on what the client holds. On a paid plan
+                // the server is the thing worth switching, so it leads; on the
+                // free month the subscription leads (the natural next step is
+                // to keep/upgrade it). Both cards are always present — only the
+                // order changes.
+                val planRow: @Composable () -> Unit = {
+                    VpnkaPlanRow(
+                        name = subscriptionName,
+                        trialHoursLeft = trialHoursLeft,
+                        daysLeft = activeDaysLeft,
+                        devicesUsed = activeDevicesUsed,
+                        devicesLimit = activeDevicesLimit,
+                        canSwitch = canSwitchSubscription,
+                        onChange = onChangeSubscription,
+                        onOpenProfile = onOpenProfile,
+                    )
+                }
+                val serverCard: @Composable () -> Unit = {
+                    VpnkaServerCard(
+                        name = serverName,
+                        delay = serverDelay,
+                        onChange = onChangeServer,
+                    )
+                }
+                if (paidSubscription) {
+                    serverCard()
+                    planRow()
+                } else {
+                    planRow()
+                    serverCard()
+                }
                 VpnkaPerAppRow(onClick = onPerAppProxy)
             }
         }

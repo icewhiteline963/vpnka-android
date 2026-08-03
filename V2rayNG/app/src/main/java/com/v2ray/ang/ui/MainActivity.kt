@@ -1103,6 +1103,10 @@ class MainActivity : HelperBaseComponentActivity() {
                 subscriptionName = subs.firstOrNull { it.first == selectedSub }?.second
                     ?: subs.firstOrNull()?.second,
                 canSwitchSubscription = subs.size > 1,
+                // Paid = holds at least one non-trial, non-frozen plan. Drives
+                // the home-screen card order (server first when paid).
+                paidSubscription = subInfo?.subscriptions.orEmpty()
+                    .any { !it.frozen && !it.isTrial },
                 onChangeSubscription = { showPlansList = true },
                 serverName = options.firstOrNull { it.guid == uiState.selectedGuid }
                     ?.name ?: "Выбрать сервер",
