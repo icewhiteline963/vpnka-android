@@ -332,6 +332,9 @@ fun VpnkaConnectScreen(
                 if (!paidSubscription && freeMonthEnabled) {
                     VpnkaFreeMonthCard(
                         claiming = claimingFreeMonth,
+                        // Follows the tunnel like the connect button: green when
+                        // the VPN is up, accent otherwise.
+                        bgColor = accent,
                         onClaim = onClaimFreeMonth,
                     )
                 }
@@ -848,13 +851,17 @@ private fun VpnkaPlanRow(
 }
 
 @Composable
-private fun VpnkaFreeMonthCard(claiming: Boolean, onClaim: () -> Unit) {
+private fun VpnkaFreeMonthCard(
+    claiming: Boolean,
+    bgColor: androidx.compose.ui.graphics.Color,
+    onClaim: () -> Unit,
+) {
     val white = androidx.compose.ui.graphics.Color.White
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(VpnkaColors.Accent)
+            .background(bgColor)
             .clickable(enabled = !claiming, onClick = onClaim)
             .padding(horizontal = 16.dp, vertical = 14.dp),
     ) {
@@ -884,7 +891,6 @@ private fun VpnkaFreeMonthCard(claiming: Boolean, onClaim: () -> Unit) {
             color = white.copy(alpha = 0.92f),
         )
     }
-    Spacer(Modifier.height(12.dp))
 }
 
 @Composable

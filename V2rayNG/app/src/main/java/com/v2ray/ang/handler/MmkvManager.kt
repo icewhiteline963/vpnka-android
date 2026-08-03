@@ -1032,7 +1032,10 @@ object MmkvManager {
      *
      * @return the guid to select, or null to leave the current selection be.
      */
-    fun syncSubscriptions(plans: List<Pair<String, String>>): String? {
+    fun syncSubscriptions(
+        plans: List<Pair<String, String>>,
+        preferNewest: Boolean = false,
+    ): String? {
         if (plans.isEmpty()) return null
 
         val wanted = plans.associate { (token, label) ->
@@ -1071,7 +1074,10 @@ object MmkvManager {
         val selected = decodeSettingsString(CACHE_SUBSCRIPTION_ID)
         val stillValid = selected != null &&
             decodeSubscriptions().any { it.guid == selected }
-        if (!stillValid && firstGuid != null) {
+        // preferNewest: just claimed a free month or bought a plan — activate
+        // the newest (longest-lived, = firstGuid) even if the old choice is
+        // still valid, so the new subscription is the one carrying traffic.
+        if ((preferNewest || !stillValid) && firstGuid != null) {
             encodeSettings(CACHE_SUBSCRIPTION_ID, firstGuid)
             return firstGuid
         }

@@ -374,6 +374,9 @@ class MainActivity : HelperBaseComponentActivity() {
     private var showPlansList by mutableStateOf(false)
     private var showShop by mutableStateOf(false)
     private var showTopUp by mutableStateOf(false)
+    // Set right before a profile refresh that follows claiming/buying a plan,
+    // so the sync activates the newly-acquired subscription (its radio).
+    private var selectNewestOnSync by mutableStateOf(false)
     private var openedPlan by mutableStateOf<VpnkaAccount.Plan?>(null)
 
     /** Set by the post-payment link; consumed on the next composition. */
@@ -449,12 +452,18 @@ class MainActivity : HelperBaseComponentActivity() {
                 // subscription and finds no servers behind it.
                 val plans = fetched?.subscriptions.orEmpty()
                     .filter { (it.daysLeft ?: 1) > 0 }
+                    // Longest-lived first: syncSubscriptions treats the first as
+                    // the one to fall back to / activate, and a just-acquired
+                    // month or plan is the one with the most days left.
+                    .sortedByDescending { it.daysLeft ?: 0 }
                     .mapNotNull { plan ->
                         val token = plan.groupToken ?: return@mapNotNull null
                         token to (plan.tariff ?: "VPNka")
                     }
                 if (plans.isNotEmpty()) {
-                    val switched = MmkvManager.syncSubscriptions(plans)
+                    val switched = MmkvManager.syncSubscriptions(
+                        plans, preferNewest = selectNewestOnSync
+                    )
                     subs = MmkvManager.vpnkaSubscriptions()
                     // The groups the viewmodel knows about are now out of
                     // date — sync may have created one per plan. Everything
@@ -463,11 +472,19 @@ class MainActivity : HelperBaseComponentActivity() {
                     // on a newly-appeared subscription do nothing.
                     mainViewModel.setupGroupTab(forceRefresh = true)
                     if (switched != null) {
+                        if (selectNewestOnSync) {
+                            // Radio in the picker reads uiState.selectedGroupId
+                            // first, so MMKV alone isn't enough — tell the
+                            // viewmodel too, or the newly-bought plan wouldn't
+                            // show as active.
+                            mainViewModel.subscriptionIdChanged(switched)
+                        }
                         // Same path a manual refresh takes, so the user sees
                         // the familiar spinner and toasts rather than servers
                         // appearing out of nowhere.
                         importConfigViaSub()
                     }
+                    selectNewestOnSync = false
                 }
                 subLoading = false
             }
@@ -904,10 +921,10 @@ class MainActivity : HelperBaseComponentActivity() {
                         when (val r = VpnkaAccount.purchase(id, "balance")) {
                             is VpnkaAccount.PurchaseResult.Settled -> {
                                 toast("Оплачено — подписка активна")
-                                // Pull the new plan's servers and refresh the
-                                // profile so the card reflects the purchase.
+                                // Refresh the profile and activate the new plan
+                                // (its radio) — the sync pulls its servers.
+                                selectNewestOnSync = true
                                 subReload++
-                                importConfigViaSub()
                                 showShop = false
                             }
                             is VpnkaAccount.PurchaseResult.Failed -> toast(r.message)
@@ -1116,8 +1133,8 @@ class MainActivity : HelperBaseComponentActivity() {
                         when (val r = VpnkaAccount.claimFreeMonth()) {
                             is VpnkaAccount.FreeMonthResult.Issued -> {
                                 toast("Готово! Бесплатный месяц активирован")
+                                selectNewestOnSync = true
                                 subReload++
-                                importConfigViaSub()
                             }
                             is VpnkaAccount.FreeMonthResult.Already -> {
                                 val d = r.days
