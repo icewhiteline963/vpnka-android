@@ -43,6 +43,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -575,6 +576,13 @@ fun VpnkaSubscriptionScreen(
     onBack: () -> Unit,
 ) {
     var showSignIn by remember { mutableStateOf(false) }
+    // A bot code logs into a Telegram account, so a successful sign-in flips
+    // telegramLinked. Close the form on that: signedIn is already true for
+    // everyone (accounts auto-create), so nothing else would dismiss it and
+    // the user stared at the code field after logging in.
+    LaunchedEffect(telegramLinked) {
+        if (telegramLinked) showSignIn = false
+    }
 
     VpnkaPage(title = "Профиль", onBack = onBack) {
         Column(
@@ -655,7 +663,7 @@ fun VpnkaSubscriptionScreen(
         // gap that produced «не удалось привязать».
         if (!telegramLinked) {
             VpnkaMenuRow(
-                "Войти по коду из бота",
+                "Войти в аккаунт",
                 { showSignIn = true },
                 subtitle = "Если аккаунт уже есть в Telegram — подписки и баланс",
             )
@@ -734,9 +742,26 @@ private fun VpnkaSignIn(
         // here — not just on send — means the field shows the user exactly
         // what the bot showed them.
         onValueChange = { code = it.uppercase().filter { c -> c.isLetterOrDigit() }.take(6) },
-        label = { Text("Код из бота") },
+        label = { Text("Код из бота", color = VpnkaColors.TextMuted) },
         singleLine = true,
         enabled = !signingIn,
+        // Without explicit colours the field takes Material's palette, not
+        // this design's, and the typed code came out near-invisible on the
+        // warm background — the same fix the message and top-up fields got.
+        textStyle = LocalTextStyle.current.copy(
+            color = VpnkaColors.TextStrong,
+            fontSize = 15.sp,
+        ),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedTextColor = VpnkaColors.TextStrong,
+            unfocusedTextColor = VpnkaColors.TextStrong,
+            disabledTextColor = VpnkaColors.TextMuted,
+            cursorColor = VpnkaColors.Accent,
+            focusedBorderColor = VpnkaColors.Accent,
+            unfocusedBorderColor = VpnkaColors.TextFaint,
+            focusedLabelColor = VpnkaColors.Accent,
+            unfocusedLabelColor = VpnkaColors.TextMuted,
+        ),
         modifier = Modifier.fillMaxWidth(),
     )
 
