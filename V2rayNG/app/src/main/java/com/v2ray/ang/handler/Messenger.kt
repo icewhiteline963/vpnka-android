@@ -46,6 +46,7 @@ object Messenger {
     private const val KEY_PRIV = "priv"
     private const val KEY_PUB = "pub"
     private const val KEY_MYID = "my_client_id"
+    private const val KEY_HANDLE = "my_handle"
     private const val KEY_CONTACTS = "contacts"
     private const val KEY_CURSOR = "cursor"
     private const val BASE = "https://get.vpnka.io"
@@ -90,6 +91,11 @@ object Messenger {
 
     fun myClientId(): Long = store.decodeLong(KEY_MYID, 0L)
     private fun setMyClientId(id: Long) = store.encode(KEY_MYID, id)
+
+    fun myHandle(): String = store.decodeString(KEY_HANDLE) ?: ""
+    private fun setHandle(h: String) = store.encode(KEY_HANDLE, h)
+
+    data class Found(val id: Long, val handle: String, val pubKey: String)
 
     /** The shareable invite code: base64(JSON{id,name,pub}). */
     fun myInviteCode(name: String): String {
@@ -207,6 +213,56 @@ object Messenger {
         } catch (e: Exception) { myClientId() }
     }
 
+    /**
+     * Publish our public key and get our auto-assigned @handle (derived
+     * server-side from the Telegram username or the device name). Caches it.
+     */
+    suspend fun register(deviceName: String): String = withContext(Dispatchers.IO) {
+        val bodyJson = gson.toJson(RegReq(publicKey = myPublicKey(), deviceName = deviceName))
+        val req = authed("/app/messenger/register")
+            ?.post(bodyJson.toRequestBody("application/json".toMediaType()))?.build()
+            ?: return@withContext myHandle()
+        try {
+            http().newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@withContext myHandle()
+                val r = gson.fromJson(resp.body?.string().orEmpty(), RegResp::class.java)
+                if (r != null && r.handle.isNotBlank()) setHandle(r.handle)
+                myHandle()
+            }
+        } catch (e: Exception) { myHandle() }
+    }
+
+    /** Search people by @handle prefix. */
+    suspend fun searchUsers(q: String): List<Found> = withContext(Dispatchers.IO) {
+        if (q.trim().length < 2) return@withContext emptyList()
+        val req = authed("/app/messenger/search?q=" + android.net.Uri.encode(q.trim()))
+            ?.get()?.build() ?: return@withContext emptyList()
+        try {
+            http().newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@withContext emptyList()
+                val arr = gson.fromJson(resp.body?.string().orEmpty(), Array<SearchItem>::class.java)
+                    ?: return@withContext emptyList()
+                arr.map { Found(it.clientId, it.handle, it.publicKey) }
+            }
+        } catch (e: Exception) { emptyList() }
+    }
+
+    /** Look up a handle + public key by client id (to reply to a new sender). */
+    private suspend fun getProfile(id: Long): Found? = withContext(Dispatchers.IO) {
+        val req = authed("/app/messenger/profile/$id")?.get()?.build() ?: return@withContext null
+        try {
+            http().newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@withContext null
+                val it = gson.fromJson(resp.body?.string().orEmpty(), SearchItem::class.java)
+                    ?: return@withContext null
+                Found(it.clientId, it.handle, it.publicKey)
+            }
+        } catch (e: Exception) { null }
+    }
+
+    /** Open a chat with a searched user (stores them as a contact). */
+    fun startChat(found: Found) = addContact(Contact(found.id, "@" + found.handle, found.pubKey))
+
     /** Send a plaintext message to a contact. Stores our own copy locally. */
     suspend fun send(contactId: Long, text: String): Boolean = withContext(Dispatchers.IO) {
         val c = contact(contactId) ?: return@withContext false
@@ -237,10 +293,14 @@ object Messenger {
                 var changed = false
                 for (m in out.messages) {
                     val text = open(m.ciphertext) ?: continue
-                    // A message from someone not in contacts is filed under a
-                    // stub contact so the user can still see and reply to it.
+                    // First message from someone new: pull their handle + key
+                    // so the reply can be encrypted. Fall back to a stub.
                     if (contact(m.fromClient) == null) {
-                        addContact(Contact(m.fromClient, "Контакт ${m.fromClient}", ""))
+                        val prof = getProfile(m.fromClient)
+                        addContact(
+                            if (prof != null) Contact(prof.id, "@" + prof.handle, prof.pubKey)
+                            else Contact(m.fromClient, "Контакт ${m.fromClient}", "")
+                        )
                     }
                     appendMessage(m.fromClient, Msg(id = m.id, mine = false, text = text, ts = System.currentTimeMillis()))
                     changed = true
@@ -252,6 +312,16 @@ object Messenger {
     }
 
     private data class MeResp(@SerializedName("client_id") val clientId: Long = 0)
+    private data class RegReq(
+        @SerializedName("public_key") val publicKey: String,
+        @SerializedName("device_name") val deviceName: String,
+    )
+    private data class RegResp(val handle: String = "")
+    private data class SearchItem(
+        @SerializedName("client_id") val clientId: Long = 0,
+        val handle: String = "",
+        @SerializedName("public_key") val publicKey: String = "",
+    )
     private data class SendReq(val to: Long, val ciphertext: String)
     private data class PollMsg(
         val id: Long = 0,

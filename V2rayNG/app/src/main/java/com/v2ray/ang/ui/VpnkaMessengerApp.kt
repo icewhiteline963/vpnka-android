@@ -18,12 +18,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -40,28 +38,37 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.v2ray.ang.handler.Messenger
-import com.v2ray.ang.handler.MmkvManager
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private const val KEY_MY_NAME = "vpnka_messenger_myname"
 
 /** «Сообщения» — an E2E messenger in the Telegram mould. */
 @Composable
 fun VpnkaMessengerApp() {
     var tick by remember { mutableIntStateOf(0) }
     var openId by remember { mutableStateOf<Long?>(null) }
-    var showAdd by remember { mutableStateOf(false) }
-    var showMyCode by remember { mutableStateOf(false) }
+    var handle by remember { mutableStateOf(Messenger.myHandle()) }
+    var query by remember { mutableStateOf("") }
+    var results by remember { mutableStateOf<List<Messenger.Found>>(emptyList()) }
 
-    // Learn our id once, then poll for incoming while this app is open.
+    // Register our public key (server assigns @handle from Telegram username
+    // or device name), then poll for incoming while this app is open.
     LaunchedEffect(Unit) {
         Messenger.refreshMyId()
+        handle = Messenger.register("${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
         while (true) {
             if (VpnkaColors.connected) {
                 if (Messenger.poll()) tick++
             }
             delay(2500)
+        }
+    }
+
+    // Debounced user/channel search.
+    LaunchedEffect(query) {
+        if (query.trim().length < 2) { results = emptyList() } else {
+            delay(300)
+            results = Messenger.searchUsers(query)
         }
     }
 
@@ -75,103 +82,83 @@ fun VpnkaMessengerApp() {
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            // Toolbar: add contact + my code.
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                VpnkaSecondaryButton(text = "＋ Добавить", onClick = { showAdd = true }, modifier = Modifier.weight(1f))
-                VpnkaSecondaryButton(text = "Мой код", onClick = { showMyCode = true }, modifier = Modifier.weight(1f))
-            }
-            if (contacts.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-                    Text(
-                        "Чатов пока нет. Добавьте собеседника по его коду, или дайте свой код — код содержит ваш ключ шифрования.",
-                        fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp, color = VpnkaColors.TextMuted,
-                    )
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Current user's @handle up top.
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = if (handle.isBlank()) "…" else "@$handle",
+                fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.TextStrong,
+            )
+            Spacer(Modifier.weight(1f))
+            Text("Сообщения", fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp, color = VpnkaColors.TextMuted)
+        }
+        // Search people and channels.
+        Box(modifier = Modifier.padding(horizontal = 12.dp)) {
+            MsgField("Поиск людей и каналов", query) { query = it }
+        }
+        Spacer(Modifier.height(4.dp))
+
+        if (query.trim().length >= 2) {
+            // Search results.
+            if (results.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+                    Text("Никого не найдено", fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp, color = VpnkaColors.TextMuted)
                 }
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
-                    items(contacts, key = { it.id }) { c ->
-                        val last = Messenger.messages(c.id).lastOrNull()
+                    items(results, key = { it.id }) { r ->
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp)
                                 .clip(RoundedCornerShape(16.dp)).background(VpnkaColors.CardServer)
-                                .clickable { openId = c.id }.padding(12.dp),
+                                .clickable {
+                                    Messenger.startChat(r); tick++; query = ""; openId = r.id
+                                }.padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            MsgAvatar(c.name)
+                            MsgAvatar(r.handle)
                             Spacer(Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(c.name, fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.TextStrong, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                if (last != null) {
-                                    Text(
-                                        (if (last.mine) "Вы: " else "") + last.text,
-                                        fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp, color = VpnkaColors.TextMuted,
-                                        maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
+                            Text("@${r.handle}", fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.TextStrong)
+                        }
+                    }
+                }
+            }
+        } else if (contacts.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+                Text(
+                    "Чатов пока нет. Найдите человека по нику через поиск выше — переписка шифруется.",
+                    fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp, color = VpnkaColors.TextMuted,
+                )
+            }
+        } else {
+            // Chat list.
+            LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+                items(contacts, key = { it.id }) { c ->
+                    val last = Messenger.messages(c.id).lastOrNull()
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp)
+                            .clip(RoundedCornerShape(16.dp)).background(VpnkaColors.CardServer)
+                            .clickable { openId = c.id }.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        MsgAvatar(c.name)
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(c.name, fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.TextStrong, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            if (last != null) {
+                                Text(
+                                    (if (last.mine) "Вы: " else "") + last.text,
+                                    fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp, color = VpnkaColors.TextMuted,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                )
                             }
                         }
                     }
                 }
             }
         }
-    }
-
-    if (showAdd) {
-        var code by remember { mutableStateOf("") }
-        var err by remember { mutableStateOf(false) }
-        AlertDialog(
-            onDismissRequest = { showAdd = false },
-            title = { Text("Добавить собеседника", fontFamily = VpnkaFonts.nunito800, color = VpnkaColors.TextStrong) },
-            text = {
-                Column {
-                    Text("Вставьте код собеседника:", fontSize = 13.sp, color = VpnkaColors.TextMuted)
-                    Spacer(Modifier.height(8.dp))
-                    MsgField("Код", code) { code = it; err = false }
-                    if (err) Text("Код не распознан", fontSize = 12.sp, color = VpnkaColors.Warning)
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    val c = Messenger.parseInvite(code)
-                    if (c == null) err = true else { Messenger.addContact(c); tick++; showAdd = false }
-                }) { Text("Добавить") }
-            },
-            dismissButton = { TextButton(onClick = { showAdd = false }) { Text("Отмена") } },
-            containerColor = VpnkaColors.BgOffCentre,
-        )
-    }
-
-    if (showMyCode) {
-        var name by remember { mutableStateOf(MmkvManager.decodeSettingsString(KEY_MY_NAME) ?: "") }
-        val code = remember(name, tick) { Messenger.myInviteCode(name.ifBlank { "Пользователь" }) }
-        AlertDialog(
-            onDismissRequest = { showMyCode = false },
-            title = { Text("Мой код", fontFamily = VpnkaFonts.nunito800, color = VpnkaColors.TextStrong) },
-            text = {
-                Column {
-                    MsgField("Ваше имя", name) { name = it; MmkvManager.encodeSettings(KEY_MY_NAME, it) }
-                    Spacer(Modifier.height(10.dp))
-                    Text("Передайте этот код собеседнику — он содержит ваш ключ шифрования:", fontSize = 12.sp, color = VpnkaColors.TextMuted)
-                    Spacer(Modifier.height(6.dp))
-                    Text(code, fontSize = 11.sp, color = VpnkaColors.TextStrong)
-                }
-            },
-            confirmButton = {
-                val ctx = androidx.compose.ui.platform.LocalContext.current
-                TextButton(onClick = {
-                    val cm = ctx.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
-                    cm?.setPrimaryClip(android.content.ClipData.newPlainText("vpnka", code))
-                    showMyCode = false
-                }) { Text("Скопировать") }
-            },
-            dismissButton = { TextButton(onClick = { showMyCode = false }) { Text("Закрыть") } },
-            containerColor = VpnkaColors.BgOffCentre,
-        )
     }
 }
 
