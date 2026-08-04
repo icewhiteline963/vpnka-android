@@ -51,21 +51,26 @@ import com.v2ray.ang.handler.SmartDeskStore
 import com.v2ray.ang.handler.SmartDeskSync
 import kotlinx.coroutines.launch
 
-/** Dispatch a desktop icon to its real app screen (Phase 2). */
+/**
+ * Dispatch a desktop icon to its real app screen. Back to the desktop and exit
+ * to the vpnka home both live in the bottom bar (split 50/50), so the top edge
+ * stays clear of controls.
+ */
 @Composable
 fun VpnkaSmartDeskAppScreen(
     appId: String,
     appLabel: String,
     appGlyph: String,
     online: Boolean,
-    onBack: () -> Unit,
+    onBack: () -> Unit,   // back to the SmartDesk desktop
+    onExit: () -> Unit,   // out to the vpnka home screen
 ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(VpnkaColors.BgOffMid),
     ) {
-        SmartDeskAppBar(title = appLabel, glyph = appGlyph, online = online, onBack = onBack)
+        SmartDeskAppBar(title = appLabel, glyph = appGlyph, online = online)
         // Sync on open (through the VPN) and after every edit; syncTick keys
         // each app's list so it re-reads once the server's view is merged in.
         val scope = rememberCoroutineScope()
@@ -77,7 +82,7 @@ fun VpnkaSmartDeskAppScreen(
         LaunchedEffect(Unit) {
             if (online && appId != "browser") { SmartDeskSync.sync(); syncTick++ }
         }
-        Box(modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.fillMaxSize().weight(1f)) {
             when (appId) {
                 "calendar" -> CalendarApp(syncTick, onChanged)
                 "contacts" -> ContactsApp(syncTick, onChanged)
@@ -86,6 +91,41 @@ fun VpnkaSmartDeskAppScreen(
                 else -> EmptyHint("Приложение недоступно")
             }
         }
+        SmartDeskBottomBar(onBack = onBack, onExit = onExit)
+    }
+}
+
+/** Bottom bar shared by the app screens: back to desktop | exit to home. */
+@Composable
+private fun SmartDeskBottomBar(onBack: () -> Unit, onExit: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.Black.copy(alpha = 0.20f)),
+    ) {
+        Text(
+            text = "‹ Рабочий стол",
+            fontFamily = VpnkaFonts.nunito800,
+            fontSize = 14.sp,
+            color = VpnkaColors.TextStrong,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            modifier = Modifier
+                .weight(1f)
+                .clickable(onClick = onBack)
+                .padding(vertical = 12.dp),
+        )
+        Box(modifier = Modifier.width(1.dp).height(20.dp).background(Color.White.copy(alpha = 0.15f)))
+        Text(
+            text = "⌂ На главный экран",
+            fontFamily = VpnkaFonts.nunito800,
+            fontSize = 14.sp,
+            color = VpnkaColors.TextStrong,
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            modifier = Modifier
+                .weight(1f)
+                .clickable(onClick = onExit)
+                .padding(vertical = 12.dp),
+        )
     }
 }
 
@@ -94,7 +134,6 @@ private fun SmartDeskAppBar(
     title: String,
     glyph: String,
     online: Boolean,
-    onBack: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -102,16 +141,6 @@ private fun SmartDeskAppBar(
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = "‹ Рабочий стол",
-            fontFamily = VpnkaFonts.nunito800,
-            fontSize = 15.sp,
-            color = VpnkaColors.TextStrong,
-            modifier = Modifier
-                .clip(RoundedCornerShape(10.dp))
-                .clickable(onClick = onBack)
-                .padding(horizontal = 8.dp, vertical = 6.dp),
-        )
         Spacer(Modifier.weight(1f))
         Text(text = "$glyph  $title", fontFamily = VpnkaFonts.nunito800, fontSize = 15.sp, color = VpnkaColors.TextStrong)
         Spacer(Modifier.width(8.dp))

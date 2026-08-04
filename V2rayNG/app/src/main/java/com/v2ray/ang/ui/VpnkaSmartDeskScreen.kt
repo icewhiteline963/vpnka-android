@@ -106,7 +106,8 @@ fun VpnkaSmartDeskScreen(
             appLabel = app.label,
             appGlyph = app.glyph,
             online = online,
-            onBack = { openApp = null },
+            onBack = { openApp = null },   // ← Рабочий стол
+            onExit = onBack,               // ⌂ На главный экран (выход из SmartDesk)
         )
         return
     }
@@ -155,13 +156,31 @@ fun VpnkaSmartDeskScreen(
             )
         }
 
-        // The desktop grid itself. Long-press on empty space opens settings.
+        // The desktop grid. Long-press empty → settings. A downward swipe
+        // ANYWHERE on the grid opens the shade (left half) or control centre
+        // (right half) — it starts mid-screen, not at the top edge, so it
+        // doesn't fight Android's own status-bar pull-down.
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .weight(1f)
+                .padding(top = 44.dp, start = 8.dp, end = 8.dp)
                 .pointerInput(Unit) {
                     detectTapGestures(onLongPress = { showSettings = true })
+                }
+                .pointerInput(Unit) {
+                    var startX = 0f
+                    var dy = 0f
+                    detectVerticalDragGestures(
+                        onDragStart = { off -> startX = off.x; dy = 0f },
+                        onVerticalDrag = { _, delta ->
+                            dy += delta
+                            if (dy > 60f) {
+                                if (startX < size.width / 2f) showShade = true
+                                else showControl = true
+                            }
+                        },
+                    )
                 },
         ) {
             val density = LocalDensity.current
@@ -293,22 +312,6 @@ fun VpnkaSmartDeskScreen(
             )
         }
     }
-
-        // Top-edge swipe zones: left half pulls the notification shade down,
-        // right half pulls the control centre — like a phone. Thin strips at
-        // the very top so they don't steal taps from the desktop below.
-        Row(modifier = Modifier.fillMaxWidth().height(28.dp)) {
-            Box(
-                modifier = Modifier.weight(1f).fillMaxSize().pointerInput(Unit) {
-                    detectVerticalDragGestures { _, dy -> if (dy > 6f) showShade = true }
-                },
-            )
-            Box(
-                modifier = Modifier.weight(1f).fillMaxSize().pointerInput(Unit) {
-                    detectVerticalDragGestures { _, dy -> if (dy > 6f) showControl = true }
-                },
-            )
-        }
 
         if (showShade) {
             NotificationShade(online = online, onDismiss = { showShade = false })
