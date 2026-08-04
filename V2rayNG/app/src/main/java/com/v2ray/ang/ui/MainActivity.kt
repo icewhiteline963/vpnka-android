@@ -380,6 +380,8 @@ class MainActivity : HelperBaseComponentActivity() {
     // SmartDesk full-screen surface + the reachability state behind its dot.
     private var showSmartDesk by mutableStateOf(false)
     private var smartDeskOnline by mutableStateOf(false)
+    // Bumped when the zero-knowledge vault is unlocked, to re-evaluate the gate.
+    private var vaultTick by mutableStateOf(0)
     // Set right before a profile refresh that follows claiming/buying a plan,
     // so the sync activates the newly-acquired subscription (its radio).
     private var selectNewestOnSync by mutableStateOf(false)
@@ -1109,10 +1111,21 @@ class MainActivity : HelperBaseComponentActivity() {
         }
 
         if (showSmartDesk && !showServers) {
-            VpnkaSmartDeskScreen(
-                online = smartDeskOnline,
-                onBack = { showSmartDesk = false },
-            )
+            // Zero-knowledge gate: the cloud opens only once the vault is
+            // unlocked (create a passphrase first time, enter it on a fresh
+            // device). Once unlocked the key is cached, so this is skipped.
+            val vaultReady = remember(vaultTick) { com.v2ray.ang.handler.Vault.isUnlocked() }
+            if (!vaultReady) {
+                VpnkaVaultGate(
+                    onUnlocked = { vaultTick++ },
+                    onBack = { showSmartDesk = false },
+                )
+            } else {
+                VpnkaSmartDeskScreen(
+                    online = smartDeskOnline,
+                    onBack = { showSmartDesk = false },
+                )
+            }
             return
         }
 

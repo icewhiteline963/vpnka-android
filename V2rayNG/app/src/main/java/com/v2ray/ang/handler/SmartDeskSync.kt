@@ -2,7 +2,7 @@ package com.v2ray.ang.handler
 
 import com.google.gson.Gson
 import com.google.gson.JsonElement
-import com.google.gson.JsonParser
+import com.google.gson.JsonObject
 import com.google.gson.annotations.SerializedName
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.util.LogUtil
@@ -58,15 +58,19 @@ object SmartDeskSync {
     /** @return true on a clean sync, false if offline / not authorised / error. */
     suspend fun sync(): Boolean = withContext(Dispatchers.IO) {
         val token = MmkvManager.getAccountToken() ?: return@withContext false
+        // Zero-knowledge: every payload is encrypted with the vault master key
+        // before it leaves the device. Without an unlocked vault we don't sync
+        // — the work stays queued until the user unlocks.
+        if (!Vault.isUnlocked()) return@withContext false
 
         val changes = SmartDeskStore.pending().map { c ->
+            val ct = Vault.encrypt(c.payloadJson) ?: return@withContext false
             ChangeOut(
                 kind = c.kind,
                 id = c.id,
                 updatedAtMs = c.updatedAtMs,
                 deleted = c.deleted,
-                payload = runCatching { JsonParser.parseString(c.payloadJson) }
-                    .getOrElse { JsonParser.parseString("{}") },
+                payload = JsonObject().apply { addProperty("ct", ct) },
             )
         }
         val reqBody = gson.toJson(SyncRequest(since = SmartDeskStore.cursor(), changes = changes))
@@ -100,7 +104,7 @@ object SmartDeskSync {
                         kind = item.kind,
                         id = item.id,
                         deleted = item.deleted,
-                        payloadJson = item.payload?.toString() ?: "{}",
+                        payloadJson = decodePayload(item.payload),
                     )
                 }
                 SmartDeskStore.setCursor(parsed.cursor)
@@ -111,5 +115,22 @@ object SmartDeskSync {
             LogUtil.w(AppConfig.TAG, "smartdesk sync failed: ${e.message}")
             false
         }
+    }
+
+    /**
+     * Server payload → plaintext JSON. Encrypted items carry `{"ct": envelope}`
+     * and are decrypted with the vault key. A bare object is legacy plaintext
+     * (written before zero-knowledge) — passed through and re-encrypted on its
+     * next local edit, so old data migrates without being lost.
+     */
+    private fun decodePayload(payload: JsonElement?): String {
+        if (payload == null) return "{}"
+        if (payload.isJsonObject) {
+            val ct = payload.asJsonObject.get("ct")
+            if (ct != null && ct.isJsonPrimitive) {
+                return Vault.decrypt(ct.asString) ?: "{}"
+            }
+        }
+        return payload.toString()
     }
 }
