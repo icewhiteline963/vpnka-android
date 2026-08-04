@@ -96,10 +96,16 @@ fun VpnkaSmartDeskScreen(
     online: Boolean,
     onBack: () -> Unit,
 ) {
-    // Which placeholder app is open, or null on the desktop itself.
+    // Which app is open, or null on the desktop itself.
     var openApp by remember { mutableStateOf<DeskApp?>(null) }
     openApp?.let { app ->
-        VpnkaSmartDeskApp(app = app, online = online, onBack = { openApp = null })
+        VpnkaSmartDeskAppScreen(
+            appId = app.id,
+            appLabel = app.label,
+            appGlyph = app.glyph,
+            online = online,
+            onBack = { openApp = null },
+        )
         return
     }
 
@@ -351,75 +357,6 @@ private fun DesktopSettingsSheet(
                 }
             }
             Spacer(Modifier.height(20.dp))
-        }
-    }
-}
-
-/**
- * Placeholder app screen for Phase 1 — the real Calendar/Contacts/Mail land
- * in Phase 2. Keeps the desktop navigable end-to-end so the shell can ship.
- */
-@Composable
-private fun VpnkaSmartDeskApp(
-    app: DeskApp,
-    online: Boolean,
-    onBack: () -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(VpnkaColors.BgOffMid),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "‹ Рабочий стол",
-                fontFamily = VpnkaFonts.nunito800,
-                fontSize = 15.sp,
-                color = VpnkaColors.TextStrong,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(10.dp))
-                    .pointerInput(Unit) { detectTapGestures { onBack() } }
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
-            )
-            Spacer(Modifier.weight(1f))
-            Box(
-                modifier = Modifier
-                    .size(10.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(if (online) VpnkaColors.Green else VpnkaColors.Warning),
-            )
-        }
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .weight(1f)
-                .padding(24.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(text = app.glyph, fontSize = 56.sp)
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    text = app.label,
-                    fontFamily = VpnkaFonts.nunito900,
-                    fontSize = 22.sp,
-                    color = VpnkaColors.TextStrong,
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = "Скоро здесь появятся ваши записи, они будут " +
-                        "синхронизироваться с сервером.",
-                    fontFamily = VpnkaFonts.manrope600,
-                    fontSize = 14.sp,
-                    color = VpnkaColors.TextMuted,
-                    textAlign = TextAlign.Center,
-                )
-            }
         }
     }
 }
