@@ -55,21 +55,50 @@ import kotlin.math.roundToInt
  */
 
 private const val KEY_LAYOUT = "vpnka_smartdesk_layout"
+private const val KEY_INSTALLED = "vpnka_smartdesk_installed"
 private const val COLUMNS = 4
 
-private data class DeskApp(val id: String, val label: String, val glyph: String)
-
-private val DEFAULT_APPS = listOf(
-    DeskApp("calendar", "Календарь", "📅"),
-    DeskApp("contacts", "Контакты", "👤"),
-    DeskApp("mail", "Почта", "✉️"),
-    DeskApp("browser", "Браузер", "🌐"),
+data class DeskApp(
+    val id: String,
+    val label: String,
+    val glyph: String,
+    val description: String = "",
+    val removable: Boolean = true,
 )
 
-/** Persist the cell order as "id:cell,id:cell". Missing/garbage → defaults. */
+/** Everything the vpnka store knows about. «store» is always present. */
+val SMARTDESK_CATALOG = listOf(
+    DeskApp("store", "vpnka store", "🛍️", "Устанавливайте приложения на рабочий стол", removable = false),
+    DeskApp("calendar", "Календарь", "📅", "Календарь с событиями и напоминаниями"),
+    DeskApp("contacts", "Контакты", "👤", "Ваши контакты: звонки, почта, поиск"),
+    DeskApp("browser", "Браузер", "🌐", "Веб-браузер — весь трафик через VPN"),
+)
+
+private val CATALOG_BY_ID = SMARTDESK_CATALOG.associateBy { it.id }
+private val DEFAULT_INSTALLED = listOf("store", "calendar", "contacts", "browser")
+
+/** Ids installed on the desktop; «store» is forced in so it can never vanish. */
+fun installedIds(): List<String> {
+    val stored = MmkvManager.decodeSettingsString(KEY_INSTALLED)
+    val ids = if (stored == null) DEFAULT_INSTALLED
+        else stored.split(",").filter { it.isNotBlank() && it in CATALOG_BY_ID }
+    return (listOf("store") + ids).distinct()
+}
+
+fun setInstalled(ids: List<String>) {
+    MmkvManager.encodeSettings(
+        KEY_INSTALLED,
+        (listOf("store") + ids).distinct().joinToString(","),
+    )
+}
+
+private fun installedApps(): List<DeskApp> = installedIds().mapNotNull { CATALOG_BY_ID[it] }
+
+/** Persist the cell order as "id:cell,id:cell". Only installed apps appear. */
 private fun loadOrder(): MutableList<Pair<DeskApp, Int>> {
+    val apps = installedApps()
     val stored = MmkvManager.decodeSettingsString(KEY_LAYOUT).orEmpty()
-    val byId = DEFAULT_APPS.associateBy { it.id }
+    val byId = apps.associateBy { it.id }
     val parsed = stored.split(",")
         .mapNotNull { chunk ->
             val parts = chunk.split(":")
@@ -77,12 +106,11 @@ private fun loadOrder(): MutableList<Pair<DeskApp, Int>> {
             val cell = parts.getOrNull(1)?.toIntOrNull() ?: return@mapNotNull null
             app to cell
         }
-    // Any app not covered by the stored layout gets appended at the next free
-    // cell, so adding an app in a future version never leaves it invisible.
+    // Newly-installed apps (not in the stored layout) get the next free cell.
     val placed = parsed.map { it.first.id }.toSet()
     val result = parsed.toMutableList()
     var next = (parsed.maxOfOrNull { it.second } ?: -1) + 1
-    DEFAULT_APPS.filter { it.id !in placed }.forEach { result.add(it to next++) }
+    apps.filter { it.id !in placed }.forEach { result.add(it to next++) }
     return result
 }
 

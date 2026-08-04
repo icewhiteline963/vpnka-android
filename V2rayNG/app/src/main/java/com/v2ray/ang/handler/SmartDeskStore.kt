@@ -37,7 +37,8 @@ object SmartDeskStore {
     data class CalendarEvent(
         override val id: String,
         val title: String = "",
-        val whenText: String = "",   // free-text date/time for the MVP
+        val dateIso: String = "",    // yyyy-MM-dd — the day this event sits on
+        val whenText: String = "",   // free-text time / details
         val note: String = "",
         override val updatedAt: Long = 0L,
     ) : DeskItem

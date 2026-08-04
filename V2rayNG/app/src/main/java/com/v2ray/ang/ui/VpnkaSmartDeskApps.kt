@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -86,8 +87,8 @@ fun VpnkaSmartDeskAppScreen(
             when (appId) {
                 "calendar" -> CalendarApp(syncTick, onChanged)
                 "contacts" -> ContactsApp(syncTick, onChanged)
-                "mail" -> MailApp(syncTick, onChanged)
                 "browser" -> BrowserApp()
+                "store" -> VpnkaStoreApp()
                 else -> EmptyHint("Приложение недоступно")
             }
         }
@@ -155,28 +156,153 @@ private fun SmartDeskAppBar(
 
 // ---------------------------------------------------------------- Calendar ---
 
+private val MONTHS_RU = listOf(
+    "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+    "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+)
+private val WEEKDAYS_RU = listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
+
 @Composable
 private fun CalendarApp(syncTick: Int, onChanged: () -> Unit) {
     var items by remember(syncTick) { mutableStateOf(SmartDeskStore.calendar()) }
+    var month by remember { mutableStateOf(java.time.YearMonth.now()) }
+    var selected by remember { mutableStateOf(java.time.LocalDate.now()) }
     var editing by remember { mutableStateOf<SmartDeskStore.CalendarEvent?>(null) }
     var showEditor by remember { mutableStateOf(false) }
 
     fun reload() { items = SmartDeskStore.calendar(); onChanged() }
 
-    AppScaffold(
-        empty = items.isEmpty(),
-        emptyHint = "Событий пока нет. Добавьте первое.",
-        onAdd = { editing = null; showEditor = true },
-    ) {
-        LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
-            items(items, key = { it.id }) { e ->
-                Card(
-                    title = e.title.ifBlank { "Без названия" },
-                    subtitle = listOf(e.whenText, e.note).filter { it.isNotBlank() }.joinToString(" · "),
-                    onClick = { editing = e; showEditor = true },
+    val byDay = items.filter { it.dateIso.isNotBlank() }.groupBy { it.dateIso }
+    val dayEvents = byDay[selected.toString()].orEmpty()
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
+            // Month header with prev/next.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "‹",
+                    fontSize = 24.sp,
+                    color = VpnkaColors.TextStrong,
+                    modifier = Modifier.clip(RoundedCornerShape(10.dp))
+                        .clickable { month = month.minusMonths(1) }
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                )
+                Text(
+                    text = "${MONTHS_RU[month.monthValue - 1]} ${month.year}",
+                    fontFamily = VpnkaFonts.nunito800,
+                    fontSize = 18.sp,
+                    color = VpnkaColors.TextStrong,
+                    modifier = Modifier.weight(1f),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+                Text(
+                    text = "›",
+                    fontSize = 24.sp,
+                    color = VpnkaColors.TextStrong,
+                    modifier = Modifier.clip(RoundedCornerShape(10.dp))
+                        .clickable { month = month.plusMonths(1) }
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
                 )
             }
+            Spacer(Modifier.height(8.dp))
+            // Weekday header.
+            Row(modifier = Modifier.fillMaxWidth()) {
+                WEEKDAYS_RU.forEach { d ->
+                    Text(
+                        text = d,
+                        fontFamily = VpnkaFonts.manrope600,
+                        fontSize = 12.sp,
+                        color = VpnkaColors.TextMuted,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            // Day grid: 6 rows × 7. Monday-based offset.
+            val first = month.atDay(1)
+            val offset = (first.dayOfWeek.value - 1) // Mon=0
+            val daysInMonth = month.lengthOfMonth()
+            val today = java.time.LocalDate.now()
+            for (week in 0 until 6) {
+                Row(modifier = Modifier.fillMaxWidth()) {
+                    for (dow in 0 until 7) {
+                        val dayNum = week * 7 + dow - offset + 1
+                        val inMonth = dayNum in 1..daysInMonth
+                        val date = if (inMonth) month.atDay(dayNum) else null
+                        val iso = date?.toString()
+                        val has = iso != null && byDay.containsKey(iso)
+                        val isSel = date != null && date == selected
+                        val isToday = date != null && date == today
+                        Box(
+                            modifier = Modifier.weight(1f).height(44.dp)
+                                .padding(2.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(
+                                    when {
+                                        isSel -> VpnkaColors.Accent.copy(alpha = 0.85f)
+                                        isToday -> VpnkaColors.Accent.copy(alpha = 0.15f)
+                                        else -> Color.Transparent
+                                    }
+                                )
+                                .clickable(enabled = inMonth) { if (date != null) selected = date },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (inMonth) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = "$dayNum",
+                                        fontFamily = VpnkaFonts.nunito800,
+                                        fontSize = 14.sp,
+                                        color = if (isSel) Color.White else VpnkaColors.TextStrong,
+                                    )
+                                    if (has) {
+                                        Box(
+                                            modifier = Modifier.size(5.dp).clip(CircleShape)
+                                                .background(if (isSel) Color.White else VpnkaColors.Accent),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            // Events for the selected day.
+            Text(
+                text = "${selected.dayOfMonth} ${MONTHS_RU[selected.monthValue - 1].lowercase()}",
+                fontFamily = VpnkaFonts.nunito800,
+                fontSize = 15.sp,
+                color = VpnkaColors.TextStrong,
+            )
+            Spacer(Modifier.height(6.dp))
+            if (dayEvents.isEmpty()) {
+                Text(
+                    text = "На этот день событий нет",
+                    fontFamily = VpnkaFonts.manrope600,
+                    fontSize = 13.sp,
+                    color = VpnkaColors.TextMuted,
+                )
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                    items(dayEvents, key = { it.id }) { e ->
+                        Card(
+                            title = e.title.ifBlank { "Без названия" },
+                            subtitle = listOf(e.whenText, e.note).filter { it.isNotBlank() }.joinToString(" · "),
+                            onClick = { editing = e; showEditor = true },
+                        )
+                    }
+                }
+            }
         }
+        // Add on the selected day.
+        Box(
+            modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp).size(56.dp)
+                .clip(CircleShape).background(VpnkaColors.Accent)
+                .clickable { editing = null; showEditor = true },
+            contentAlignment = Alignment.Center,
+        ) { Text("+", fontSize = 30.sp, color = Color.White) }
     }
 
     if (showEditor) {
@@ -185,7 +311,7 @@ private fun CalendarApp(syncTick: Int, onChanged: () -> Unit) {
         var whenText by remember(e) { mutableStateOf(e?.whenText ?: "") }
         var note by remember(e) { mutableStateOf(e?.note ?: "") }
         EditorDialog(
-            heading = if (e == null) "Новое событие" else "Событие",
+            heading = if (e == null) "Событие · ${selected}" else "Событие",
             canDelete = e != null,
             onDismiss = { showEditor = false },
             onDelete = { e?.let { SmartDeskStore.deleteEvent(it.id) }; reload(); showEditor = false },
@@ -193,7 +319,10 @@ private fun CalendarApp(syncTick: Int, onChanged: () -> Unit) {
                 SmartDeskStore.saveEvent(
                     SmartDeskStore.CalendarEvent(
                         id = e?.id ?: SmartDeskStore.newId(),
-                        title = title.trim(), whenText = whenText.trim(), note = note.trim(),
+                        title = title.trim(),
+                        dateIso = e?.dateIso?.ifBlank { selected.toString() } ?: selected.toString(),
+                        whenText = whenText.trim(),
+                        note = note.trim(),
                         updatedAt = nowMillis(),
                     )
                 )
@@ -201,7 +330,7 @@ private fun CalendarApp(syncTick: Int, onChanged: () -> Unit) {
             },
         ) {
             DeskField("Название", title) { title = it }
-            DeskField("Когда (напр. 12 авг, 15:00)", whenText) { whenText = it }
+            DeskField("Время (напр. 15:00)", whenText) { whenText = it }
             DeskField("Заметка", note, minLines = 2) { note = it }
         }
     }
@@ -211,26 +340,79 @@ private fun CalendarApp(syncTick: Int, onChanged: () -> Unit) {
 
 @Composable
 private fun ContactsApp(syncTick: Int, onChanged: () -> Unit) {
-    var items by remember(syncTick) { mutableStateOf(SmartDeskStore.contacts()) }
+    val context = LocalContext.current
+    var all by remember(syncTick) { mutableStateOf(SmartDeskStore.contacts()) }
+    var query by remember { mutableStateOf("") }
+    var opened by remember { mutableStateOf<SmartDeskStore.Contact?>(null) }
     var editing by remember { mutableStateOf<SmartDeskStore.Contact?>(null) }
     var showEditor by remember { mutableStateOf(false) }
 
-    fun reload() { items = SmartDeskStore.contacts(); onChanged() }
+    fun reload() { all = SmartDeskStore.contacts(); onChanged() }
 
-    AppScaffold(
-        empty = items.isEmpty(),
-        emptyHint = "Контактов пока нет. Добавьте первый.",
-        onAdd = { editing = null; showEditor = true },
-    ) {
-        LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
-            items(items, key = { it.id }) { c ->
-                Card(
-                    title = c.name.ifBlank { "Без имени" },
-                    subtitle = listOf(c.phone, c.email).filter { it.isNotBlank() }.joinToString(" · "),
-                    onClick = { editing = c; showEditor = true },
-                )
+    // Contact detail card (call / email actions).
+    opened?.let { c ->
+        ContactDetail(
+            c = c,
+            onCall = { openIntent(context, "tel:" + c.phone) },
+            onEmail = { openIntent(context, "mailto:" + c.email) },
+            onEdit = { editing = c; showEditor = true },
+            onBack = { opened = null },
+        )
+    }
+
+    val filtered = all
+        .filter {
+            query.isBlank() ||
+                it.name.contains(query, true) ||
+                it.phone.contains(query, true) ||
+                it.email.contains(query, true)
+        }
+        .sortedBy { it.name.lowercase() }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Box(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+                DeskField("Поиск", query) { query = it }
+            }
+            if (filtered.isEmpty()) {
+                EmptyHint(if (all.isEmpty()) "Контактов пока нет. Добавьте первый." else "Ничего не найдено")
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+                    items(filtered, key = { it.id }) { c ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(VpnkaColors.CardServer)
+                                .clickable { opened = c }
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Avatar(c.name)
+                            Spacer(Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = c.name.ifBlank { "Без имени" },
+                                    fontFamily = VpnkaFonts.nunito800,
+                                    fontSize = 16.sp,
+                                    color = VpnkaColors.TextStrong,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                )
+                                val sub = listOf(c.phone, c.email).firstOrNull { it.isNotBlank() }.orEmpty()
+                                if (sub.isNotBlank()) {
+                                    Text(sub, fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp, color = VpnkaColors.TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
+        Box(
+            modifier = Modifier.align(Alignment.BottomEnd).padding(20.dp).size(56.dp)
+                .clip(CircleShape).background(VpnkaColors.Accent)
+                .clickable { editing = null; showEditor = true },
+            contentAlignment = Alignment.Center,
+        ) { Text("+", fontSize = 30.sp, color = Color.White) }
     }
 
     if (showEditor) {
@@ -243,15 +425,15 @@ private fun ContactsApp(syncTick: Int, onChanged: () -> Unit) {
             heading = if (c == null) "Новый контакт" else "Контакт",
             canDelete = c != null,
             onDismiss = { showEditor = false },
-            onDelete = { c?.let { SmartDeskStore.deleteContact(it.id) }; reload(); showEditor = false },
+            onDelete = { c?.let { SmartDeskStore.deleteContact(it.id) }; opened = null; reload(); showEditor = false },
             onSave = {
-                SmartDeskStore.saveContact(
-                    SmartDeskStore.Contact(
-                        id = c?.id ?: SmartDeskStore.newId(),
-                        name = name.trim(), phone = phone.trim(), email = email.trim(), note = note.trim(),
-                        updatedAt = nowMillis(),
-                    )
+                val saved = SmartDeskStore.Contact(
+                    id = c?.id ?: SmartDeskStore.newId(),
+                    name = name.trim(), phone = phone.trim(), email = email.trim(), note = note.trim(),
+                    updatedAt = nowMillis(),
                 )
+                SmartDeskStore.saveContact(saved)
+                if (opened != null) opened = saved
                 reload(); showEditor = false
             },
         ) {
@@ -263,58 +445,76 @@ private fun ContactsApp(syncTick: Int, onChanged: () -> Unit) {
     }
 }
 
-// -------------------------------------------------------------------- Mail ---
+@Composable
+private fun Avatar(name: String) {
+    val initials = name.trim().split(" ").filter { it.isNotBlank() }.take(2)
+        .joinToString("") { it.first().uppercase() }.ifBlank { "?" }
+    Box(
+        modifier = Modifier.size(42.dp).clip(CircleShape).background(VpnkaColors.Accent.copy(alpha = 0.85f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(initials, fontFamily = VpnkaFonts.nunito800, fontSize = 15.sp, color = Color.White)
+    }
+}
 
 @Composable
-private fun MailApp(syncTick: Int, onChanged: () -> Unit) {
-    var items by remember(syncTick) { mutableStateOf(SmartDeskStore.mail()) }
-    var editing by remember { mutableStateOf<SmartDeskStore.MailMessage?>(null) }
-    var showEditor by remember { mutableStateOf(false) }
-
-    fun reload() { items = SmartDeskStore.mail(); onChanged() }
-
-    AppScaffold(
-        empty = items.isEmpty(),
-        emptyHint = "Писем пока нет. Напишите первое — оно отправится при синхронизации.",
-        onAdd = { editing = null; showEditor = true },
+private fun ContactDetail(
+    c: SmartDeskStore.Contact,
+    onCall: () -> Unit,
+    onEmail: () -> Unit,
+    onEdit: () -> Unit,
+    onBack: () -> Unit,
+) {
+    Box(
+        modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.5f))
+            .clickable(onClick = onBack),
+        contentAlignment = Alignment.Center,
     ) {
-        LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
-            items(items, key = { it.id }) { m ->
-                Card(
-                    title = m.subject.ifBlank { "(без темы)" },
-                    subtitle = listOf(if (m.to.isNotBlank()) "кому: ${m.to}" else "", m.body)
-                        .filter { it.isNotBlank() }.joinToString(" · "),
-                    onClick = { editing = m; showEditor = true },
-                )
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(24.dp)
+                .clip(RoundedCornerShape(20.dp)).background(VpnkaColors.BgOffCentre)
+                .clickable(enabled = false) {}
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Avatar(c.name)
+            Spacer(Modifier.height(10.dp))
+            Text(c.name.ifBlank { "Без имени" }, fontFamily = VpnkaFonts.nunito900, fontSize = 20.sp, color = VpnkaColors.TextStrong)
+            Spacer(Modifier.height(14.dp))
+            if (c.phone.isNotBlank()) DetailRow("📞", c.phone, onCall)
+            if (c.email.isNotBlank()) DetailRow("✉️", c.email, onEmail)
+            if (c.note.isNotBlank()) DetailRow("📝", c.note, null)
+            Spacer(Modifier.height(16.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                VpnkaSecondaryButton(text = "Изменить", onClick = onEdit)
+                VpnkaSecondaryButton(text = "Закрыть", onClick = onBack)
             }
         }
     }
+}
 
-    if (showEditor) {
-        val m = editing
-        var to by remember(m) { mutableStateOf(m?.to ?: "") }
-        var subject by remember(m) { mutableStateOf(m?.subject ?: "") }
-        var body by remember(m) { mutableStateOf(m?.body ?: "") }
-        EditorDialog(
-            heading = if (m == null) "Новое письмо" else "Письмо",
-            canDelete = m != null,
-            onDismiss = { showEditor = false },
-            onDelete = { m?.let { SmartDeskStore.deleteMail(it.id) }; reload(); showEditor = false },
-            onSave = {
-                SmartDeskStore.saveMail(
-                    SmartDeskStore.MailMessage(
-                        id = m?.id ?: SmartDeskStore.newId(),
-                        to = to.trim(), subject = subject.trim(), body = body.trim(),
-                        updatedAt = nowMillis(),
-                    )
-                )
-                reload(); showEditor = false
-            },
-        ) {
-            DeskField("Кому (пользователь vpnka)", to) { to = it }
-            DeskField("Тема", subject) { subject = it }
-            DeskField("Текст", body, minLines = 3) { body = it }
-        }
+@Composable
+private fun DetailRow(glyph: String, value: String, onClick: (() -> Unit)?) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(glyph, fontSize = 18.sp)
+        Spacer(Modifier.width(12.dp))
+        Text(value, fontFamily = VpnkaFonts.manrope600, fontSize = 15.sp, color = if (onClick != null) VpnkaColors.Accent else VpnkaColors.TextStrong)
+    }
+}
+
+private fun openIntent(context: android.content.Context, uri: String) {
+    try {
+        context.startActivity(
+            android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(uri))
+        )
+    } catch (e: Exception) {
+        // No dialer/mail app — silently ignore; the value is still visible.
     }
 }
 
@@ -553,6 +753,61 @@ private fun normalizeUrl(input: String): String {
         s.startsWith("http://") || s.startsWith("https://") -> s
         looksLikeUrl -> "https://$s"
         else -> "https://duckduckgo.com/?q=" + android.net.Uri.encode(s)
+    }
+}
+
+// ------------------------------------------------------------- vpnka store ---
+
+@Composable
+private fun VpnkaStoreApp() {
+    var installed by remember { mutableStateOf(installedIds().toSet()) }
+
+    LazyColumn(modifier = Modifier.fillMaxSize().padding(12.dp)) {
+        item {
+            Text(
+                text = "Устанавливайте приложения на рабочий стол. Уже установленные можно удалить.",
+                fontFamily = VpnkaFonts.manrope600,
+                fontSize = 13.sp,
+                color = VpnkaColors.TextMuted,
+                modifier = Modifier.padding(bottom = 10.dp),
+            )
+        }
+        items(SMARTDESK_CATALOG.filter { it.removable }, key = { it.id }) { app ->
+            val isIn = app.id in installed
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp)
+                    .clip(RoundedCornerShape(16.dp)).background(VpnkaColors.CardServer)
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier.size(46.dp).clip(RoundedCornerShape(12.dp))
+                        .background(Color.White.copy(alpha = 0.85f)),
+                    contentAlignment = Alignment.Center,
+                ) { Text(app.glyph, fontSize = 24.sp) }
+                Spacer(Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(app.label, fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.TextStrong)
+                    Text(app.description, fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp, color = VpnkaColors.TextMuted)
+                }
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = if (isIn) "Удалить" else "Установить",
+                    fontFamily = VpnkaFonts.nunito800,
+                    fontSize = 13.sp,
+                    color = if (isIn) VpnkaColors.Warning else VpnkaColors.Accent,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(if (isIn) Color.Transparent else VpnkaColors.Accent.copy(alpha = 0.12f))
+                        .clickable {
+                            val next = if (isIn) installed - app.id else installed + app.id
+                            setInstalled(next.toList())
+                            installed = next
+                        }
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                )
+            }
+        }
     }
 }
 
