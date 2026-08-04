@@ -229,15 +229,14 @@ object Vault {
     // --- networking (through the VPN proxy) ---
 
     private fun http(): OkHttpClient {
-        // Через локальный прокси xray (весь трафик облака — сквозь VPN). На
-        // Xray создаётся только SOCKS-inbound (HTTP-inbound добавляется лишь для
-        // не-Xray ядер), а getHttpPort()==getSocksPort(), поэтому HTTP-прокси на
-        // этот порт рвётся. Ходим SOCKS на socksPort.
-        val port = SettingsManager.getSocksPort()
+        // Напрямую, как аккаунт-API (VpnkaAccount.http — без прокси).
+        // get.vpnka.io — RU-edge, достижим из РФ и без туннеля; данные облака
+        // и так E2E-зашифрованы. Прогон через локальный прокси xray был лишним
+        // и ненадёжным (тип/порт inbound зависят от ядра — на нашем сборочном
+        // applicationId isXray()=false, и путь через socks/http вёл себя иначе).
         return OkHttpClient.Builder()
             .connectTimeout(8, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
-            .proxy(Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", port)))
             .build()
     }
 
