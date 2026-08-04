@@ -76,20 +76,77 @@ object SmartDeskStore {
         return bytes.joinToString("") { "%02x".format(it) }
     }
 
-    // --- Calendar ---
+    // --- Calendar --- (public writes queue a pending change for sync)
     fun calendar(): List<CalendarEvent> = readList(KEY_CALENDAR)
-    fun saveEvent(e: CalendarEvent) = upsert(KEY_CALENDAR, e)
-    fun deleteEvent(id: String) = delete<CalendarEvent>(KEY_CALENDAR, id)
+    fun saveEvent(e: CalendarEvent) { upsert(KEY_CALENDAR, e); queue("calendar", e.id, e.updatedAt, false, gson.toJson(e)) }
+    fun deleteEvent(id: String) { delete<CalendarEvent>(KEY_CALENDAR, id); queue("calendar", id, nowMs(), true, "{}") }
 
     // --- Contacts ---
     fun contacts(): List<Contact> = readList(KEY_CONTACTS)
-    fun saveContact(c: Contact) = upsert(KEY_CONTACTS, c)
-    fun deleteContact(id: String) = delete<Contact>(KEY_CONTACTS, id)
+    fun saveContact(c: Contact) { upsert(KEY_CONTACTS, c); queue("contact", c.id, c.updatedAt, false, gson.toJson(c)) }
+    fun deleteContact(id: String) { delete<Contact>(KEY_CONTACTS, id); queue("contact", id, nowMs(), true, "{}") }
 
     // --- Mail ---
     fun mail(): List<MailMessage> = readList(KEY_MAIL)
-    fun saveMail(m: MailMessage) = upsert(KEY_MAIL, m)
-    fun deleteMail(id: String) = delete<MailMessage>(KEY_MAIL, id)
+    fun saveMail(m: MailMessage) { upsert(KEY_MAIL, m); queue("mail", m.id, m.updatedAt, false, gson.toJson(m)) }
+    fun deleteMail(id: String) { delete<MailMessage>(KEY_MAIL, id); queue("mail", id, nowMs(), true, "{}") }
+
+    // --- Sync plumbing -------------------------------------------------------
+    // A change is what a public write records: pushed to the server on the next
+    // sync, then cleared. `cursor` is the server position we've pulled up to.
+
+    private const val KEY_PENDING = "pending"
+    private const val KEY_CURSOR = "vpnka_smartdesk_cursor"
+
+    data class Change(
+        val kind: String,
+        val id: String,
+        val updatedAtMs: Long,
+        val deleted: Boolean,
+        val payloadJson: String,
+    )
+
+    private fun nowMs(): Long = System.currentTimeMillis()
+
+    fun cursor(): Long = MmkvManager.decodeSettingsString(KEY_CURSOR)?.toLongOrNull() ?: 0L
+    fun setCursor(c: Long) { MmkvManager.encodeSettings(KEY_CURSOR, c.toString()) }
+
+    fun pending(): List<Change> = readChanges()
+    fun clearPending() { store.remove(KEY_PENDING) }
+
+    private fun readChanges(): List<Change> {
+        val json = store.decodeString(KEY_PENDING) ?: return emptyList()
+        return try {
+            gson.fromJson(json, object : TypeToken<List<Change>>() {}.type) ?: emptyList()
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    /** Record a pending change, collapsing repeated edits of the same item. */
+    private fun queue(kind: String, id: String, updatedAtMs: Long, deleted: Boolean, payloadJson: String) {
+        val list = readChanges().filterNot { it.kind == kind && it.id == id }.toMutableList()
+        list.add(Change(kind, id, updatedAtMs, deleted, payloadJson))
+        store.encode(KEY_PENDING, gson.toJson(list))
+    }
+
+    /**
+     * Apply an item the server sent down. Does NOT re-queue it as pending —
+     * it came from the server, we're just catching up. Delete = tombstone.
+     */
+    fun applyRemote(kind: String, id: String, deleted: Boolean, payloadJson: String) {
+        when (kind) {
+            "calendar" -> if (deleted) delete<CalendarEvent>(KEY_CALENDAR, id)
+                else parse<CalendarEvent>(payloadJson)?.let { upsert(KEY_CALENDAR, it) }
+            "contact" -> if (deleted) delete<Contact>(KEY_CONTACTS, id)
+                else parse<Contact>(payloadJson)?.let { upsert(KEY_CONTACTS, it) }
+            "mail" -> if (deleted) delete<MailMessage>(KEY_MAIL, id)
+                else parse<MailMessage>(payloadJson)?.let { upsert(KEY_MAIL, it) }
+        }
+    }
+
+    private inline fun <reified T> parse(json: String): T? =
+        try { gson.fromJson(json, T::class.java) } catch (e: Exception) { null }
 
     // --- Generic JSON-list helpers ---
 

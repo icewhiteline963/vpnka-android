@@ -28,9 +28,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,6 +48,8 @@ import androidx.webkit.ProxyController
 import androidx.webkit.WebViewFeature
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.handler.SmartDeskStore
+import com.v2ray.ang.handler.SmartDeskSync
+import kotlinx.coroutines.launch
 
 /** Dispatch a desktop icon to its real app screen (Phase 2). */
 @Composable
@@ -61,11 +66,22 @@ fun VpnkaSmartDeskAppScreen(
             .background(VpnkaColors.BgOffMid),
     ) {
         SmartDeskAppBar(title = appLabel, glyph = appGlyph, online = online, onBack = onBack)
+        // Sync on open (through the VPN) and after every edit; syncTick keys
+        // each app's list so it re-reads once the server's view is merged in.
+        val scope = rememberCoroutineScope()
+        var syncTick by remember { mutableIntStateOf(0) }
+        val onChanged = {
+            scope.launch { if (online) SmartDeskSync.sync(); syncTick++ }
+            Unit
+        }
+        LaunchedEffect(Unit) {
+            if (online && appId != "browser") { SmartDeskSync.sync(); syncTick++ }
+        }
         Box(modifier = Modifier.fillMaxSize()) {
             when (appId) {
-                "calendar" -> CalendarApp()
-                "contacts" -> ContactsApp()
-                "mail" -> MailApp()
+                "calendar" -> CalendarApp(syncTick, onChanged)
+                "contacts" -> ContactsApp(syncTick, onChanged)
+                "mail" -> MailApp(syncTick, onChanged)
                 "browser" -> BrowserApp()
                 else -> EmptyHint("Приложение недоступно")
             }
@@ -111,12 +127,12 @@ private fun SmartDeskAppBar(
 // ---------------------------------------------------------------- Calendar ---
 
 @Composable
-private fun CalendarApp() {
-    var items by remember { mutableStateOf(SmartDeskStore.calendar()) }
+private fun CalendarApp(syncTick: Int, onChanged: () -> Unit) {
+    var items by remember(syncTick) { mutableStateOf(SmartDeskStore.calendar()) }
     var editing by remember { mutableStateOf<SmartDeskStore.CalendarEvent?>(null) }
     var showEditor by remember { mutableStateOf(false) }
 
-    fun reload() { items = SmartDeskStore.calendar() }
+    fun reload() { items = SmartDeskStore.calendar(); onChanged() }
 
     AppScaffold(
         empty = items.isEmpty(),
@@ -165,12 +181,12 @@ private fun CalendarApp() {
 // ---------------------------------------------------------------- Contacts ---
 
 @Composable
-private fun ContactsApp() {
-    var items by remember { mutableStateOf(SmartDeskStore.contacts()) }
+private fun ContactsApp(syncTick: Int, onChanged: () -> Unit) {
+    var items by remember(syncTick) { mutableStateOf(SmartDeskStore.contacts()) }
     var editing by remember { mutableStateOf<SmartDeskStore.Contact?>(null) }
     var showEditor by remember { mutableStateOf(false) }
 
-    fun reload() { items = SmartDeskStore.contacts() }
+    fun reload() { items = SmartDeskStore.contacts(); onChanged() }
 
     AppScaffold(
         empty = items.isEmpty(),
@@ -221,12 +237,12 @@ private fun ContactsApp() {
 // -------------------------------------------------------------------- Mail ---
 
 @Composable
-private fun MailApp() {
-    var items by remember { mutableStateOf(SmartDeskStore.mail()) }
+private fun MailApp(syncTick: Int, onChanged: () -> Unit) {
+    var items by remember(syncTick) { mutableStateOf(SmartDeskStore.mail()) }
     var editing by remember { mutableStateOf<SmartDeskStore.MailMessage?>(null) }
     var showEditor by remember { mutableStateOf(false) }
 
-    fun reload() { items = SmartDeskStore.mail() }
+    fun reload() { items = SmartDeskStore.mail(); onChanged() }
 
     AppScaffold(
         empty = items.isEmpty(),
