@@ -62,6 +62,7 @@ private val DEFAULT_APPS = listOf(
     DeskApp("calendar", "Календарь", "📅"),
     DeskApp("contacts", "Контакты", "👤"),
     DeskApp("mail", "Почта", "✉️"),
+    DeskApp("browser", "Браузер", "🌐"),
 )
 
 /** Persist the cell order as "id:cell,id:cell". Missing/garbage → defaults. */

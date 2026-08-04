@@ -1,5 +1,8 @@
 package com.v2ray.ang.ui
 
+import android.annotation.SuppressLint
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -24,6 +27,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -31,9 +35,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.webkit.ProxyConfig
+import androidx.webkit.ProxyController
+import androidx.webkit.WebViewFeature
+import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.handler.SmartDeskStore
 
 /** Dispatch a desktop icon to its real app screen (Phase 2). */
@@ -56,6 +66,7 @@ fun VpnkaSmartDeskAppScreen(
                 "calendar" -> CalendarApp()
                 "contacts" -> ContactsApp()
                 "mail" -> MailApp()
+                "browser" -> BrowserApp()
                 else -> EmptyHint("Приложение недоступно")
             }
         }
@@ -380,6 +391,124 @@ private fun DeskField(label: String, value: String, minLines: Int = 1, onChange:
         ),
         modifier = Modifier.fillMaxWidth(),
     )
+}
+
+// ----------------------------------------------------------------- Browser ---
+
+/**
+ * In-desktop browser whose traffic goes ONLY through our VPN.
+ *
+ * The app excludes itself from the VPN's TUN (so the core doesn't loop), which
+ * means our own WebView traffic would otherwise egress in the clear. Instead
+ * we point the WebView at xray's local HTTP proxy (127.0.0.1:httpPort) via
+ * ProxyController — that forwards through the tunnel to our servers. No direct
+ * fallback rule is added, so with the VPN off (proxy port not listening) pages
+ * simply fail to load: fail-closed, exactly the "exclusively through our VPN"
+ * requirement. The screen is also gated on the VPN being up for a clear message
+ * rather than a raw error.
+ */
+@SuppressLint("SetJavaScriptEnabled")
+@Composable
+private fun BrowserApp() {
+    val connected = VpnkaColors.connected
+    if (!connected) {
+        Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("🔒", fontSize = 44.sp)
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = "Браузер работает только через VPN",
+                    fontFamily = VpnkaFonts.nunito800,
+                    fontSize = 17.sp,
+                    color = VpnkaColors.TextStrong,
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    text = "Включите подключение на главном экране — весь трафик пойдёт через наш VPN.",
+                    fontFamily = VpnkaFonts.manrope600,
+                    fontSize = 14.sp,
+                    color = VpnkaColors.TextMuted,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+            }
+        }
+        return
+    }
+
+    val context = LocalContext.current
+    val httpPort = remember { SettingsManager.getHttpPort() }
+
+    // Force every WebView request through the local proxy while this screen is
+    // up; drop the override when leaving so no other WebView is affected.
+    DisposableEffect(httpPort) {
+        val supported = WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)
+        if (supported) {
+            val cfg = ProxyConfig.Builder()
+                .addProxyRule("127.0.0.1:$httpPort")
+                .build()
+            ProxyController.getInstance().setProxyOverride(cfg, { it.run() }, {})
+        }
+        onDispose {
+            if (supported) {
+                ProxyController.getInstance().clearProxyOverride({ it.run() }, {})
+            }
+        }
+    }
+
+    val webView = remember {
+        WebView(context).apply {
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+            webViewClient = WebViewClient()
+            loadUrl("https://duckduckgo.com/")
+        }
+    }
+    var address by remember { mutableStateOf("https://duckduckgo.com/") }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "‹",
+                fontSize = 22.sp,
+                color = VpnkaColors.TextStrong,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable { if (webView.canGoBack()) webView.goBack() }
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+            )
+            Box(modifier = Modifier.weight(1f)) {
+                DeskField("Адрес или запрос", address) { address = it }
+            }
+            Text(
+                text = "→",
+                fontSize = 22.sp,
+                color = VpnkaColors.Accent,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .clickable { webView.loadUrl(normalizeUrl(address)) }
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+            )
+        }
+        AndroidView(
+            factory = { webView },
+            modifier = Modifier.fillMaxSize().weight(1f),
+        )
+    }
+}
+
+/** Turn a raw address/query into a loadable URL. */
+private fun normalizeUrl(input: String): String {
+    val s = input.trim()
+    if (s.isEmpty()) return "https://duckduckgo.com/"
+    val looksLikeUrl = !s.contains(" ") && s.contains(".")
+    return when {
+        s.startsWith("http://") || s.startsWith("https://") -> s
+        looksLikeUrl -> "https://$s"
+        else -> "https://duckduckgo.com/?q=" + android.net.Uri.encode(s)
+    }
 }
 
 /** Wall-clock millis. Isolated so the desktop code reads cleanly. */

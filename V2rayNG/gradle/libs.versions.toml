@@ -19,7 +19,9 @@ mockitoMockitoInline = "5.2.0"
 camerax = "1.6.1"
 composeBom = "2026.06.01"
 reorderable = "3.1.0"
+webkit = "1.11.0"
 [libraries]
+androidx-webkit = { group = "androidx.webkit", name = "webkit", version.ref = "webkit" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 desugar-jdk-libs = { module = "com.android.tools:desugar_jdk_libs", version.ref = "desugarJdkLibs" }
 gradle-license-plugin = { module = "com.jaredsburrows:gradle-license-plugin", version.ref = "gradleLicensePlugin" }

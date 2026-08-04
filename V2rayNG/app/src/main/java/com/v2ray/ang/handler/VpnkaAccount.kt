@@ -5,6 +5,8 @@ import com.google.gson.annotations.SerializedName
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.util.JsonUtil
 import com.v2ray.ang.util.LogUtil
+import java.net.InetSocketAddress
+import java.net.Proxy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -352,14 +354,24 @@ object VpnkaAccount {
 
     /**
      * Whether the SmartDesk backend is reachable right now — drives the
-     * red/green dot on the menu button. True only on a clean 200; any
-     * network error, timeout or non-200 (incl. the 403 a disabled account
-     * gets) reads as offline, so the dot never lies green when sync can't run.
+     * red/green dot on the menu button.
+     *
+     * All SmartDesk network must go through our VPN, so this ping is sent via
+     * xray's local HTTP proxy (127.0.0.1:httpPort), NOT the clear net the rest
+     * of the app uses. With the VPN off that port isn't listening, the ping
+     * fails, and the dot is red — which is the honest state: SmartDesk has no
+     * network without the VPN. True only on a clean 200.
      */
     suspend fun smartDeskOnline(): Boolean = withContext(Dispatchers.IO) {
         val req = authed("/app/smartdesk/ping")?.get()?.build() ?: return@withContext false
+        val httpPort = SettingsManager.getHttpPort()
+        val client = OkHttpClient.Builder()
+            .connectTimeout(6, TimeUnit.SECONDS)
+            .readTimeout(8, TimeUnit.SECONDS)
+            .proxy(Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", httpPort)))
+            .build()
         try {
-            http().newCall(req).execute().use { it.isSuccessful }
+            client.newCall(req).execute().use { it.isSuccessful }
         } catch (e: Exception) {
             LogUtil.w(AppConfig.TAG, "smartdesk ping failed: ${e.message}")
             false

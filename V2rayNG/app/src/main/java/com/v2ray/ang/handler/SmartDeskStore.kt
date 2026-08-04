@@ -28,6 +28,37 @@ object SmartDeskStore {
 
     private val gson = Gson()
 
+    /** Every record carries a client-side id + updatedAt for Phase 3 sync. */
+    interface DeskItem {
+        val id: String
+        val updatedAt: Long
+    }
+
+    data class CalendarEvent(
+        override val id: String,
+        val title: String = "",
+        val whenText: String = "",   // free-text date/time for the MVP
+        val note: String = "",
+        override val updatedAt: Long = 0L,
+    ) : DeskItem
+
+    data class Contact(
+        override val id: String,
+        val name: String = "",
+        val phone: String = "",
+        val email: String = "",
+        val note: String = "",
+        override val updatedAt: Long = 0L,
+    ) : DeskItem
+
+    data class MailMessage(
+        override val id: String,
+        val to: String = "",         // another vpnka user (internal mail)
+        val subject: String = "",
+        val body: String = "",
+        override val updatedAt: Long = 0L,
+    ) : DeskItem
+
     private fun cryptKey(): String {
         MmkvManager.decodeSettingsString(KEY_CRYPT)?.let { if (it.isNotBlank()) return it }
         val bytes = ByteArray(16).also { SecureRandom().nextBytes(it) }
@@ -40,34 +71,6 @@ object SmartDeskStore {
         MMKV.mmkvWithID(ID_STORE, MMKV.SINGLE_PROCESS_MODE, cryptKey())
     }
 
-    // --- Data models. `id` is a client-side uuid; `updatedAt` is epoch millis,
-    // both there so Phase 3 sync can dedupe and resolve last-writer-wins. ---
-
-    data class CalendarEvent(
-        val id: String,
-        val title: String = "",
-        val whenText: String = "",   // free-text date/time for the MVP
-        val note: String = "",
-        val updatedAt: Long = 0L,
-    )
-
-    data class Contact(
-        val id: String,
-        val name: String = "",
-        val phone: String = "",
-        val email: String = "",
-        val note: String = "",
-        val updatedAt: Long = 0L,
-    )
-
-    data class MailMessage(
-        val id: String,
-        val to: String = "",         // another vpnka user (internal mail)
-        val subject: String = "",
-        val body: String = "",
-        val updatedAt: Long = 0L,
-    )
-
     fun newId(): String {
         val bytes = ByteArray(8).also { SecureRandom().nextBytes(it) }
         return bytes.joinToString("") { "%02x".format(it) }
@@ -75,47 +78,42 @@ object SmartDeskStore {
 
     // --- Calendar ---
     fun calendar(): List<CalendarEvent> = readList(KEY_CALENDAR)
-    fun saveEvent(e: CalendarEvent) = upsert(KEY_CALENDAR, e, { it.id }) { it.copy() }
-    fun deleteEvent(id: String) = delete(KEY_CALENDAR, id) { it.id }
+    fun saveEvent(e: CalendarEvent) = upsert(KEY_CALENDAR, e)
+    fun deleteEvent(id: String) = delete<CalendarEvent>(KEY_CALENDAR, id)
 
     // --- Contacts ---
     fun contacts(): List<Contact> = readList(KEY_CONTACTS)
-    fun saveContact(c: Contact) = upsert(KEY_CONTACTS, c, { it.id }) { it.copy() }
-    fun deleteContact(id: String) = delete(KEY_CONTACTS, id) { it.id }
+    fun saveContact(c: Contact) = upsert(KEY_CONTACTS, c)
+    fun deleteContact(id: String) = delete<Contact>(KEY_CONTACTS, id)
 
     // --- Mail ---
     fun mail(): List<MailMessage> = readList(KEY_MAIL)
-    fun saveMail(m: MailMessage) = upsert(KEY_MAIL, m, { it.id }) { it.copy() }
-    fun deleteMail(id: String) = delete(KEY_MAIL, id) { it.id }
+    fun saveMail(m: MailMessage) = upsert(KEY_MAIL, m)
+    fun deleteMail(id: String) = delete<MailMessage>(KEY_MAIL, id)
 
     // --- Generic JSON-list helpers ---
 
     private inline fun <reified T> readList(key: String): List<T> {
         val json = store.decodeString(key) ?: return emptyList()
         return try {
-            JsonUtil.gson.fromJson(json, object : TypeToken<List<T>>() {}.type) ?: emptyList()
+            gson.fromJson(json, object : TypeToken<List<T>>() {}.type) ?: emptyList()
         } catch (e: Exception) {
             emptyList()
         }
     }
 
     private inline fun <reified T> writeList(key: String, list: List<T>) {
-        store.encode(key, JsonUtil.toJson(list))
+        store.encode(key, gson.toJson(list))
     }
 
-    private inline fun <reified T> upsert(
-        key: String,
-        item: T,
-        idOf: (T) -> String,
-        copy: (T) -> T,
-    ) {
+    private inline fun <reified T : DeskItem> upsert(key: String, item: T) {
         val list = readList<T>(key).toMutableList()
-        val idx = list.indexOfFirst { idOf(it) == idOf(item) }
-        if (idx >= 0) list[idx] = copy(item) else list.add(copy(item))
+        val idx = list.indexOfFirst { it.id == item.id }
+        if (idx >= 0) list[idx] = item else list.add(item)
         writeList(key, list)
     }
 
-    private inline fun <reified T> delete(key: String, id: String, idOf: (T) -> String) {
-        writeList(key, readList<T>(key).filterNot { idOf(it) == id })
+    private inline fun <reified T : DeskItem> delete(key: String, id: String) {
+        writeList(key, readList<T>(key).filterNot { it.id == id })
     }
 }
