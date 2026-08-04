@@ -682,15 +682,17 @@ private fun BrowserApp() {
     }
 
     val context = LocalContext.current
-    val httpPort = remember { SettingsManager.getHttpPort() }
+    // xray выставляет только SOCKS-inbound (на Xray HTTP-inbound не создаётся),
+    // поэтому проксируем WebView через SOCKS5 на socksPort, а не HTTP на httpPort.
+    val socksPort = remember { SettingsManager.getSocksPort() }
 
     // Force every WebView request through the local proxy while this screen is
     // up; drop the override when leaving so no other WebView is affected.
-    DisposableEffect(httpPort) {
+    DisposableEffect(socksPort) {
         val supported = WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)
         if (supported) {
             val cfg = ProxyConfig.Builder()
-                .addProxyRule("127.0.0.1:$httpPort")
+                .addProxyRule("socks5://127.0.0.1:$socksPort")
                 .build()
             ProxyController.getInstance().setProxyOverride(cfg, { it.run() }, {})
         }

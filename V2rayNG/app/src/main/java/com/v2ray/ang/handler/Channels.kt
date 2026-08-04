@@ -34,11 +34,13 @@ object Channels {
     private data class Feed(val cursor: Long = 0, val posts: List<Post> = emptyList())
 
     private fun http(): OkHttpClient {
-        val port = SettingsManager.getHttpPort()
+        // SOCKS на socksPort: на Xray есть только SOCKS-inbound, HTTP-прокси на
+        // этот порт (getHttpPort==getSocksPort) не работает. См. Vault.http().
+        val port = SettingsManager.getSocksPort()
         return OkHttpClient.Builder()
             .connectTimeout(8, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
-            .proxy(Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", port)))
+            .proxy(Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", port)))
             .build()
     }
 

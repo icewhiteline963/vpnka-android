@@ -364,11 +364,13 @@ object VpnkaAccount {
      */
     suspend fun smartDeskOnline(): Boolean = withContext(Dispatchers.IO) {
         val req = authed("/app/smartdesk/ping")?.get()?.build() ?: return@withContext false
-        val httpPort = SettingsManager.getHttpPort()
+        // SOCKS на socksPort: на Xray только SOCKS-inbound; HTTP-прокси на этот
+        // порт (getHttpPort==getSocksPort) не работает. См. Vault.http().
+        val socksPort = SettingsManager.getSocksPort()
         val client = OkHttpClient.Builder()
             .connectTimeout(6, TimeUnit.SECONDS)
             .readTimeout(8, TimeUnit.SECONDS)
-            .proxy(Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", httpPort)))
+            .proxy(Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", socksPort)))
             .build()
         try {
             client.newCall(req).execute().use { it.isSuccessful }

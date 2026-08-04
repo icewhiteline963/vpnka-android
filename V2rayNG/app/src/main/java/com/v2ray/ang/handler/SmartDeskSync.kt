@@ -75,11 +75,13 @@ object SmartDeskSync {
         }
         val reqBody = gson.toJson(SyncRequest(since = SmartDeskStore.cursor(), changes = changes))
 
-        val httpPort = SettingsManager.getHttpPort()
+        // SOCKS на socksPort: на Xray только SOCKS-inbound; HTTP-прокси на этот
+        // порт (getHttpPort==getSocksPort) не работает. См. Vault.http().
+        val socksPort = SettingsManager.getSocksPort()
         val client = OkHttpClient.Builder()
             .connectTimeout(8, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
-            .proxy(Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", httpPort)))
+            .proxy(Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", socksPort)))
             .build()
 
         val request = Request.Builder()
