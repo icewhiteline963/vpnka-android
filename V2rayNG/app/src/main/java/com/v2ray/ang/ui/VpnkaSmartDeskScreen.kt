@@ -3,6 +3,7 @@ package com.v2ray.ang.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -113,6 +114,8 @@ fun VpnkaSmartDeskScreen(
     val order = remember { mutableStateListOf<Pair<DeskApp, Int>>().apply { addAll(loadOrder()) } }
     var contextFor by remember { mutableStateOf<DeskApp?>(null) }
     var showSettings by remember { mutableStateOf(false) }
+    var showShade by remember { mutableStateOf(false) }     // swipe top-left down
+    var showControl by remember { mutableStateOf(false) }   // swipe top-right down
     var wallpaper by remember {
         mutableStateOf(MmkvManager.decodeSettingsString("vpnka_smartdesk_wallpaper") ?: "warm")
     }
@@ -123,28 +126,19 @@ fun VpnkaSmartDeskScreen(
         else -> VpnkaColors.BgOffMid
     }
 
+    Box(modifier = Modifier.fillMaxSize().background(bg)) {
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(bg),
+        modifier = Modifier.fillMaxSize(),
     ) {
-        // Top bar: back to vpnka home + server-status dot.
+        // Status bar: title + server-status dot. No back button here — the
+        // top edge is reserved for the shade/control swipes; exit is the
+        // bottom «⌂ На главный экран» bar and the system back gesture.
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = "‹ VPNka",
-                fontFamily = VpnkaFonts.nunito800,
-                fontSize = 15.sp,
-                color = VpnkaColors.TextStrong,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(10.dp))
-                    .pointerInput(Unit) { detectTapGestures { onBack() } }
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
-            )
             Spacer(Modifier.weight(1f))
             Text(
                 text = "SmartDesk",
@@ -296,6 +290,170 @@ fun VpnkaSmartDeskScreen(
                     .clip(RoundedCornerShape(12.dp))
                     .pointerInput(Unit) { detectTapGestures { onBack() } }
                     .padding(horizontal = 16.dp, vertical = 6.dp),
+            )
+        }
+    }
+
+        // Top-edge swipe zones: left half pulls the notification shade down,
+        // right half pulls the control centre — like a phone. Thin strips at
+        // the very top so they don't steal taps from the desktop below.
+        Row(modifier = Modifier.fillMaxWidth().height(28.dp)) {
+            Box(
+                modifier = Modifier.weight(1f).fillMaxSize().pointerInput(Unit) {
+                    detectVerticalDragGestures { _, dy -> if (dy > 6f) showShade = true }
+                },
+            )
+            Box(
+                modifier = Modifier.weight(1f).fillMaxSize().pointerInput(Unit) {
+                    detectVerticalDragGestures { _, dy -> if (dy > 6f) showControl = true }
+                },
+            )
+        }
+
+        if (showShade) {
+            NotificationShade(online = online, onDismiss = { showShade = false })
+        }
+        if (showControl) {
+            ControlCentre(
+                online = online,
+                wallpaper = wallpaper,
+                onWallpaper = { choice ->
+                    wallpaper = choice
+                    MmkvManager.encodeSettings("vpnka_smartdesk_wallpaper", choice)
+                },
+                onDesktopSettings = { showControl = false; showSettings = true },
+                onDismiss = { showControl = false },
+            )
+        }
+    }
+}
+
+@Composable
+private fun NotificationShade(online: Boolean, onDismiss: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.35f))
+            .pointerInput(Unit) { detectTapGestures { onDismiss() } },
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(bottomStart = 20.dp, bottomEnd = 20.dp))
+                .background(VpnkaColors.BgOffCentre)
+                .pointerInput(Unit) { detectTapGestures { } }
+                .padding(16.dp),
+        ) {
+            Text("Уведомления", fontFamily = VpnkaFonts.nunito800, fontSize = 17.sp, color = VpnkaColors.TextStrong)
+            Spacer(Modifier.height(12.dp))
+            ShadeRow("🔐", "VPNka", if (online) "Защита включена, стол на связи" else "Нет связи — работа сохранится локально")
+            ShadeRow("📅", "Календарь", "Новых напоминаний нет")
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = "Нажмите вне шторки, чтобы закрыть",
+                fontFamily = VpnkaFonts.manrope600,
+                fontSize = 12.sp,
+                color = VpnkaColors.TextFaint,
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ShadeRow(glyph: String, title: String, body: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color.White.copy(alpha = 0.10f))
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text = glyph, fontSize = 22.sp)
+        Spacer(Modifier.width(12.dp))
+        Column {
+            Text(text = title, fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp, color = VpnkaColors.TextStrong)
+            Text(text = body, fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp, color = VpnkaColors.TextMuted)
+        }
+    }
+}
+
+@Composable
+private fun ControlCentre(
+    online: Boolean,
+    wallpaper: String,
+    onWallpaper: (String) -> Unit,
+    onDesktopSettings: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.35f))
+            .pointerInput(Unit) { detectTapGestures { onDismiss() } },
+    ) {
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .fillMaxWidth(0.72f)
+                .clip(RoundedCornerShape(bottomStart = 20.dp))
+                .background(VpnkaColors.BgOffCentre)
+                .pointerInput(Unit) { detectTapGestures { } }
+                .padding(16.dp),
+        ) {
+            Text("Центр управления", fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.TextStrong)
+            Spacer(Modifier.height(12.dp))
+            // VPN status tile.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(if (online) VpnkaColors.Green.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.10f))
+                    .padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(modifier = Modifier.size(10.dp).clip(RoundedCornerShape(50)).background(if (online) VpnkaColors.Green else VpnkaColors.Warning))
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text = if (online) "VPN подключён" else "VPN отключён",
+                    fontFamily = VpnkaFonts.nunito800,
+                    fontSize = 14.sp,
+                    color = VpnkaColors.TextStrong,
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            Text("Обои", fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp, color = VpnkaColors.TextMuted)
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                listOf(
+                    "warm" to Color(0xFFFFEFD2),
+                    "night" to Color(0xFF141C2B),
+                    "forest" to Color(0xFF15251A),
+                ).forEach { (id, colour) ->
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(colour)
+                            .pointerInput(id) { detectTapGestures { onWallpaper(id) } },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (id == wallpaper) Text("✓", fontSize = 20.sp, color = VpnkaColors.Accent)
+                    }
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+            Text(
+                text = "⚙  Настройки рабочего стола",
+                fontFamily = VpnkaFonts.nunito800,
+                fontSize = 14.sp,
+                color = VpnkaColors.TextStrong,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .pointerInput(Unit) { detectTapGestures { onDesktopSettings() } }
+                    .padding(vertical = 6.dp),
             )
         }
     }
