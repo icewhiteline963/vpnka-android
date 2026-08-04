@@ -140,6 +140,9 @@ fun VpnkaConnectScreen(
     updateVersion: String?,
     onCheckUpdate: () -> Unit,
     onPerAppProxy: () -> Unit,
+    smartDeskEnabled: Boolean,
+    smartDeskOnline: Boolean,
+    onSmartDesk: () -> Unit,
     expiryDaysLeft: Int?,
     onRenew: () -> Unit,
     activeDaysLeft: Int?,
@@ -370,8 +373,57 @@ fun VpnkaConnectScreen(
                     serverCard()
                 }
                 VpnkaPerAppRow(onClick = onPerAppProxy)
+                if (smartDeskEnabled) {
+                    VpnkaSmartDeskRow(online = smartDeskOnline, onClick = onSmartDesk)
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun VpnkaSmartDeskRow(online: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(VpnkaColors.CardSpeed)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // Status dot: green when our server answered its ping, red otherwise.
+        // Work still opens offline (saved to the encrypted container), so the
+        // dot means "syncing now" vs "will sync later", not "unavailable".
+        Box(
+            modifier = Modifier
+                .size(10.dp)
+                .clip(CircleShape)
+                .background(if (online) VpnkaColors.Green else VpnkaColors.Warning),
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "SmartDesk",
+                fontFamily = VpnkaFonts.nunito800,
+                fontWeight = VpnkaWeight.Extra,
+                fontSize = 15.sp,
+                color = VpnkaColors.TextStrong,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = if (online)
+                    "Рабочий стол: календарь, контакты, почта. Сервер на связи."
+                else
+                    "Рабочий стол: календарь, контакты, почта. Нет связи — сохраним и синхронизируем позже.",
+                fontFamily = VpnkaFonts.manrope600,
+                fontWeight = VpnkaWeight.Semi,
+                fontSize = 12.sp,
+                color = VpnkaColors.TextFaint,
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        Text(text = "›", fontSize = 18.sp, color = VpnkaColors.TextFaint)
     }
 }
 

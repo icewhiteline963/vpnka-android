@@ -316,6 +316,9 @@ class MainActivity : HelperBaseComponentActivity() {
      * registrations so the two can never disagree about what is on top.
      */
     private fun closeTopVpnkaScreen(): Boolean = logBack(when {
+        // SmartDesk owns its own internal back (desktop ← app screen); the
+        // system back closes the whole surface back to the vpnka home.
+        showSmartDesk -> { showSmartDesk = false; true }
         openedTicket != null -> { openedTicket = null; true }
         showTickets -> { showTickets = false; true }
         showSupport -> { showSupport = false; true }
@@ -374,6 +377,9 @@ class MainActivity : HelperBaseComponentActivity() {
     private var showPlansList by mutableStateOf(false)
     private var showShop by mutableStateOf(false)
     private var showTopUp by mutableStateOf(false)
+    // SmartDesk full-screen surface + the reachability state behind its dot.
+    private var showSmartDesk by mutableStateOf(false)
+    private var smartDeskOnline by mutableStateOf(false)
     // Set right before a profile refresh that follows claiming/buying a plan,
     // so the sync activates the newly-acquired subscription (its radio).
     private var selectNewestOnSync by mutableStateOf(false)
@@ -409,6 +415,14 @@ class MainActivity : HelperBaseComponentActivity() {
         }
 
         var subs by remember { mutableStateOf(MmkvManager.vpnkaSubscriptions()) }
+
+        // Light the SmartDesk dot: ping once the profile says the feature is on,
+        // and re-ping whenever the surface opens so it reflects "right now".
+        LaunchedEffect(subInfo?.smartDeskEnabled, showSmartDesk) {
+            if (subInfo?.smartDeskEnabled == true) {
+                smartDeskOnline = VpnkaAccount.smartDeskOnline()
+            }
+        }
 
         LaunchedEffect(Unit) {
             if (vpnkaOpenProfileAfterPayment) {
@@ -1094,6 +1108,14 @@ class MainActivity : HelperBaseComponentActivity() {
             return
         }
 
+        if (showSmartDesk && !showServers) {
+            VpnkaSmartDeskScreen(
+                online = smartDeskOnline,
+                onBack = { showSmartDesk = false },
+            )
+            return
+        }
+
         if (!showServers) {
             val options = servers.map {
                 VpnkaServerOption(
@@ -1189,6 +1211,9 @@ class MainActivity : HelperBaseComponentActivity() {
                 // button does the real check, download and install, and it
                 // already handles the install permission and FileProvider.
                 onPerAppProxy = { navigateTo("per_app_proxy") },
+                smartDeskEnabled = subInfo?.smartDeskEnabled == true,
+                smartDeskOnline = smartDeskOnline,
+                onSmartDesk = { showSmartDesk = true },
                 // The plan that runs out first is the one worth warning
                 // about; a longer one behind it does not make the gap
                 // any less of an outage.

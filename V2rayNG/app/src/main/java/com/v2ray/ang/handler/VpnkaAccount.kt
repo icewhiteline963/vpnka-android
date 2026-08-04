@@ -57,6 +57,9 @@ object VpnkaAccount {
         // A free-month trial tariff is configured and live. With no active
         // paid plan, the home screen shows the «Месяц бесплатно» button.
         @SerializedName("free_month_enabled") val freeMonthEnabled: Boolean = false,
+        // Whether the SmartDesk surface is unlocked for this account (set per
+        // user in the admin). The home screen only shows the button when true.
+        @SerializedName("smartdesk_enabled") val smartDeskEnabled: Boolean = false,
         // Expiry-reminder channel prefs + optional contact email, editable on
         // the notifications settings screen (PATCH /app/settings). Default the
         // toggles on so they read "enabled" before the profile has loaded.
@@ -344,6 +347,22 @@ object VpnkaAccount {
         } catch (e: Exception) {
             LogUtil.w(AppConfig.TAG, "${req.url} failed: ${e.message}")
             null
+        }
+    }
+
+    /**
+     * Whether the SmartDesk backend is reachable right now — drives the
+     * red/green dot on the menu button. True only on a clean 200; any
+     * network error, timeout or non-200 (incl. the 403 a disabled account
+     * gets) reads as offline, so the dot never lies green when sync can't run.
+     */
+    suspend fun smartDeskOnline(): Boolean = withContext(Dispatchers.IO) {
+        val req = authed("/app/smartdesk/ping")?.get()?.build() ?: return@withContext false
+        try {
+            http().newCall(req).execute().use { it.isSuccessful }
+        } catch (e: Exception) {
+            LogUtil.w(AppConfig.TAG, "smartdesk ping failed: ${e.message}")
+            false
         }
     }
 
