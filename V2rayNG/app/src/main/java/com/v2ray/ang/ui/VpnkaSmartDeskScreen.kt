@@ -69,13 +69,14 @@ data class DeskApp(
 /** Everything the vpnka store knows about. «store» is always present. */
 val SMARTDESK_CATALOG = listOf(
     DeskApp("store", "vpnka store", "🛍️", "Устанавливайте приложения на рабочий стол", removable = false),
+    DeskApp("messages", "Сообщения", "💬", "Зашифрованный мессенджер через наш сервер"),
     DeskApp("calendar", "Календарь", "📅", "Календарь с событиями и напоминаниями"),
     DeskApp("contacts", "Контакты", "👤", "Ваши контакты: звонки, почта, поиск"),
     DeskApp("browser", "Браузер", "🌐", "Веб-браузер — весь трафик через VPN"),
 )
 
 private val CATALOG_BY_ID = SMARTDESK_CATALOG.associateBy { it.id }
-private val DEFAULT_INSTALLED = listOf("store", "calendar", "contacts", "browser")
+private val DEFAULT_INSTALLED = listOf("store", "messages", "calendar", "contacts", "browser")
 
 /** Ids installed on the desktop; «store» is forced in so it can never vanish. */
 fun installedIds(): List<String> {

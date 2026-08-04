@@ -88,6 +88,7 @@ fun VpnkaSmartDeskAppScreen(
                 "calendar" -> CalendarApp(syncTick, onChanged)
                 "contacts" -> ContactsApp(syncTick, onChanged)
                 "browser" -> BrowserApp()
+                "messages" -> VpnkaMessengerApp()
                 "store" -> VpnkaStoreApp()
                 else -> EmptyHint("Приложение недоступно")
             }
