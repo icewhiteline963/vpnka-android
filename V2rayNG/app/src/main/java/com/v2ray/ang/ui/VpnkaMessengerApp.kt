@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.v2ray.ang.handler.Channels
 import com.v2ray.ang.handler.Messenger
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -50,12 +51,17 @@ fun VpnkaMessengerApp() {
     var handle by remember { mutableStateOf(Messenger.myHandle()) }
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<Messenger.Found>>(emptyList()) }
+    var channelResults by remember { mutableStateOf<List<Channels.Channel>>(emptyList()) }
+    var openChannel by remember { mutableStateOf<Channels.Channel?>(null) }
+    var showCreate by remember { mutableStateOf(false) }
+    var myChannels by remember { mutableStateOf<List<Channels.Channel>>(emptyList()) }
 
     // Register our public key (server assigns @handle from Telegram username
     // or device name), then poll for incoming while this app is open.
     LaunchedEffect(Unit) {
         Messenger.refreshMyId()
         handle = Messenger.register("${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
+        myChannels = Channels.mine()
         while (true) {
             if (VpnkaColors.connected) {
                 if (Messenger.poll()) tick++
@@ -63,16 +69,23 @@ fun VpnkaMessengerApp() {
             delay(2500)
         }
     }
+    LaunchedEffect(tick) { myChannels = Channels.mine() }
 
-    // Debounced user/channel search.
+    // Debounced search over people and channels.
     LaunchedEffect(query) {
-        if (query.trim().length < 2) { results = emptyList() } else {
+        if (query.trim().length < 2) { results = emptyList(); channelResults = emptyList() } else {
             delay(300)
             results = Messenger.searchUsers(query)
+            channelResults = Channels.search(query)
         }
     }
 
     val contacts = remember(tick) { Messenger.contacts() }
+
+    openChannel?.let { ch ->
+        ChannelScreen(channel = ch, onBack = { openChannel = null; tick++ })
+        return
+    }
 
     openId?.let { id ->
         val c = contacts.firstOrNull { it.id == id }
@@ -93,7 +106,8 @@ fun VpnkaMessengerApp() {
                 fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.TextStrong,
             )
             Spacer(Modifier.weight(1f))
-            Text("Сообщения", fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp, color = VpnkaColors.TextMuted)
+            Text("＋ Канал", fontFamily = VpnkaFonts.nunito800, fontSize = 13.sp, color = VpnkaColors.Accent,
+                modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { showCreate = true }.padding(horizontal = 10.dp, vertical = 4.dp))
         }
         // Search people and channels.
         Box(modifier = Modifier.padding(horizontal = 12.dp)) {
@@ -102,30 +116,30 @@ fun VpnkaMessengerApp() {
         Spacer(Modifier.height(4.dp))
 
         if (query.trim().length >= 2) {
-            // Search results.
-            if (results.isEmpty()) {
+            // Search results: channels then people.
+            if (results.isEmpty() && channelResults.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-                    Text("Никого не найдено", fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp, color = VpnkaColors.TextMuted)
+                    Text("Ничего не найдено", fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp, color = VpnkaColors.TextMuted)
                 }
             } else {
                 LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
-                    items(results, key = { it.id }) { r ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp)
-                                .clip(RoundedCornerShape(16.dp)).background(VpnkaColors.CardServer)
-                                .clickable {
-                                    Messenger.startChat(r); tick++; query = ""; openId = r.id
-                                }.padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            MsgAvatar(r.handle)
-                            Spacer(Modifier.width(12.dp))
-                            Text("@${r.handle}", fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.TextStrong)
+                    if (channelResults.isNotEmpty()) {
+                        item { SectionLabel("Каналы") }
+                        items(channelResults, key = { "ch" + it.id }) { ch ->
+                            ResultRow(glyph = "📢", title = ch.title, sub = "@${ch.handle}") { openChannel = ch; query = "" }
+                        }
+                    }
+                    if (results.isNotEmpty()) {
+                        item { SectionLabel("Люди") }
+                        items(results, key = { it.id }) { r ->
+                            ResultRow(glyph = null, title = "@${r.handle}", sub = null) {
+                                Messenger.startChat(r); tick++; query = ""; openId = r.id
+                            }
                         }
                     }
                 }
             }
-        } else if (contacts.isEmpty()) {
+        } else if (contacts.isEmpty() && myChannels.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
                 Text(
                     "Чатов пока нет. Найдите человека по нику через поиск выше — переписка шифруется.",
@@ -133,8 +147,15 @@ fun VpnkaMessengerApp() {
                 )
             }
         } else {
-            // Chat list.
+            // Chats + subscribed channels.
             LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+                if (myChannels.isNotEmpty()) {
+                    item { SectionLabel("Каналы") }
+                    items(myChannels, key = { "ch" + it.id }) { ch ->
+                        ResultRow(glyph = "📢", title = ch.title, sub = "@${ch.handle}") { openChannel = ch }
+                    }
+                    if (contacts.isNotEmpty()) item { SectionLabel("Чаты") }
+                }
                 items(contacts, key = { it.id }) { c ->
                     val last = Messenger.messages(c.id).lastOrNull()
                     Row(
@@ -156,6 +177,131 @@ fun VpnkaMessengerApp() {
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    if (showCreate) {
+        var chandle by remember { mutableStateOf("") }
+        var ctitle by remember { mutableStateOf("") }
+        var cerr by remember { mutableStateOf<String?>(null) }
+        val scope = rememberCoroutineScope()
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showCreate = false },
+            title = { Text("Новый канал", fontFamily = VpnkaFonts.nunito800, color = VpnkaColors.TextStrong) },
+            text = {
+                Column {
+                    MsgField("Ник канала (латиница)", chandle) { chandle = it.lowercase(); cerr = null }
+                    Spacer(Modifier.height(6.dp))
+                    MsgField("Название", ctitle) { ctitle = it; cerr = null }
+                    if (cerr != null) Text(cerr!!, fontSize = 12.sp, color = VpnkaColors.Warning)
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    scope.launch {
+                        val ch = Channels.create(chandle.trim(), ctitle.trim())
+                        if (ch == null) cerr = "Ник занят или нет связи"
+                        else { myChannels = Channels.mine(); showCreate = false; openChannel = ch }
+                    }
+                }) { Text("Создать") }
+            },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { showCreate = false }) { Text("Отмена") } },
+            containerColor = VpnkaColors.BgOffCentre,
+        )
+    }
+}
+
+@Composable
+private fun SectionLabel(text: String) {
+    Text(text, fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp, color = VpnkaColors.TextMuted,
+        modifier = Modifier.padding(top = 8.dp, bottom = 2.dp))
+}
+
+@Composable
+private fun ResultRow(glyph: String?, title: String, sub: String?, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp)
+            .clip(RoundedCornerShape(16.dp)).background(VpnkaColors.CardServer)
+            .clickable(onClick = onClick).padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (glyph != null) {
+            Box(modifier = Modifier.size(40.dp).clip(androidx.compose.foundation.shape.CircleShape)
+                .background(VpnkaColors.Accent.copy(alpha = 0.85f)), contentAlignment = Alignment.Center) {
+                Text(glyph, fontSize = 18.sp)
+            }
+        } else {
+            MsgAvatar(title.removePrefix("@"))
+        }
+        Spacer(Modifier.width(12.dp))
+        Column {
+            Text(title, fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.TextStrong, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (sub != null) Text(sub, fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp, color = VpnkaColors.TextMuted)
+        }
+    }
+}
+
+@Composable
+private fun ChannelScreen(channel: Channels.Channel, onBack: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var posts by remember { mutableStateOf<List<Channels.Post>>(emptyList()) }
+    var subscribed by remember { mutableStateOf(channel.subscribed) }
+    var draft by remember { mutableStateOf("") }
+    var refresh by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(refresh) {
+        if (subscribed) posts = Channels.feed(channel.id)
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("‹", fontSize = 24.sp, color = VpnkaColors.TextStrong,
+                modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onBack).padding(horizontal = 8.dp, vertical = 4.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("📢", fontSize = 20.sp)
+            Spacer(Modifier.width(8.dp))
+            Column {
+                Text(channel.title, fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.TextStrong)
+                Text("@${channel.handle}", fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp, color = VpnkaColors.TextMuted)
+            }
+        }
+        if (!subscribed) {
+            Box(modifier = Modifier.fillMaxSize().weight(1f).padding(24.dp), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Подпишитесь, чтобы читать канал", fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp, color = VpnkaColors.TextMuted)
+                    Spacer(Modifier.height(10.dp))
+                    Box(modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(VpnkaColors.Accent)
+                        .clickable { scope.launch { if (Channels.subscribe(channel.id)) { subscribed = true; refresh++ } } }
+                        .padding(horizontal = 20.dp, vertical = 10.dp)) {
+                        Text("Подписаться", fontFamily = VpnkaFonts.nunito800, fontSize = 15.sp, color = Color.White)
+                    }
+                }
+            }
+        } else {
+            LazyColumn(modifier = Modifier.fillMaxSize().weight(1f).padding(horizontal = 12.dp)) {
+                if (posts.isEmpty()) item {
+                    Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                        Text("Постов пока нет", fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp, color = VpnkaColors.TextMuted)
+                    }
+                }
+                items(posts, key = { it.id }) { p ->
+                    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                        .clip(RoundedCornerShape(14.dp)).background(VpnkaColors.CardServer).padding(12.dp)) {
+                        Text(p.body, fontFamily = VpnkaFonts.manrope600, fontSize = 15.sp, color = VpnkaColors.TextStrong)
+                    }
+                }
+            }
+            if (channel.isOwner) {
+                Row(modifier = Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(modifier = Modifier.weight(1f)) { MsgField("Написать в канал", draft) { draft = it } }
+                    Spacer(Modifier.width(8.dp))
+                    Box(modifier = Modifier.size(46.dp).clip(androidx.compose.foundation.shape.CircleShape).background(VpnkaColors.Accent)
+                        .clickable {
+                            val t = draft.trim()
+                            if (t.isNotBlank()) { draft = ""; scope.launch { if (Channels.post(channel.id, t)) refresh++ } }
+                        }, contentAlignment = Alignment.Center) { Text("➤", fontSize = 20.sp, color = Color.White) }
                 }
             }
         }
