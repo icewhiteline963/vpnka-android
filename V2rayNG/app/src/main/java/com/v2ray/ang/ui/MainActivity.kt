@@ -805,7 +805,6 @@ class MainActivity : HelperBaseComponentActivity() {
                 onSignOut = {
                     lifecycleScope.launch {
                         VpnkaAccount.signOut()
-                        signedIn = false
                         subInfo = null
                         vpnkaTelegramLinked = false
                         // signOut already dropped the account's subscriptions
@@ -820,6 +819,17 @@ class MainActivity : HelperBaseComponentActivity() {
                         showSupport = false
                         showSubscription = false
                         selectNewestOnSync = false
+                        // Logout leaves no account, and register() only runs at
+                        // app start — so «Месяц бесплатно» (which needs a
+                        // profile) vanished and the user was stranded on an
+                        // empty home screen. Re-register a fresh anonymous
+                        // account right here, as on first launch, so they land
+                        // back as a new user who can claim a month. Clear any
+                        // stale revoked flag first or register() refuses.
+                        MmkvManager.setSessionRevoked(false)
+                        VpnkaAccount.register()
+                        signedIn = VpnkaAccount.isSignedIn()
+                        subReload++
                         mainViewModel.setupGroupTab(forceRefresh = true)
                         mainViewModel.reloadServerList()
                     }
