@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalTextStyle
@@ -247,7 +248,8 @@ private fun ResultRow(glyph: String?, title: String, sub: String?, onClick: () -
 private fun ChannelScreen(channel: Channels.Channel, onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     var posts by remember { mutableStateOf<List<Channels.Post>>(emptyList()) }
-    var subscribed by remember { mutableStateOf(channel.subscribed) }
+    // The owner can always read/post, even if the subscription flag lags.
+    var subscribed by remember { mutableStateOf(channel.subscribed || channel.isOwner) }
     var draft by remember { mutableStateOf("") }
     var refresh by remember { mutableIntStateOf(0) }
 
@@ -332,7 +334,9 @@ private fun ChatScreen(
             Text(contact.name, fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.TextStrong)
         }
         LazyColumn(modifier = Modifier.fillMaxSize().weight(1f).padding(horizontal = 12.dp)) {
-            items(msgs, key = { it.id.toString() + it.ts }) { m ->
+            // Outgoing messages all carry id=0 and can share a millisecond, so
+            // the list index guarantees a unique key (Compose crashes on dupes).
+            itemsIndexed(msgs, key = { i, m -> "$i:${m.id}:${m.ts}" }) { _, m ->
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
                     horizontalArrangement = if (m.mine) Arrangement.End else Arrangement.Start,

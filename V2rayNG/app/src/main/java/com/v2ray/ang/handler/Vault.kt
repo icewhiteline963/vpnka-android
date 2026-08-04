@@ -29,9 +29,12 @@ import javax.crypto.spec.SecretKeySpec
  * The wrapped blobs live on our server; the server holds no passphrase, no
  * recovery key and no MK, so it can decrypt nothing.
  *
- * Once unlocked on a device, MK is cached in the on-device encrypted container
- * (protected at rest like the rest of SmartDesk) so the passphrase is asked
- * only on first setup and on a fresh device — not every launch.
+ * Once unlocked on a device, MK is cached in the on-device MMKV container so
+ * the passphrase is asked only on first setup and on a fresh device — not every
+ * launch. This is a device-trust model: the cache key lives in app-private
+ * storage alongside the account token, so a rooted device or an app-data
+ * extraction can recover it. The zero-knowledge guarantee is about the server,
+ * not a stolen unlocked device.
  */
 object Vault {
 
@@ -175,20 +178,30 @@ object Vault {
         } catch (e: Exception) { "offline" }
     }
 
-    /** Unlock with the passphrase. @return true on success. */
-    suspend fun unlock(passphrase: String): Boolean = withContext(Dispatchers.IO) {
-        val v = fetchVault() ?: return@withContext false
-        val salt = Base64.decode(v.kdf_salt, b64)
-        val passKey = pbkdf2(passphrase.toByteArray(), salt, v.kdf_iters)
-        try { cacheMk(aesDec(passKey, v.wrapped_mk_pass)); true } catch (e: Exception) { false }
+    /**
+     * Unlock with the passphrase. `null` = the vault couldn't be reached (VPN
+     * off / malformed response) — the caller must NOT say "wrong password";
+     * `true`/`false` = the passphrase was right / wrong. All crypto is inside
+     * the try, so a bad `kdf_salt` (e.g. a captive-portal page slipping through
+     * the proxy as a 200) returns `false` instead of crashing the app.
+     */
+    suspend fun unlock(passphrase: String): Boolean? = withContext(Dispatchers.IO) {
+        val v = fetchVault() ?: return@withContext null
+        try {
+            val salt = Base64.decode(v.kdf_salt, b64)
+            val passKey = pbkdf2(passphrase.toByteArray(), salt, v.kdf_iters)
+            cacheMk(aesDec(passKey, v.wrapped_mk_pass)); true
+        } catch (e: Exception) { false }
     }
 
-    /** Unlock with the recovery key (when the passphrase is forgotten). */
-    suspend fun unlockRecovery(recovery: String): Boolean = withContext(Dispatchers.IO) {
-        val v = fetchVault() ?: return@withContext false
-        val salt = Base64.decode(v.kdf_salt, b64)
-        val recKey = recoveryToKey(recovery, salt)
-        try { cacheMk(aesDec(recKey, v.wrapped_mk_recovery)); true } catch (e: Exception) { false }
+    /** Unlock with the recovery key. `null` = unreachable, else right/wrong. */
+    suspend fun unlockRecovery(recovery: String): Boolean? = withContext(Dispatchers.IO) {
+        val v = fetchVault() ?: return@withContext null
+        try {
+            val salt = Base64.decode(v.kdf_salt, b64)
+            val recKey = recoveryToKey(recovery, salt)
+            cacheMk(aesDec(recKey, v.wrapped_mk_recovery)); true
+        } catch (e: Exception) { false }
     }
 
     /**
@@ -199,9 +212,9 @@ object Vault {
     suspend fun changePassphrase(newPass: String): Boolean = withContext(Dispatchers.IO) {
         val master = mk ?: return@withContext false
         val v = fetchVault() ?: return@withContext false
-        val salt = Base64.decode(v.kdf_salt, b64)
-        val passKey = pbkdf2(newPass.toByteArray(), salt, v.kdf_iters)
-        putVault(
+        val body = try {
+            val salt = Base64.decode(v.kdf_salt, b64)
+            val passKey = pbkdf2(newPass.toByteArray(), salt, v.kdf_iters)
             VaultBody(
                 kdf_salt = v.kdf_salt,
                 kdf_iters = v.kdf_iters,
@@ -209,7 +222,8 @@ object Vault {
                 wrapped_mk_recovery = v.wrapped_mk_recovery,
                 wrapped_privkey = v.wrapped_privkey,
             )
-        )
+        } catch (e: Exception) { return@withContext false }
+        putVault(body)
     }
 
     // --- networking (through the VPN proxy) ---
@@ -232,8 +246,14 @@ object Vault {
         val req = authed("/app/vault")?.get()?.build() ?: return null
         return try {
             http().newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) null
-                else gson.fromJson(resp.body?.string().orEmpty(), VaultBody::class.java)
+                if (!resp.isSuccessful) return@use null
+                val body = gson.fromJson(resp.body?.string().orEmpty(), VaultBody::class.java)
+                // Gson bypasses the Kotlin constructor, so a partial/non-JSON
+                // 200 (captive portal, truncated body) yields nulls in
+                // non-null fields. Reject it rather than crash on decode later.
+                @Suppress("SENSELESS_COMPARISON")
+                if (body == null || body.kdf_salt == null || body.wrapped_mk_pass == null ||
+                    body.wrapped_mk_recovery == null) null else body
             }
         } catch (e: Exception) { LogUtil.w(AppConfig.TAG, "vault fetch: ${e.message}"); null }
     }

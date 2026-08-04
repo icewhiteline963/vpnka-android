@@ -146,8 +146,20 @@ object SmartDeskStore {
         }
     }
 
-    private inline fun <reified T> parse(json: String): T? =
-        try { gson.fromJson(json, T::class.java) } catch (e: Exception) { null }
+    /**
+     * Deserialize a pulled record, rejecting anything Gson would leave with a
+     * null `id`. That happens when the payload is `"{}"` — which
+     * `decodePayload` returns whenever decryption fails (key mismatch after a
+     * re-setup) — or a truncated/partial object. Gson bypasses the Kotlin
+     * constructor, so those nulls would otherwise slip into non-null String
+     * fields and crash Calendar/Contacts (`it.dateIso.isNotBlank()` → NPE), or
+     * overwrite a good record with a blank stub. Dropping them is safe: the
+     * real record is retried on the next sync of that item.
+     */
+    private inline fun <reified T : DeskItem> parse(json: String): T? = try {
+        @Suppress("SENSELESS_COMPARISON")
+        gson.fromJson(json, T::class.java)?.takeIf { it.id != null && it.id.isNotBlank() }
+    } catch (e: Exception) { null }
 
     // --- Generic JSON-list helpers ---
 

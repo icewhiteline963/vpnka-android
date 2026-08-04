@@ -23,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -129,19 +130,23 @@ fun VpnkaSmartDeskScreen(
 ) {
     // Which app is open, or null on the desktop itself.
     var openApp by remember { mutableStateOf<DeskApp?>(null) }
+    // Bumped whenever we return to the desktop, so the icon grid re-reads the
+    // installed set — the store (a child screen) may have installed/removed
+    // apps while this composable stayed in composition.
+    var deskTick by remember { mutableIntStateOf(0) }
     openApp?.let { app ->
         VpnkaSmartDeskAppScreen(
             appId = app.id,
             appLabel = app.label,
             appGlyph = app.glyph,
             online = online,
-            onBack = { openApp = null },   // ← Рабочий стол
+            onBack = { openApp = null; deskTick++ },   // ← Рабочий стол
             onExit = onBack,               // ⌂ На главный экран (выход из SmartDesk)
         )
         return
     }
 
-    val order = remember { mutableStateListOf<Pair<DeskApp, Int>>().apply { addAll(loadOrder()) } }
+    val order = remember(deskTick) { mutableStateListOf<Pair<DeskApp, Int>>().apply { addAll(loadOrder()) } }
     var contextFor by remember { mutableStateOf<DeskApp?>(null) }
     var showSettings by remember { mutableStateOf(false) }
     var showShade by remember { mutableStateOf(false) }     // swipe top-left down

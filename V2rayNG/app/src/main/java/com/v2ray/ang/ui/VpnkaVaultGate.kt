@@ -118,7 +118,11 @@ fun VpnkaVaultGate(onUnlocked: () -> Unit, onBack: () -> Unit) {
                     Primary(if (busy) "…" else "Войти", busy) {
                         busy = true; scope.launch {
                             val ok = Vault.unlock(p1); busy = false
-                            if (ok) onUnlocked() else error = "Неверный пароль"
+                            when (ok) {
+                                true -> onUnlocked()
+                                false -> error = "Неверный пароль"
+                                null -> error = "Нет связи с облаком — включите VPN"
+                            }
                         }
                     }
                     Spacer(Modifier.height(8.dp))
@@ -134,7 +138,11 @@ fun VpnkaVaultGate(onUnlocked: () -> Unit, onBack: () -> Unit) {
                     Primary(if (busy) "…" else "Восстановить", busy) {
                         busy = true; scope.launch {
                             val ok = Vault.unlockRecovery(recovery); busy = false
-                            if (ok) mode = "reset" else error = "Ключ не подошёл"
+                            when (ok) {
+                                true -> mode = "reset"
+                                false -> error = "Ключ не подошёл"
+                                null -> error = "Нет связи с облаком — включите VPN"
+                            }
                         }
                     }
                 }
