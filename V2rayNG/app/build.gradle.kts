@@ -19,14 +19,14 @@ android {
         applicationId = "io.vpnka.android"
         minSdk = 24
         targetSdk = 37
-        versionCode = 805
+        versionCode = 806
         // Upstream's version plus a fourth segment for our own builds, so we
         // can ship a fix without waiting for a v2rayNG release. Digits and
         // dots only: UpdateCheckerManager.compareVersions calls toInt() on
         // every segment, so a tag like "2.2.6-vpnka1" would throw and take
         // the whole update check down with it.
         // On merging upstream: take their number, re-append our segment.
-        versionName = "2.9.24.0"
+        versionName = "2.9.25.0"
 
         // Ни одной x86-загрузки за всю историю логов (это эмуляторы и
         // Chromebook, не телефоны). abiFilters выкидывает их нативные

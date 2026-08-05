@@ -465,30 +465,63 @@ object Messenger {
         return c.doFinal(Base64.decode(e.ct, b64f))
     }
 
-    private data class MediaReq(val to: Long, val blob: String)
+    private data class MediaInitReq(val to: Long, val chunks: Int)
+    private data class MediaPartReq(val seq: Int, val data: String)
     private data class MediaResp(val id: Long = 0)
-    private data class MediaBlob(val blob: String = "")
+    private data class MediaMeta(val chunks: Int = 0)
+    private data class MediaPart(val data: String = "")
 
+    // base64 chars per chunk. The whole image can't cross the TSPU-shaped RU api
+    // leg in one request (it stalls past ~16 KB → 408), so upload/download go one
+    // small part at a time, like a text message. 12000 keeps each body well under.
+    private val MEDIA_CHUNK = 12000
+    private fun jsonBody(o: Any) =
+        gson.toJson(o).toRequestBody("application/json".toMediaType())
+
+    /** Upload an encrypted blob in ≤16 KB parts. Returns the media id, or null. */
     private fun uploadMedia(to: Long, blob: String): Long? {
-        val req = authed("/app/messenger/media")
-            ?.post(gson.toJson(MediaReq(to, blob)).toRequestBody("application/json".toMediaType()))
-            ?.build() ?: return null
-        return try {
-            http().newCall(req).execute().use { r ->
+        val parts = blob.chunked(MEDIA_CHUNK)
+        val initReq = authed("/app/messenger/media")
+            ?.post(jsonBody(MediaInitReq(to, parts.size)))?.build() ?: return null
+        val id = try {
+            http().newCall(initReq).execute().use { r ->
                 if (!r.isSuccessful) null
                 else gson.fromJson(r.body?.string().orEmpty(), MediaResp::class.java)?.id
             }
-        } catch (e: Exception) { null }
+        } catch (e: Exception) { null } ?: return null
+        for ((seq, part) in parts.withIndex()) {
+            val req = authed("/app/messenger/media/$id/part")
+                ?.post(jsonBody(MediaPartReq(seq, part)))?.build() ?: return null
+            val ok = try {
+                http().newCall(req).execute().use { it.isSuccessful }
+            } catch (e: Exception) { false }
+            if (!ok) return null
+        }
+        return id
     }
 
+    /** Fetch an encrypted blob by pulling its chunks in order and joining them. */
     private fun downloadMedia(id: Long): String? {
-        val req = authed("/app/messenger/media/$id")?.get()?.build() ?: return null
-        return try {
-            http().newCall(req).execute().use { r ->
+        val metaReq = authed("/app/messenger/media/$id")?.get()?.build() ?: return null
+        val n = try {
+            http().newCall(metaReq).execute().use { r ->
                 if (!r.isSuccessful) null
-                else gson.fromJson(r.body?.string().orEmpty(), MediaBlob::class.java)?.blob
+                else gson.fromJson(r.body?.string().orEmpty(), MediaMeta::class.java)?.chunks
             }
-        } catch (e: Exception) { null }
+        } catch (e: Exception) { null } ?: return null
+        if (n <= 0) return null
+        val sb = StringBuilder()
+        for (seq in 0 until n) {
+            val req = authed("/app/messenger/media/$id/part/$seq")?.get()?.build() ?: return null
+            val d = try {
+                http().newCall(req).execute().use { r ->
+                    if (!r.isSuccessful) null
+                    else gson.fromJson(r.body?.string().orEmpty(), MediaPart::class.java)?.data
+                }
+            } catch (e: Exception) { null } ?: return null
+            sb.append(d)
+        }
+        return sb.toString()
     }
 
     /** Send a JPEG. Encrypts it, uploads the blob, sends the reference + self-copy. */
