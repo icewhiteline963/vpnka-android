@@ -272,8 +272,49 @@ object Messenger {
         try {
             http().newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) return@withContext false
-                appendMessage(contactId, Msg(id = 0L, mine = true, text = text, ts = System.currentTimeMillis()))
+                // Keep the server id so we can match this message against the
+                // recipient's ✓/✓✓ watermark.
+                val r = gson.fromJson(resp.body?.string().orEmpty(), SendResp::class.java)
+                appendMessage(
+                    contactId,
+                    Msg(id = r?.id ?: 0L, mine = true, text = text, ts = System.currentTimeMillis()),
+                )
                 true
+            }
+        } catch (e: Exception) { false }
+    }
+
+    // --- delivery/read receipts (✓/✓✓) ---
+
+    data class Receipt(val delivered: Long, val read: Long)
+
+    // reader/contact id -> how far they've received/read MY messages.
+    @Volatile private var receipts: Map<Long, Receipt> = emptyMap()
+
+    fun receiptFor(contactId: Long): Receipt? = receipts[contactId]
+
+    /** Tell the server we've read messages from `peer` up to `upTo` (✓✓). */
+    suspend fun markRead(peer: Long, upTo: Long) = withContext(Dispatchers.IO) {
+        if (upTo <= 0L) return@withContext
+        val body = gson.toJson(ReadReq(peer = peer, upTo = upTo))
+        val req = authed("/app/messenger/read")
+            ?.post(body.toRequestBody("application/json".toMediaType()))?.build()
+            ?: return@withContext
+        try { http().newCall(req).execute().use { } } catch (e: Exception) { }
+    }
+
+    /** Refresh the ✓/✓✓ state of our sent messages. @return true if changed. */
+    suspend fun fetchReceipts(): Boolean = withContext(Dispatchers.IO) {
+        val req = authed("/app/messenger/receipts")?.get()?.build() ?: return@withContext false
+        try {
+            http().newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@withContext false
+                val arr = gson.fromJson(resp.body?.string().orEmpty(), Array<ReceiptItem>::class.java)
+                    ?: return@withContext false
+                val next = arr.associate { it.reader to Receipt(it.delivered, it.read) }
+                val changed = next != receipts
+                receipts = next
+                changed
             }
         } catch (e: Exception) { false }
     }
@@ -322,6 +363,13 @@ object Messenger {
         @SerializedName("public_key") val publicKey: String = "",
     )
     private data class SendReq(val to: Long, val ciphertext: String)
+    private data class SendResp(val ok: Boolean = false, val id: Long = 0)
+    private data class ReadReq(val peer: Long, @SerializedName("up_to") val upTo: Long)
+    private data class ReceiptItem(
+        val reader: Long = 0,
+        @SerializedName("delivered_up_to") val delivered: Long = 0,
+        @SerializedName("read_up_to") val read: Long = 0,
+    )
     private data class PollMsg(
         val id: Long = 0,
         @SerializedName("from_client") val fromClient: Long = 0,

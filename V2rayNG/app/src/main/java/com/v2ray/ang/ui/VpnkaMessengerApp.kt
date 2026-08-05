@@ -65,7 +65,9 @@ fun VpnkaMessengerApp() {
         myChannels = Channels.mine()
         while (true) {
             if (VpnkaColors.connected) {
-                if (Messenger.poll()) tick++
+                var changed = Messenger.poll()
+                if (Messenger.fetchReceipts()) changed = true
+                if (changed) tick++
             }
             delay(2500)
         }
@@ -310,6 +312,16 @@ private fun ChannelScreen(channel: Channels.Channel, onBack: () -> Unit) {
     }
 }
 
+// ✓ отправлено, ✓✓ серые — доставлено, ✓✓ голубые — прочитано.
+private fun msgrTicks(m: Messenger.Msg, r: Messenger.Receipt?): Pair<String, Color> {
+    if (r == null || m.id <= 0L) return "✓" to Color.White.copy(alpha = 0.5f)
+    return when {
+        m.id <= r.read -> "✓✓" to Color(0xFF8FE3FF)
+        m.id <= r.delivered -> "✓✓" to Color.White.copy(alpha = 0.7f)
+        else -> "✓" to Color.White.copy(alpha = 0.5f)
+    }
+}
+
 @Composable
 private fun ChatScreen(
     contact: Messenger.Contact,
@@ -320,6 +332,13 @@ private fun ChatScreen(
     val scope = rememberCoroutineScope()
     var draft by remember { mutableStateOf("") }
     val msgs = remember(tick, contact.id) { Messenger.messages(contact.id) }
+    val receipt = remember(tick, contact.id) { Messenger.receiptFor(contact.id) }
+
+    // Opening the chat (and each new incoming message) marks it read (✓✓).
+    LaunchedEffect(tick, contact.id) {
+        val maxIn = msgs.filter { !it.mine }.maxOfOrNull { it.id } ?: 0L
+        if (maxIn > 0L) Messenger.markRead(contact.id, maxIn)
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
@@ -347,8 +366,15 @@ private fun ChatScreen(
                             .background(if (m.mine) VpnkaColors.Green.copy(alpha = 0.85f) else VpnkaColors.CardServer)
                             .padding(horizontal = 12.dp, vertical = 8.dp),
                     ) {
-                        Text(m.text, fontFamily = VpnkaFonts.manrope600, fontSize = 15.sp,
-                            color = if (m.mine) Color.White else VpnkaColors.TextStrong)
+                        if (m.mine) {
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(m.text, fontFamily = VpnkaFonts.manrope600, fontSize = 15.sp, color = Color.White)
+                                val (mark, tint) = msgrTicks(m, receipt)
+                                Text(mark, fontSize = 10.sp, color = tint, modifier = Modifier.padding(top = 1.dp))
+                            }
+                        } else {
+                            Text(m.text, fontFamily = VpnkaFonts.manrope600, fontSize = 15.sp, color = VpnkaColors.TextStrong)
+                        }
                     }
                 }
             }
