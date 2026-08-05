@@ -478,8 +478,13 @@ object Messenger {
     private fun jsonBody(o: Any) =
         gson.toJson(o).toRequestBody("application/json".toMediaType())
 
-    /** Upload an encrypted blob in ≤16 KB parts. Returns the media id, or null. */
-    private fun uploadMedia(to: Long, blob: String): Long? {
+    /**
+     * Upload an encrypted blob in ≤16 KB parts. Returns the media id, or null.
+     * [onProgress] reports 0..100 as parts land — the chat shows «Отправка… N%»
+     * because on the shaped RU leg a photo is dozens of small requests and takes
+     * a noticeable while.
+     */
+    private fun uploadMedia(to: Long, blob: String, onProgress: (Int) -> Unit = {}): Long? {
         val parts = blob.chunked(MEDIA_CHUNK)
         val initReq = authed("/app/messenger/media")
             ?.post(jsonBody(MediaInitReq(to, parts.size)))?.build() ?: return null
@@ -489,6 +494,7 @@ object Messenger {
                 else gson.fromJson(r.body?.string().orEmpty(), MediaResp::class.java)?.id
             }
         } catch (e: Exception) { null } ?: return null
+        onProgress(0)
         for ((seq, part) in parts.withIndex()) {
             val req = authed("/app/messenger/media/$id/part")
                 ?.post(jsonBody(MediaPartReq(seq, part)))?.build() ?: return null
@@ -496,6 +502,7 @@ object Messenger {
                 http().newCall(req).execute().use { it.isSuccessful }
             } catch (e: Exception) { false }
             if (!ok) return null
+            onProgress((seq + 1) * 100 / parts.size)
         }
         return id
     }
@@ -525,11 +532,13 @@ object Messenger {
     }
 
     /** Send a JPEG. Encrypts it, uploads the blob, sends the reference + self-copy. */
-    suspend fun sendImage(contactId: Long, jpeg: ByteArray): Boolean = withContext(Dispatchers.IO) {
+    suspend fun sendImage(
+        contactId: Long, jpeg: ByteArray, onProgress: (Int) -> Unit = {},
+    ): Boolean = withContext(Dispatchers.IO) {
         val c = contact(contactId) ?: return@withContext false
         val u = java.util.UUID.randomUUID().toString()
         val k = ByteArray(32).also { SecureRandom().nextBytes(it) }
-        val mediaId = uploadMedia(contactId, aesGcm(k, jpeg)) ?: return@withContext false
+        val mediaId = uploadMedia(contactId, aesGcm(k, jpeg), onProgress) ?: return@withContext false
         val keyB = Base64.encodeToString(k, b64f)
         val ct = try {
             seal(gson.toJson(MsgPayload(u = u, k = "image", media = mediaId, key = keyB, mime = "image/jpeg")), c.pubKey)

@@ -383,6 +383,8 @@ private fun ChatScreen(
     var draft by remember { mutableStateOf("") }
     val msgs = remember(tick, contact.id) { Messenger.messages(contact.id) }
     val receipt = remember(tick, contact.id) { Messenger.receiptFor(contact.id) }
+    // null = no photo being sent; 0..100 = upload progress; -1 = failed.
+    var sendPct by remember { mutableStateOf<Int?>(null) }
 
     // Opening the chat (and each new incoming message) marks it read (✓✓).
     LaunchedEffect(tick, contact.id) {
@@ -395,8 +397,11 @@ private fun ChatScreen(
         if (uri != null) scope.launch(Dispatchers.IO) {
             try {
                 val raw = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@launch
-                if (Messenger.sendImage(contact.id, resizeJpeg(raw))) onSent()
-            } catch (e: Exception) { /* ignore pick/encode failure */ }
+                sendPct = 0
+                val ok = Messenger.sendImage(contact.id, resizeJpeg(raw)) { p -> sendPct = p }
+                sendPct = if (ok) null else -1
+                if (ok) onSent()
+            } catch (e: Exception) { sendPct = -1 }
         }
     }
 
@@ -456,6 +461,27 @@ private fun ChatScreen(
                                 val (mark, tint) = msgrTicks(m, receipt)
                                 Text(mark, fontSize = 10.sp, color = tint, modifier = Modifier.padding(top = 1.dp))
                             }
+                        }
+                    }
+                }
+            }
+            // Photo-send status: uploading a photo is dozens of small requests
+            // over the shaped RU leg, so show progress rather than a frozen UI.
+            sendPct?.let { p ->
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                        horizontalArrangement = Arrangement.End,
+                    ) {
+                        Box(
+                            modifier = Modifier.clip(RoundedCornerShape(16.dp))
+                                .background(VpnkaColors.Green.copy(alpha = 0.85f))
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                        ) {
+                            Text(
+                                if (p < 0) "⚠️ Не удалось отправить фото" else "📷 Отправка… $p%",
+                                fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp, color = Color.White,
+                            )
                         }
                     }
                 }
