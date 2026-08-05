@@ -13,6 +13,8 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
 import java.net.InetSocketAddress
 import java.net.Proxy
 import java.security.KeyFactory
@@ -318,6 +320,66 @@ object Messenger {
             }
         } catch (e: Exception) { false }
     }
+
+    // --- real-time channel (WebSocket): wake + typing. Polling stays as the
+    //     fallback, so a dropped socket never loses messages. ---
+
+    @Volatile private var webSocket: WebSocket? = null
+    @Volatile private var wsCallback: ((String, Long) -> Unit)? = null
+    @Volatile private var lastTyping = 0L
+    private val wsClient by lazy {
+        OkHttpClient.Builder().pingInterval(25, TimeUnit.SECONDS).build()
+    }
+
+    /**
+     * Keep a socket open; idempotent, so the UI's poll loop can call it every
+     * tick to auto-reconnect. `onEvent("wake", 0)` = poll now; `onEvent(
+     * "typing", fromId)` = that peer is typing.
+     */
+    fun connectWs(onEvent: (String, Long) -> Unit) {
+        wsCallback = onEvent
+        if (webSocket != null) return
+        val token = MmkvManager.getAccountToken() ?: return
+        val url = "wss://get.vpnka.io/app/messenger/ws?token=" +
+            java.net.URLEncoder.encode(token, "UTF-8")
+        webSocket = wsClient.newWebSocket(
+            Request.Builder().url(url).build(),
+            object : WebSocketListener() {
+                override fun onMessage(ws: WebSocket, text: String) {
+                    try {
+                        val f = gson.fromJson(text, WsFrame::class.java) ?: return
+                        when (f.t) {
+                            "wake" -> wsCallback?.invoke("wake", 0L)
+                            "typing" -> wsCallback?.invoke("typing", f.from)
+                        }
+                    } catch (e: Exception) { /* ignore malformed frame */ }
+                }
+                override fun onFailure(ws: WebSocket, t: Throwable, r: okhttp3.Response?) {
+                    if (webSocket === ws) webSocket = null
+                }
+                override fun onClosed(ws: WebSocket, code: Int, reason: String) {
+                    if (webSocket === ws) webSocket = null
+                }
+            },
+        )
+    }
+
+    fun disconnectWs() {
+        webSocket?.close(1000, null)
+        webSocket = null
+        wsCallback = null
+    }
+
+    /** Tell the peer we're typing (throttled to one ping per 3s). */
+    fun sendTyping(to: Long) {
+        val now = System.currentTimeMillis()
+        if (now - lastTyping < 3000) return
+        lastTyping = now
+        webSocket?.send(gson.toJson(WsTyping(to = to)))
+    }
+
+    private data class WsFrame(val t: String = "", val from: Long = 0)
+    private data class WsTyping(val t: String = "typing", val to: Long)
 
     /** Poll incoming, decrypt, file into the sender's chat. @return true if anything new. */
     suspend fun poll(): Boolean = withContext(Dispatchers.IO) {

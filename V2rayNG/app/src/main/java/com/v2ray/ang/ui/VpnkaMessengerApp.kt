@@ -29,6 +29,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -56,15 +57,29 @@ fun VpnkaMessengerApp() {
     var openChannel by remember { mutableStateOf<Channels.Channel?>(null) }
     var showCreate by remember { mutableStateOf(false) }
     var myChannels by remember { mutableStateOf<List<Channels.Channel>>(emptyList()) }
+    var typingFrom by remember { mutableStateOf(0L) }
+    var typingUntil by remember { mutableStateOf(0L) }
+    val scope = rememberCoroutineScope()
 
     // Register our public key (server assigns @handle from Telegram username
-    // or device name), then poll for incoming while this app is open.
+    // or device name), then poll for incoming while this app is open. A
+    // WebSocket rides alongside for instant wake + "typing"; polling stays as
+    // the fallback so a dropped socket never loses messages.
     LaunchedEffect(Unit) {
         Messenger.refreshMyId()
         handle = Messenger.register("${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
         myChannels = Channels.mine()
         while (true) {
             if (VpnkaColors.connected) {
+                Messenger.connectWs { type, from ->
+                    when (type) {
+                        "wake" -> scope.launch {
+                            var ch = Messenger.poll(); if (Messenger.fetchReceipts()) ch = true
+                            if (ch) tick++
+                        }
+                        "typing" -> { typingFrom = from; typingUntil = System.currentTimeMillis() + 5000 }
+                    }
+                }
                 var changed = Messenger.poll()
                 if (Messenger.fetchReceipts()) changed = true
                 if (changed) tick++
@@ -72,6 +87,7 @@ fun VpnkaMessengerApp() {
             delay(2500)
         }
     }
+    DisposableEffect(Unit) { onDispose { Messenger.disconnectWs() } }
     LaunchedEffect(tick) { myChannels = Channels.mine() }
 
     // Debounced search over people and channels.
@@ -93,7 +109,8 @@ fun VpnkaMessengerApp() {
     openId?.let { id ->
         val c = contacts.firstOrNull { it.id == id }
         if (c != null) {
-            ChatScreen(contact = c, tick = tick, onSent = { tick++ }, onBack = { openId = null })
+            val typing = typingFrom == c.id && System.currentTimeMillis() < typingUntil
+            ChatScreen(contact = c, tick = tick, typing = typing, onSent = { tick++ }, onBack = { openId = null })
             return
         }
     }
@@ -326,6 +343,7 @@ private fun msgrTicks(m: Messenger.Msg, r: Messenger.Receipt?): Pair<String, Col
 private fun ChatScreen(
     contact: Messenger.Contact,
     tick: Int,
+    typing: Boolean,
     onSent: () -> Unit,
     onBack: () -> Unit,
 ) {
@@ -350,7 +368,12 @@ private fun ChatScreen(
             Spacer(Modifier.width(4.dp))
             MsgAvatar(contact.name)
             Spacer(Modifier.width(10.dp))
-            Text(contact.name, fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.TextStrong)
+            Column {
+                Text(contact.name, fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.TextStrong)
+                if (typing) {
+                    Text("печатает…", fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp, color = VpnkaColors.Accent)
+                }
+            }
         }
         LazyColumn(modifier = Modifier.fillMaxSize().weight(1f).padding(horizontal = 12.dp)) {
             // Outgoing messages all carry id=0 and can share a millisecond, so
@@ -383,7 +406,7 @@ private fun ChatScreen(
             modifier = Modifier.fillMaxWidth().padding(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(modifier = Modifier.weight(1f)) { MsgField("Сообщение", draft) { draft = it } }
+            Box(modifier = Modifier.weight(1f)) { MsgField("Сообщение", draft) { draft = it; Messenger.sendTyping(contact.id) } }
             Spacer(Modifier.width(8.dp))
             Box(
                 modifier = Modifier.size(46.dp).clip(CircleShape).background(VpnkaColors.Accent)
