@@ -65,7 +65,10 @@ object Messenger {
     private val store: MMKV by lazy { MMKV.mmkvWithID(ID_STORE, MMKV.SINGLE_PROCESS_MODE, cryptKey()) }
 
     data class Contact(val id: Long, val name: String, val pubKey: String)
-    data class Msg(val id: Long, val mine: Boolean, val text: String, val ts: Long, val u: String = "")
+    data class Msg(
+        val id: Long, val mine: Boolean, val text: String, val ts: Long,
+        val u: String = "", val k: String = "text", val img: String = "",
+    )
 
     // --- keys: the RSA identity now lives in the VAULT, shared across devices
     //     (phone + web speak as the same @handle). `ensureIdentity()` loads and
@@ -401,7 +404,79 @@ object Messenger {
     private data class MsgPayload(
         val u: String = "", val k: String = "text", val t: String = "",
         val peer: Long = 0, val self: Boolean = false, val mid: Long = 0,
+        // media (k == "image"): the blob is fetched by `media` id and decrypted
+        // with `key` (AES-256 base64). Cross-platform envelope {iv,ct}.
+        val media: Long = 0, val key: String = "", val mime: String = "",
     )
+
+    // AES-GCM for media blobs — {iv,ct} envelope, byte-compatible with the web.
+    private data class MediaEnv(val iv: String, val ct: String)
+
+    private fun aesGcm(key: ByteArray, plain: ByteArray): String {
+        val iv = ByteArray(12).also { SecureRandom().nextBytes(it) }
+        val c = Cipher.getInstance("AES/GCM/NoPadding").apply {
+            init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(128, iv))
+        }
+        return gson.toJson(
+            MediaEnv(Base64.encodeToString(iv, b64f), Base64.encodeToString(c.doFinal(plain), b64f))
+        )
+    }
+
+    private fun aesGcmDec(key: ByteArray, envJson: String): ByteArray {
+        val e = gson.fromJson(envJson, MediaEnv::class.java)
+        val c = Cipher.getInstance("AES/GCM/NoPadding").apply {
+            init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), GCMParameterSpec(128, Base64.decode(e.iv, b64f)))
+        }
+        return c.doFinal(Base64.decode(e.ct, b64f))
+    }
+
+    private data class MediaReq(val to: Long, val blob: String)
+    private data class MediaResp(val id: Long = 0)
+    private data class MediaBlob(val blob: String = "")
+
+    private fun uploadMedia(to: Long, blob: String): Long? {
+        val req = authed("/app/messenger/media")
+            ?.post(gson.toJson(MediaReq(to, blob)).toRequestBody("application/json".toMediaType()))
+            ?.build() ?: return null
+        return try {
+            http().newCall(req).execute().use { r ->
+                if (!r.isSuccessful) null
+                else gson.fromJson(r.body?.string().orEmpty(), MediaResp::class.java)?.id
+            }
+        } catch (e: Exception) { null }
+    }
+
+    private fun downloadMedia(id: Long): String? {
+        val req = authed("/app/messenger/media/$id")?.get()?.build() ?: return null
+        return try {
+            http().newCall(req).execute().use { r ->
+                if (!r.isSuccessful) null
+                else gson.fromJson(r.body?.string().orEmpty(), MediaBlob::class.java)?.blob
+            }
+        } catch (e: Exception) { null }
+    }
+
+    /** Send a JPEG. Encrypts it, uploads the blob, sends the reference + self-copy. */
+    suspend fun sendImage(contactId: Long, jpeg: ByteArray): Boolean = withContext(Dispatchers.IO) {
+        val c = contact(contactId) ?: return@withContext false
+        val u = java.util.UUID.randomUUID().toString()
+        val k = ByteArray(32).also { SecureRandom().nextBytes(it) }
+        val mediaId = uploadMedia(contactId, aesGcm(k, jpeg)) ?: return@withContext false
+        val keyB = Base64.encodeToString(k, b64f)
+        val ct = try {
+            seal(gson.toJson(MsgPayload(u = u, k = "image", media = mediaId, key = keyB, mime = "image/jpeg")), c.pubKey)
+        } catch (e: Exception) { return@withContext false }
+        val mid = postMessage(contactId, ct) ?: return@withContext false
+        appendMessage(contactId, Msg(id = mid, mine = true, text = "", ts = System.currentTimeMillis(), u = u, k = "image", img = Base64.encodeToString(jpeg, b64f)))
+        val myId = myClientId()
+        if (myId > 0) {
+            try {
+                val self = gson.toJson(MsgPayload(u = u, k = "image", media = mediaId, key = keyB, mime = "image/jpeg", peer = contactId, self = true, mid = mid))
+                postMessage(myId, seal(self, myPublicKey()))
+            } catch (e: Exception) { /* best-effort sync */ }
+        }
+        true
+    }
 
     private fun parsePayload(raw: String): MsgPayload = try {
         val o = gson.fromJson(raw, MsgPayload::class.java)
@@ -441,7 +516,15 @@ object Messenger {
                             else Contact(chat, "Контакт $chat", "")
                         )
                     }
-                    appendMessage(chat, Msg(id = id, mine = mine, text = o.t, ts = System.currentTimeMillis(), u = o.u))
+                    if (o.k == "image" && o.media > 0 && o.key.isNotEmpty()) {
+                        val blob = downloadMedia(o.media)
+                        val img = if (blob != null) try {
+                            Base64.encodeToString(aesGcmDec(Base64.decode(o.key, b64f), blob), b64f)
+                        } catch (e: Exception) { "" } else ""
+                        appendMessage(chat, Msg(id = id, mine = mine, text = "", ts = System.currentTimeMillis(), u = o.u, k = "image", img = img))
+                    } else {
+                        appendMessage(chat, Msg(id = id, mine = mine, text = o.t, ts = System.currentTimeMillis(), u = o.u))
+                    }
                     changed = true
                 }
                 store.encode(KEY_CURSOR, out.cursor)

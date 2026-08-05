@@ -29,8 +29,19 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.util.Base64
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import java.io.ByteArrayOutputStream
+import kotlinx.coroutines.Dispatchers
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -339,6 +350,19 @@ private fun msgrTicks(m: Messenger.Msg, r: Messenger.Receipt?): Pair<String, Col
     }
 }
 
+// Downscale to ≤1280px and JPEG-compress before encrypting — keeps blobs small.
+private fun resizeJpeg(raw: ByteArray, max: Int = 1280, q: Int = 80): ByteArray {
+    val bm = BitmapFactory.decodeByteArray(raw, 0, raw.size) ?: return raw
+    val w = bm.width; val h = bm.height
+    val scaled = if (w > max || h > max) {
+        val s = max.toFloat() / maxOf(w, h)
+        Bitmap.createScaledBitmap(bm, (w * s).toInt().coerceAtLeast(1), (h * s).toInt().coerceAtLeast(1), true)
+    } else bm
+    val out = ByteArrayOutputStream()
+    scaled.compress(Bitmap.CompressFormat.JPEG, q, out)
+    return out.toByteArray()
+}
+
 @Composable
 private fun ChatScreen(
     contact: Messenger.Contact,
@@ -356,6 +380,16 @@ private fun ChatScreen(
     LaunchedEffect(tick, contact.id) {
         val maxIn = msgs.filter { !it.mine }.maxOfOrNull { it.id } ?: 0L
         if (maxIn > 0L) Messenger.markRead(contact.id, maxIn)
+    }
+
+    val context = LocalContext.current
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) scope.launch(Dispatchers.IO) {
+            try {
+                val raw = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return@launch
+                if (Messenger.sendImage(contact.id, resizeJpeg(raw))) onSent()
+            } catch (e: Exception) { /* ignore pick/encode failure */ }
+        }
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -389,14 +423,31 @@ private fun ChatScreen(
                             .background(if (m.mine) VpnkaColors.Green.copy(alpha = 0.85f) else VpnkaColors.CardServer)
                             .padding(horizontal = 12.dp, vertical = 8.dp),
                     ) {
-                        if (m.mine) {
-                            Column(horizontalAlignment = Alignment.End) {
-                                Text(m.text, fontFamily = VpnkaFonts.manrope600, fontSize = 15.sp, color = Color.White)
+                        Column(horizontalAlignment = if (m.mine) Alignment.End else Alignment.Start) {
+                            if (m.k == "image" && m.img.isNotEmpty()) {
+                                val bmp = remember(m.img) {
+                                    try {
+                                        val b = Base64.decode(m.img, Base64.NO_WRAP)
+                                        BitmapFactory.decodeByteArray(b, 0, b.size)?.asImageBitmap()
+                                    } catch (e: Exception) { null }
+                                }
+                                if (bmp != null) {
+                                    Image(
+                                        bitmap = bmp, contentDescription = null, contentScale = ContentScale.Fit,
+                                        modifier = Modifier.widthIn(max = 220.dp).clip(RoundedCornerShape(10.dp)),
+                                    )
+                                } else {
+                                    Text("🖼 фото", fontFamily = VpnkaFonts.manrope600, fontSize = 15.sp,
+                                        color = if (m.mine) Color.White else VpnkaColors.TextStrong)
+                                }
+                            } else {
+                                Text(m.text, fontFamily = VpnkaFonts.manrope600, fontSize = 15.sp,
+                                    color = if (m.mine) Color.White else VpnkaColors.TextStrong)
+                            }
+                            if (m.mine) {
                                 val (mark, tint) = msgrTicks(m, receipt)
                                 Text(mark, fontSize = 10.sp, color = tint, modifier = Modifier.padding(top = 1.dp))
                             }
-                        } else {
-                            Text(m.text, fontFamily = VpnkaFonts.manrope600, fontSize = 15.sp, color = VpnkaColors.TextStrong)
                         }
                     }
                 }
@@ -406,6 +457,9 @@ private fun ChatScreen(
             modifier = Modifier.fillMaxWidth().padding(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            Text("📎", fontSize = 22.sp,
+                modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { picker.launch("image/*") }.padding(6.dp))
+            Spacer(Modifier.width(4.dp))
             Box(modifier = Modifier.weight(1f)) { MsgField("Сообщение", draft) { draft = it; Messenger.sendTyping(contact.id) } }
             Spacer(Modifier.width(8.dp))
             Box(
