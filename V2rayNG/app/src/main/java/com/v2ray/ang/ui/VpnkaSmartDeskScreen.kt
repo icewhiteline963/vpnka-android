@@ -1,5 +1,13 @@
 package com.v2ray.ang.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -134,17 +142,11 @@ fun VpnkaSmartDeskScreen(
     // installed set — the store (a child screen) may have installed/removed
     // apps while this composable stayed in composition.
     var deskTick by remember { mutableIntStateOf(0) }
-    openApp?.let { app ->
-        VpnkaSmartDeskAppScreen(
-            appId = app.id,
-            appLabel = app.label,
-            appGlyph = app.glyph,
-            online = online,
-            onBack = { openApp = null; deskTick++ },   // ← Рабочий стол
-            onExit = onBack,               // ⌂ На главный экран (выход из SmartDesk)
-        )
-        return
-    }
+    // The open app is rendered as an animated overlay over the desktop (below),
+    // not an early return — so its open/close zoom can play. `lastApp` keeps the
+    // app around for the closing animation after `openApp` goes null.
+    var lastApp by remember { mutableStateOf<DeskApp?>(null) }
+    openApp?.let { lastApp = it }
 
     val order = remember(deskTick) { mutableStateListOf<Pair<DeskApp, Int>>().apply { addAll(loadOrder()) } }
     var contextFor by remember { mutableStateOf<DeskApp?>(null) }
@@ -347,10 +349,18 @@ fun VpnkaSmartDeskScreen(
         }
     }
 
-        if (showShade) {
+        AnimatedVisibility(
+            visible = showShade,
+            enter = fadeIn(tween(160)) + slideInVertically(tween(220)) { -it / 5 },
+            exit = fadeOut(tween(160)) + slideOutVertically(tween(200)) { -it / 5 },
+        ) {
             NotificationShade(online = online, onDismiss = { showShade = false })
         }
-        if (showControl) {
+        AnimatedVisibility(
+            visible = showControl,
+            enter = fadeIn(tween(160)) + slideInVertically(tween(220)) { -it / 5 },
+            exit = fadeOut(tween(160)) + slideOutVertically(tween(200)) { -it / 5 },
+        ) {
             ControlCentre(
                 online = online,
                 wallpaper = wallpaper,
@@ -361,6 +371,23 @@ fun VpnkaSmartDeskScreen(
                 onDesktopSettings = { showControl = false; showSettings = true },
                 onDismiss = { showControl = false },
             )
+        }
+        // App open/close over the desktop — launcher-style zoom + fade.
+        AnimatedVisibility(
+            visible = openApp != null,
+            enter = scaleIn(tween(220), initialScale = 0.85f) + fadeIn(tween(180)),
+            exit = scaleOut(tween(200), targetScale = 0.90f) + fadeOut(tween(160)),
+        ) {
+            lastApp?.let { app ->
+                VpnkaSmartDeskAppScreen(
+                    appId = app.id,
+                    appLabel = app.label,
+                    appGlyph = app.glyph,
+                    online = online,
+                    onBack = { openApp = null; deskTick++ },
+                    onExit = onBack,
+                )
+            }
         }
     }
 }
