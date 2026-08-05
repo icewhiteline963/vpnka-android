@@ -24,10 +24,17 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import kotlinx.coroutines.delay
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Switch
@@ -92,6 +99,43 @@ val SMARTDESK_CATALOG = listOf(
 
 private val CATALOG_BY_ID = SMARTDESK_CATALOG.associateBy { it.id }
 private val DEFAULT_INSTALLED = listOf("store", "messages", "calendar", "contacts", "browser")
+
+// ---- «Android 17» look: gradient wallpapers + colourful squircle app tiles ----
+
+/** Wallpaper ids offered in the pickers, in order. */
+private val WALLPAPERS = listOf("warm", "aurora", "ocean", "night", "forest")
+
+/** Full-screen wallpaper gradient. */
+private fun wallpaperBrush(id: String): Brush = when (id) {
+    "aurora" -> Brush.linearGradient(listOf(Color(0xFF6A11CB), Color(0xFF9D50BB), Color(0xFFF56C6C)))
+    "ocean" -> Brush.linearGradient(listOf(Color(0xFF1A2980), Color(0xFF26D0CE)))
+    "night" -> Brush.linearGradient(listOf(Color(0xFF0F2027), Color(0xFF203A43), Color(0xFF2C5364)))
+    "forest" -> Brush.linearGradient(listOf(Color(0xFF11361F), Color(0xFF2E7D53), Color(0xFF0E2A1A)))
+    else -> Brush.linearGradient(listOf(Color(0xFFFFDCA8), Color(0xFFFFB27A), Color(0xFFF5926E)))
+}
+
+/** One swatch colour for the picker chip. */
+private fun wallpaperSwatch(id: String): Color = when (id) {
+    "aurora" -> Color(0xFF9D50BB)
+    "ocean" -> Color(0xFF1A94A8)
+    "night" -> Color(0xFF213A44)
+    "forest" -> Color(0xFF2E7D53)
+    else -> Color(0xFFFFB27A)
+}
+
+/** Warm wallpaper is light → dark ink; the rest are dark → white ink. */
+private fun wallpaperLightInk(id: String): Boolean = id != "warm"
+
+/** Per-app tile gradient — Material-You-style colourful icons. */
+fun appTint(id: String): List<Color> = when (id) {
+    "store" -> listOf(Color(0xFFFFB03A), Color(0xFFE8850C))
+    "messages" -> listOf(Color(0xFF34D399), Color(0xFF059669))
+    "calendar" -> listOf(Color(0xFFFB7185), Color(0xFFE11D48))
+    "contacts" -> listOf(Color(0xFF60A5FA), Color(0xFF2563EB))
+    "browser" -> listOf(Color(0xFF22D3EE), Color(0xFF0891B2))
+    "settings" -> listOf(Color(0xFF94A3B8), Color(0xFF475569))
+    else -> listOf(Color(0xFFC4B5FD), Color(0xFF7C3AED))
+}
 
 /** Ids installed on the desktop; «store» is forced in so it can never vanish. */
 fun installedIds(): List<String> {
@@ -171,38 +215,48 @@ fun VpnkaSmartDeskScreen(
         mutableStateOf(MmkvManager.decodeSettingsString("vpnka_smartdesk_wallpaper") ?: "warm")
     }
 
-    val bg = when (wallpaper) {
-        "night" -> Color(0xFF141C2B)
-        "forest" -> Color(0xFF15251A)
-        else -> VpnkaColors.BgOffMid
-    }
+    // Desktop text colour adapts to the wallpaper so labels read on any of them.
+    val ink = if (wallpaperLightInk(wallpaper)) Color.White else Color(0xFF4A3312)
+    // A slow clock tick — the home screen shows the time like a real launcher.
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); delay(15_000) } }
 
-    Box(modifier = Modifier.fillMaxSize().background(bg)) {
+    Box(modifier = Modifier.fillMaxSize().background(wallpaperBrush(wallpaper))) {
     Column(
         modifier = Modifier.fillMaxSize(),
     ) {
-        // Status bar: title + server-status dot. No back button here — the
-        // top edge is reserved for the shade/control swipes; exit is the
-        // bottom «⌂ На главный экран» bar and the system back gesture.
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        // Clock header — large time + date, server-status pill. The top edge is
+        // reserved for the shade/control swipes; exit is the bottom dock.
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(start = 22.dp, end = 18.dp, top = 22.dp, bottom = 2.dp),
         ) {
-            Spacer(Modifier.weight(1f))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(now)),
+                    fontFamily = VpnkaFonts.nunito900,
+                    fontSize = 46.sp,
+                    color = ink,
+                )
+                Spacer(Modifier.weight(1f))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .background(ink.copy(alpha = 0.16f))
+                        .padding(horizontal = 11.dp, vertical = 6.dp),
+                ) {
+                    Box(Modifier.size(8.dp).clip(CircleShape).background(if (online) VpnkaColors.Green else VpnkaColors.Warning))
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        text = if (online) "На связи" else "Автономно",
+                        fontFamily = VpnkaFonts.manrope700, fontSize = 12.sp, color = ink,
+                    )
+                }
+            }
             Text(
-                text = "SmartDesk",
-                fontFamily = VpnkaFonts.nunito800,
-                fontSize = 15.sp,
-                color = VpnkaColors.TextStrong,
-            )
-            Spacer(Modifier.width(8.dp))
-            Box(
-                modifier = Modifier
-                    .size(10.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(if (online) VpnkaColors.Green else VpnkaColors.Warning),
+                text = SimpleDateFormat("EEEE, d MMMM", Locale("ru")).format(Date(now))
+                    .replaceFirstChar { it.uppercase() },
+                fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp, color = ink.copy(alpha = 0.8f),
             )
         }
 
@@ -214,7 +268,7 @@ fun VpnkaSmartDeskScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .weight(1f)
-                .padding(top = 44.dp, start = 8.dp, end = 8.dp)
+                .padding(top = 14.dp, start = 12.dp, end = 12.dp)
                 .pointerInput(Unit) {
                     detectTapGestures(onLongPress = { showSettings = true })
                 }
@@ -294,19 +348,20 @@ fun VpnkaSmartDeskScreen(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Box(
                             modifier = Modifier
-                                .size(58.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(Color.White.copy(alpha = 0.85f)),
+                                .size(62.dp)
+                                .shadow(12.dp, RoundedCornerShape(20.dp), clip = false)
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(Brush.linearGradient(appTint(app.id))),
                             contentAlignment = Alignment.Center,
                         ) {
                             Text(text = app.glyph, fontSize = 30.sp)
                         }
-                        Spacer(Modifier.height(4.dp))
+                        Spacer(Modifier.height(6.dp))
                         Text(
                             text = app.label,
                             fontFamily = VpnkaFonts.manrope600,
                             fontSize = 12.sp,
-                            color = VpnkaColors.TextStrong,
+                            color = ink,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                             textAlign = TextAlign.Center,
@@ -342,24 +397,23 @@ fun VpnkaSmartDeskScreen(
             }
         }
 
-        // Bottom bar — old, simple style, as requested.
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(Color.Black.copy(alpha = 0.20f))
-                .padding(vertical = 10.dp),
-            horizontalArrangement = Arrangement.Center,
+        // Floating home dock — a translucent pill, launcher-style.
+        Box(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp, top = 6.dp),
+            contentAlignment = Alignment.Center,
         ) {
-            Text(
-                text = "⌂ На главный экран",
-                fontFamily = VpnkaFonts.nunito800,
-                fontSize = 14.sp,
-                color = VpnkaColors.TextStrong,
+            Row(
                 modifier = Modifier
-                    .clip(RoundedCornerShape(12.dp))
-                    .pointerInput(Unit) { detectTapGestures { onBack() } }
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
-            )
+                    .clip(CircleShape)
+                    .background(ink.copy(alpha = 0.18f))
+                    .clickable { onBack() }
+                    .padding(horizontal = 24.dp, vertical = 13.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("⌂", fontSize = 18.sp, color = ink)
+                Spacer(Modifier.width(8.dp))
+                Text("На главный экран", fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp, color = ink)
+            }
         }
     }
 
@@ -417,7 +471,7 @@ private fun NotificationShade(online: Boolean, onDismiss: () -> Unit) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(bottomStart = 20.dp, bottomEnd = 20.dp))
+                .clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp))
                 .background(VpnkaColors.BgOffCentre)
                 .pointerInput(Unit) { detectTapGestures { } }
                 .padding(16.dp),
@@ -475,8 +529,8 @@ private fun ControlCentre(
         Column(
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .fillMaxWidth(0.72f)
-                .clip(RoundedCornerShape(bottomStart = 20.dp))
+                .fillMaxWidth(0.74f)
+                .clip(RoundedCornerShape(bottomStart = 28.dp))
                 .background(VpnkaColors.BgOffCentre)
                 .pointerInput(Unit) { detectTapGestures { } }
                 .padding(16.dp),
@@ -504,21 +558,17 @@ private fun ControlCentre(
             Spacer(Modifier.height(12.dp))
             Text("Обои", fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp, color = VpnkaColors.TextMuted)
             Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                listOf(
-                    "warm" to Color(0xFFFFEFD2),
-                    "night" to Color(0xFF141C2B),
-                    "forest" to Color(0xFF15251A),
-                ).forEach { (id, colour) ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                WALLPAPERS.forEach { id ->
                     Box(
                         modifier = Modifier
-                            .size(48.dp)
+                            .size(38.dp)
                             .clip(RoundedCornerShape(12.dp))
-                            .background(colour)
+                            .background(wallpaperBrush(id))
                             .pointerInput(id) { detectTapGestures { onWallpaper(id) } },
                         contentAlignment = Alignment.Center,
                     ) {
-                        if (id == wallpaper) Text("✓", fontSize = 20.sp, color = VpnkaColors.Accent)
+                        if (id == wallpaper) Text("✓", fontSize = 18.sp, color = Color.White)
                     }
                 }
             }
@@ -554,12 +604,20 @@ private fun DesktopSettingsSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+                .clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
                 .background(VpnkaColors.BgOffCentre)
                 .pointerInput(Unit) { detectTapGestures { } }
                 .verticalScroll(rememberScrollState())
                 .padding(20.dp),
         ) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterHorizontally)
+                    .padding(bottom = 14.dp)
+                    .width(40.dp).height(4.dp)
+                    .clip(CircleShape)
+                    .background(VpnkaColors.TextFaint.copy(alpha = 0.5f)),
+            )
             Text(
                 text = "Настройки рабочего стола",
                 fontFamily = VpnkaFonts.nunito800,
@@ -574,22 +632,18 @@ private fun DesktopSettingsSheet(
                 color = VpnkaColors.TextMuted,
             )
             Spacer(Modifier.height(10.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                listOf(
-                    "warm" to Color(0xFFFFEFD2),
-                    "night" to Color(0xFF141C2B),
-                    "forest" to Color(0xFF15251A),
-                ).forEach { (id, colour) ->
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                WALLPAPERS.forEach { id ->
                     Box(
                         modifier = Modifier
-                            .size(56.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(colour)
+                            .size(52.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(wallpaperBrush(id))
                             .pointerInput(id) { detectTapGestures { onPick(id) } },
                         contentAlignment = Alignment.Center,
                     ) {
                         if (id == current) {
-                            Text("✓", fontSize = 22.sp, color = VpnkaColors.Accent)
+                            Text("✓", fontSize = 20.sp, color = Color.White)
                         }
                     }
                 }

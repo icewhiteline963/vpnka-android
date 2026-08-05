@@ -71,7 +71,7 @@ fun VpnkaSmartDeskAppScreen(
             .fillMaxSize()
             .background(VpnkaColors.BgOffMid),
     ) {
-        SmartDeskAppBar(title = appLabel, glyph = appGlyph, online = online)
+        SmartDeskAppBar(appId = appId, title = appLabel, glyph = appGlyph, online = online)
         // Sync on open (through the VPN) and after every edit; syncTick keys
         // each app's list so it re-reads once the server's view is merged in.
         val scope = rememberCoroutineScope()
@@ -133,6 +133,7 @@ private fun SmartDeskBottomBar(onBack: () -> Unit, onExit: () -> Unit) {
 
 @Composable
 private fun SmartDeskAppBar(
+    appId: String,
     title: String,
     glyph: String,
     online: Boolean,
@@ -140,12 +141,19 @@ private fun SmartDeskAppBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        Box(
+            modifier = Modifier
+                .size(38.dp)
+                .clip(RoundedCornerShape(13.dp))
+                .background(androidx.compose.ui.graphics.Brush.linearGradient(appTint(appId))),
+            contentAlignment = Alignment.Center,
+        ) { Text(text = glyph, fontSize = 20.sp) }
+        Spacer(Modifier.width(12.dp))
+        Text(text = title, fontFamily = VpnkaFonts.nunito800, fontSize = 18.sp, color = VpnkaColors.TextStrong)
         Spacer(Modifier.weight(1f))
-        Text(text = "$glyph  $title", fontFamily = VpnkaFonts.nunito800, fontSize = 15.sp, color = VpnkaColors.TextStrong)
-        Spacer(Modifier.width(8.dp))
         Box(
             modifier = Modifier
                 .size(10.dp)
