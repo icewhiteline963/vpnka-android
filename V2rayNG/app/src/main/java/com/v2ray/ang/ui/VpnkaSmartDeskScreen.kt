@@ -25,9 +25,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import com.v2ray.ang.handler.Messenger
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -543,6 +548,7 @@ private fun DesktopSettingsSheet(
                 .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
                 .background(VpnkaColors.BgOffCentre)
                 .pointerInput(Unit) { detectTapGestures { } }
+                .verticalScroll(rememberScrollState())
                 .padding(20.dp),
         ) {
             Text(
@@ -579,7 +585,41 @@ private fun DesktopSettingsSheet(
                     }
                 }
             }
+
+            Spacer(Modifier.height(18.dp))
+            Text("Сообщения", fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp, color = VpnkaColors.TextMuted)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Ваш ник: " + Messenger.myHandle().let { if (it.isNotEmpty()) "@$it" else "—" },
+                fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp, color = VpnkaColors.TextStrong,
+            )
+            Spacer(Modifier.height(8.dp))
+            MsgrToggle("Отправлять «печатает…»", "typing")
+            MsgrToggle("Отправлять отметку о прочтении", "read")
+            Spacer(Modifier.height(6.dp))
+            var cleared by remember { mutableStateOf(false) }
+            Text(
+                if (cleared) "История очищена" else "Очистить историю переписки на устройстве",
+                fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp,
+                color = if (cleared) VpnkaColors.TextMuted else Color(0xFFD32F2F),
+                modifier = Modifier.clip(RoundedCornerShape(10.dp))
+                    .clickable(enabled = !cleared) { Messenger.clearHistory(); cleared = true }
+                    .padding(vertical = 6.dp),
+            )
             Spacer(Modifier.height(20.dp))
         }
+    }
+}
+
+@Composable
+private fun MsgrToggle(label: String, key: String) {
+    var on by remember { mutableStateOf(Messenger.setting(key, true)) }
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp,
+            color = VpnkaColors.TextStrong, modifier = Modifier.weight(1f))
+        Switch(checked = on, onCheckedChange = { on = it; Messenger.setSetting(key, it) })
     }
 }

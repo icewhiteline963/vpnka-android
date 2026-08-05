@@ -313,9 +313,25 @@ object Messenger {
 
     fun receiptFor(contactId: Long): Receipt? = receipts[contactId]
 
+    // --- settings (Telegram-style privacy toggles), stored in app settings ---
+    fun setting(key: String, def: Boolean): Boolean {
+        val v = MmkvManager.decodeSettingsString("msgr_$key") ?: return def
+        return v == "1"
+    }
+
+    fun setSetting(key: String, on: Boolean) =
+        MmkvManager.encodeSettings("msgr_$key", if (on) "1" else "0")
+
+    /** Wipe local chat history on this device (server + peers unchanged). */
+    fun clearHistory() {
+        store.allKeys()?.filter { it.startsWith("msg_") }?.forEach { store.removeValueForKey(it) }
+        store.remove(KEY_CURSOR)
+        store.remove(KEY_CONTACTS)
+    }
+
     /** Tell the server we've read messages from `peer` up to `upTo` (✓✓). */
     suspend fun markRead(peer: Long, upTo: Long) = withContext(Dispatchers.IO) {
-        if (upTo <= 0L) return@withContext
+        if (upTo <= 0L || !setting("read", true)) return@withContext
         val body = gson.toJson(ReadReq(peer = peer, upTo = upTo))
         val req = authed("/app/messenger/read")
             ?.post(body.toRequestBody("application/json".toMediaType()))?.build()
@@ -390,6 +406,7 @@ object Messenger {
 
     /** Tell the peer we're typing (throttled to one ping per 3s). */
     fun sendTyping(to: Long) {
+        if (!setting("typing", true)) return
         val now = System.currentTimeMillis()
         if (now - lastTyping < 3000) return
         lastTyping = now
