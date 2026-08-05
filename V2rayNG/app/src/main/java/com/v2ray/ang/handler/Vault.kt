@@ -226,6 +226,54 @@ object Vault {
         putVault(body)
     }
 
+    // --- shared messenger identity (RSA keypair lives in the vault so every
+    //     device — phone, web — speaks E2E as the same @handle) ---
+
+    class Identity(val privPkcs8: ByteArray, val pubSpki: ByteArray)
+
+    private data class IdBlob(val priv: String = "", val pub: String = "")
+
+    /**
+     * The account's messenger RSA-2048 keypair, shared across devices via the
+     * vault. First use generates it, wraps it under MK and stores it in
+     * `wrapped_privkey` (a re-PUT with the SAME salt, so the server's overwrite
+     * guard treats it as a re-wrap, not a fresh setup). null if the vault is
+     * locked or unreachable. priv is PKCS#8, pub is X.509/SPKI — the same
+     * encodings WebCrypto uses, so the web desk unwraps the identical keypair.
+     */
+    suspend fun messengerIdentity(): Identity? = withContext(Dispatchers.IO) {
+        val key = mk ?: return@withContext null
+        val v = fetchVault() ?: return@withContext null
+        val wrapped = v.wrapped_privkey
+        if (!wrapped.isNullOrBlank()) {
+            try {
+                val blob = gson.fromJson(String(aesDec(key, wrapped)), IdBlob::class.java)
+                if (blob != null && blob.priv.isNotBlank() && blob.pub.isNotBlank()) {
+                    return@withContext Identity(
+                        Base64.decode(blob.priv, b64), Base64.decode(blob.pub, b64)
+                    )
+                }
+            } catch (e: Exception) { /* fall through and regenerate */ }
+        }
+        val kp = java.security.KeyPairGenerator.getInstance("RSA")
+            .apply { initialize(2048) }.generateKeyPair()
+        val blob = IdBlob(
+            priv = Base64.encodeToString(kp.private.encoded, b64),
+            pub = Base64.encodeToString(kp.public.encoded, b64),
+        )
+        val ok = putVault(
+            VaultBody(
+                kdf_salt = v.kdf_salt,
+                kdf_iters = v.kdf_iters,
+                wrapped_mk_pass = v.wrapped_mk_pass,
+                wrapped_mk_recovery = v.wrapped_mk_recovery,
+                wrapped_privkey = aesEnc(key, gson.toJson(blob).toByteArray()),
+            )
+        )
+        if (!ok) return@withContext null
+        Identity(kp.private.encoded, kp.public.encoded)
+    }
+
     // --- networking (through the VPN proxy) ---
 
     private fun http(): OkHttpClient {

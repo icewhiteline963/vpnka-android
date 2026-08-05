@@ -16,9 +16,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.net.InetSocketAddress
 import java.net.Proxy
 import java.security.KeyFactory
-import java.security.KeyPairGenerator
 import java.security.PrivateKey
-import java.security.PublicKey
 import java.security.SecureRandom
 import java.security.spec.PKCS8EncodedKeySpec
 import java.security.spec.X509EncodedKeySpec
@@ -43,8 +41,6 @@ object Messenger {
 
     private const val ID_STORE = "vpnka_messenger"
     private const val KEY_CRYPT = "vpnka_messenger_cryptkey"
-    private const val KEY_PRIV = "priv"
-    private const val KEY_PUB = "pub"
     private const val KEY_MYID = "my_client_id"
     private const val KEY_HANDLE = "my_handle"
     private const val KEY_CONTACTS = "contacts"
@@ -69,25 +65,27 @@ object Messenger {
     data class Contact(val id: Long, val name: String, val pubKey: String)
     data class Msg(val id: Long, val mine: Boolean, val text: String, val ts: Long)
 
-    // --- keys ---
+    // --- keys: the RSA identity now lives in the VAULT, shared across devices
+    //     (phone + web speak as the same @handle). `ensureIdentity()` loads and
+    //     caches it; the messenger no longer keeps a keypair of its own. ---
 
-    private fun ensureKeys(): Pair<PrivateKey, PublicKey> {
-        val privB64 = store.decodeString(KEY_PRIV)
-        val pubB64 = store.decodeString(KEY_PUB)
-        if (privB64 != null && pubB64 != null) {
-            val kf = KeyFactory.getInstance("RSA")
-            val priv = kf.generatePrivate(PKCS8EncodedKeySpec(Base64.decode(privB64, b64f)))
-            val pub = kf.generatePublic(X509EncodedKeySpec(Base64.decode(pubB64, b64f)))
-            return priv to pub
-        }
-        val gen = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }
-        val kp = gen.generateKeyPair()
-        store.encode(KEY_PRIV, Base64.encodeToString(kp.private.encoded, b64f))
-        store.encode(KEY_PUB, Base64.encodeToString(kp.public.encoded, b64f))
-        return kp.private to kp.public
+    @Volatile private var identity: Vault.Identity? = null
+
+    /** Load (once) the shared RSA identity from the vault. Needs MK unlocked. */
+    suspend fun ensureIdentity(): Boolean {
+        if (identity != null) return true
+        identity = Vault.messengerIdentity()
+        return identity != null
     }
 
-    fun myPublicKey(): String { ensureKeys(); return store.decodeString(KEY_PUB) ?: "" }
+    private fun privateKey(): PrivateKey? {
+        val id = identity ?: return null
+        return try {
+            KeyFactory.getInstance("RSA").generatePrivate(PKCS8EncodedKeySpec(id.privPkcs8))
+        } catch (e: Exception) { null }
+    }
+
+    fun myPublicKey(): String = identity?.let { Base64.encodeToString(it.pubSpki, b64f) } ?: ""
 
     fun myClientId(): Long = store.decodeLong(KEY_MYID, 0L)
     private fun setMyClientId(id: Long) = store.encode(KEY_MYID, id)
@@ -166,7 +164,7 @@ object Messenger {
     }
 
     private fun open(ciphertext: String): String? = try {
-        val (priv, _) = ensureKeys()
+        val priv = privateKey() ?: return null
         val env = gson.fromJson(String(Base64.decode(ciphertext, b64f)), Envelope::class.java)
         val rsa = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding").apply {
             init(Cipher.DECRYPT_MODE, priv)
@@ -217,6 +215,7 @@ object Messenger {
      * server-side from the Telegram username or the device name). Caches it.
      */
     suspend fun register(deviceName: String): String = withContext(Dispatchers.IO) {
+        if (!ensureIdentity()) return@withContext myHandle()
         val bodyJson = gson.toJson(RegReq(publicKey = myPublicKey(), deviceName = deviceName))
         val req = authed("/app/messenger/register")
             ?.post(bodyJson.toRequestBody("application/json".toMediaType()))?.build()
@@ -281,6 +280,7 @@ object Messenger {
 
     /** Poll incoming, decrypt, file into the sender's chat. @return true if anything new. */
     suspend fun poll(): Boolean = withContext(Dispatchers.IO) {
+        if (!ensureIdentity()) return@withContext false
         val since = store.decodeLong(KEY_CURSOR, 0L)
         val req = authed("/app/messenger/poll?since=$since")
             ?.post(ByteArray(0).toRequestBody())?.build() ?: return@withContext false
