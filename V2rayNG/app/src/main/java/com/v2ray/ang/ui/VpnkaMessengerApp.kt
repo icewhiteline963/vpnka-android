@@ -46,14 +46,38 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.v2ray.ang.handler.Channels
 import com.v2ray.ang.handler.Messenger
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+// ---- Modern chat look: colourful avatars + timestamps ----
+
+/** Deterministic Telegram-style avatar gradient from a name. */
+private fun avatarBrush(name: String): Brush {
+    val palettes = listOf(
+        listOf(Color(0xFFFF9D6C), Color(0xFFE8560C)),
+        listOf(Color(0xFF5FD07E), Color(0xFF059669)),
+        listOf(Color(0xFF60A5FA), Color(0xFF2563EB)),
+        listOf(Color(0xFFC084FC), Color(0xFF7C3AED)),
+        listOf(Color(0xFFFB7185), Color(0xFFE11D48)),
+        listOf(Color(0xFF22D3EE), Color(0xFF0891B2)),
+        listOf(Color(0xFFFBBF24), Color(0xFFD97706)),
+    )
+    val idx = (name.hashCode() and Int.MAX_VALUE) % palettes.size
+    return Brush.linearGradient(palettes[idx])
+}
+
+private fun msgTime(ts: Long): String =
+    if (ts <= 0L) "" else SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(ts))
 
 
 /** «Сообщения» — an E2E messenger in the Telegram mould. */
@@ -140,13 +164,20 @@ fun VpnkaMessengerApp() {
             modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            MsgAvatar(if (handle.isBlank()) "?" else handle, size = 36)
+            Spacer(Modifier.width(10.dp))
             Text(
                 text = if (handle.isBlank()) "…" else "@$handle",
                 fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.TextStrong,
             )
             Spacer(Modifier.weight(1f))
-            Text("＋ Канал", fontFamily = VpnkaFonts.nunito800, fontSize = 13.sp, color = VpnkaColors.Accent,
-                modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { showCreate = true }.padding(horizontal = 10.dp, vertical = 4.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clip(CircleShape).background(VpnkaColors.Accent.copy(alpha = 0.14f))
+                    .clickable { showCreate = true }.padding(horizontal = 12.dp, vertical = 6.dp),
+            ) {
+                Text("＋ Канал", fontFamily = VpnkaFonts.nunito800, fontSize = 13.sp, color = VpnkaColors.Accent)
+            }
         }
         // Search people and channels.
         Box(modifier = Modifier.padding(horizontal = 12.dp)) {
@@ -198,22 +229,34 @@ fun VpnkaMessengerApp() {
                 items(contacts, key = { it.id }) { c ->
                     val last = Messenger.messages(c.id).lastOrNull()
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp)
-                            .clip(RoundedCornerShape(16.dp)).background(VpnkaColors.CardServer)
-                            .clickable { openId = c.id }.padding(12.dp),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                            .clip(RoundedCornerShape(18.dp)).background(VpnkaColors.CardServer)
+                            .clickable { openId = c.id }.padding(horizontal = 12.dp, vertical = 11.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        MsgAvatar(c.name)
+                        MsgAvatar(c.name, size = 50)
                         Spacer(Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(c.name, fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.TextStrong, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            if (last != null) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(
-                                    (if (last.mine) "Вы: " else "") + last.text,
-                                    fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp, color = VpnkaColors.TextMuted,
-                                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    c.name, fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp,
+                                    color = VpnkaColors.TextStrong, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f),
                                 )
+                                if (last != null) {
+                                    Text(msgTime(last.ts), fontFamily = VpnkaFonts.manrope600, fontSize = 11.sp, color = VpnkaColors.TextFaint)
+                                }
                             }
+                            Spacer(Modifier.height(2.dp))
+                            val preview = when {
+                                last == null -> "Нет сообщений"
+                                last.k == "image" -> (if (last.mine) "Вы: " else "") + "📷 Фото"
+                                else -> (if (last.mine) "Вы: " else "") + last.text
+                            }
+                            Text(
+                                preview, fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp,
+                                color = VpnkaColors.TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            )
                         }
                     }
                 }
@@ -267,9 +310,10 @@ private fun ResultRow(glyph: String?, title: String, sub: String?, onClick: () -
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (glyph != null) {
-            Box(modifier = Modifier.size(40.dp).clip(androidx.compose.foundation.shape.CircleShape)
-                .background(VpnkaColors.Accent.copy(alpha = 0.85f)), contentAlignment = Alignment.Center) {
-                Text(glyph, fontSize = 18.sp)
+            Box(modifier = Modifier.size(44.dp).clip(CircleShape)
+                .background(Brush.linearGradient(listOf(Color(0xFFC084FC), Color(0xFF7C3AED)))),
+                contentAlignment = Alignment.Center) {
+                Text(glyph, fontSize = 20.sp)
             }
         } else {
             MsgAvatar(title.removePrefix("@"))
@@ -431,12 +475,22 @@ private fun ChatScreen(
                     horizontalArrangement = if (m.mine) Arrangement.End else Arrangement.Start,
                 ) {
                     Box(
-                        modifier = Modifier.widthIn(max = 260.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(if (m.mine) VpnkaColors.Green.copy(alpha = 0.85f) else VpnkaColors.CardServer)
+                        modifier = Modifier.widthIn(max = 284.dp)
+                            .clip(
+                                RoundedCornerShape(
+                                    topStart = 18.dp, topEnd = 18.dp,
+                                    bottomStart = if (m.mine) 18.dp else 5.dp,
+                                    bottomEnd = if (m.mine) 5.dp else 18.dp,
+                                )
+                            )
+                            .then(
+                                if (m.mine)
+                                    Modifier.background(Brush.linearGradient(listOf(Color(0xFF2FAE4F), Color(0xFF10B981))))
+                                else Modifier.background(VpnkaColors.CardServer)
+                            )
                             .padding(horizontal = 12.dp, vertical = 8.dp),
                     ) {
-                        Column(horizontalAlignment = if (m.mine) Alignment.End else Alignment.Start) {
+                        Column(horizontalAlignment = Alignment.Start) {
                             if (m.k == "image" && m.img.isNotEmpty()) {
                                 val bmp = remember(m.img) {
                                     try {
@@ -457,9 +511,19 @@ private fun ChatScreen(
                                 Text(m.text, fontFamily = VpnkaFonts.manrope600, fontSize = 15.sp,
                                     color = if (m.mine) Color.White else VpnkaColors.TextStrong)
                             }
-                            if (m.mine) {
-                                val (mark, tint) = msgrTicks(m, receipt)
-                                Text(mark, fontSize = 10.sp, color = tint, modifier = Modifier.padding(top = 1.dp))
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.align(Alignment.End).padding(top = 3.dp),
+                            ) {
+                                Text(
+                                    msgTime(m.ts), fontSize = 10.sp,
+                                    color = if (m.mine) Color.White.copy(alpha = 0.85f) else VpnkaColors.TextFaint,
+                                )
+                                if (m.mine) {
+                                    Spacer(Modifier.width(4.dp))
+                                    val (mark, tint) = msgrTicks(m, receipt)
+                                    Text(mark, fontSize = 10.sp, color = tint)
+                                }
                             }
                         }
                     }
@@ -491,9 +555,13 @@ private fun ChatScreen(
             modifier = Modifier.fillMaxWidth().padding(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("📎", fontSize = 22.sp,
-                modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { picker.launch("image/*") }.padding(6.dp))
-            Spacer(Modifier.width(4.dp))
+            Box(
+                modifier = Modifier.size(44.dp).clip(CircleShape)
+                    .background(VpnkaColors.CardSettings)
+                    .clickable { picker.launch("image/*") },
+                contentAlignment = Alignment.Center,
+            ) { Text("📎", fontSize = 20.sp) }
+            Spacer(Modifier.width(8.dp))
             Box(modifier = Modifier.weight(1f)) { MsgField("Сообщение", draft) { draft = it; Messenger.sendTyping(contact.id) } }
             Spacer(Modifier.width(8.dp))
             Box(
@@ -512,13 +580,16 @@ private fun ChatScreen(
 }
 
 @Composable
-private fun MsgAvatar(name: String) {
+private fun MsgAvatar(name: String, size: Int = 44) {
     val initials = name.trim().split(" ").filter { it.isNotBlank() }.take(2)
-        .joinToString("") { it.first().uppercase() }.ifBlank { "?" }
+        .joinToString("") { it.first().uppercase() }
+        .ifBlank { name.trim().dropWhile { it == '@' }.take(1).uppercase().ifBlank { "?" } }
     Box(
-        modifier = Modifier.size(40.dp).clip(CircleShape).background(VpnkaColors.Accent.copy(alpha = 0.85f)),
+        modifier = Modifier.size(size.dp).clip(CircleShape).background(avatarBrush(name)),
         contentAlignment = Alignment.Center,
-    ) { Text(initials, fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp, color = Color.White) }
+    ) {
+        Text(initials, fontFamily = VpnkaFonts.nunito800, fontSize = (size * 0.36f).sp, color = Color.White)
+    }
 }
 
 @Composable
@@ -528,6 +599,7 @@ private fun MsgField(label: String, value: String, onChange: (String) -> Unit) {
         onValueChange = onChange,
         label = { Text(label, color = VpnkaColors.TextMuted) },
         singleLine = true,
+        shape = RoundedCornerShape(18.dp),
         textStyle = LocalTextStyle.current.copy(color = VpnkaColors.TextStrong, fontSize = 15.sp),
         colors = OutlinedTextFieldDefaults.colors(
             focusedTextColor = VpnkaColors.TextStrong,

@@ -66,19 +66,21 @@ object MessengerNotifier {
             MmkvManager.getAccountToken() ?: return Result.success()
             if (!Messenger.setting("notify", true)) return Result.success()
 
-            val fresh = mutableListOf<Messenger.NewIncoming>()
-            try {
-                Messenger.poll(fresh)
+            // Peek without the vault: a locked device (cold WorkManager run,
+            // master key gone) can't decrypt, but it can still see that a new
+            // ciphertext arrived and raise a generic notification.
+            val fresh = try {
+                Messenger.checkIncomingForNotify()
             } catch (e: Exception) {
-                LogUtil.w(AppConfig.TAG, "MessengerNotifier: poll failed: ${e.message}")
+                LogUtil.w(AppConfig.TAG, "MessengerNotifier: check failed: ${e.message}")
                 return Result.retry()
             }
             if (fresh.isEmpty()) return Result.success()
 
-            // One notification per sender, showing their latest message.
-            fresh.groupBy { it.contactId }.forEach { (chat, msgs) ->
-                val last = msgs.last()
-                postNotification(applicationContext, chat, last.name, last.preview.ifBlank { "Новое сообщение" })
+            // One notification per sender. The content stays generic — we never
+            // decrypt in the background — so the body is a fixed "Новое сообщение".
+            fresh.distinctBy { it.contactId }.forEach { it ->
+                postNotification(applicationContext, it.contactId, it.name, "Новое сообщение")
             }
             return Result.success()
         }

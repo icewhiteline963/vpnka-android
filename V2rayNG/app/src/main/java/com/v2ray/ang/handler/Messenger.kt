@@ -47,6 +47,7 @@ object Messenger {
     private const val KEY_HANDLE = "my_handle"
     private const val KEY_CONTACTS = "contacts"
     private const val KEY_CURSOR = "cursor"
+    private const val KEY_NOTIFY_CURSOR = "notify_cursor"
     private const val BASE = "https://get.vpnka.io"
 
     private val gson = Gson()
@@ -559,6 +560,41 @@ object Messenger {
         val o = gson.fromJson(raw, MsgPayload::class.java)
         if (o != null && o.k.isNotEmpty()) o else MsgPayload(k = "text", t = raw)
     } catch (e: Exception) { MsgPayload(k = "text", t = raw) }
+
+    /**
+     * Background-notifier peek: is there a new INCOMING message worth a
+     * notification? Crucially this works WITHOUT the vault — it never decrypts
+     * and never advances the read cursor, so a cold WorkManager run (master key
+     * not in memory, vault locked) still fires. The `from_client` metadata is
+     * plaintext, so we can tell a real incoming message from our own history
+     * sync and name the chat from the local contact list; the body stays generic
+     * ("Новое сообщение") because the content is unreadable here by design.
+     *
+     * Returns one entry per sender. Uses a separate cursor so it neither
+     * consumes messages the foreground UI must still decrypt+store, nor
+     * re-announces anything already read in the foreground.
+     */
+    suspend fun checkIncomingForNotify(): List<NewIncoming> = withContext(Dispatchers.IO) {
+        val cursor = store.decodeLong(KEY_CURSOR, 0L)
+        val notified = store.decodeLong(KEY_NOTIFY_CURSOR, 0L)
+        val base = maxOf(cursor, notified)   // never re-notify read/announced ids
+        val req = authed("/app/messenger/poll?since=$cursor")
+            ?.post(ByteArray(0).toRequestBody())?.build() ?: return@withContext emptyList()
+        val me = myClientId()
+        try {
+            http().newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@withContext emptyList()
+                val out = gson.fromJson(resp.body?.string().orEmpty(), PollResp::class.java)
+                    ?: return@withContext emptyList()
+                val fresh = out.messages.filter { it.fromClient != me && it.id > base }
+                if (fresh.isEmpty()) return@withContext emptyList()
+                store.encode(KEY_NOTIFY_CURSOR, fresh.maxOf { it.id })
+                fresh.map { it.fromClient }.distinct().map { chat ->
+                    NewIncoming(chat, contact(chat)?.name ?: "Новое сообщение", "Новое сообщение")
+                }
+            }
+        } catch (e: Exception) { emptyList() }
+    }
 
     /**
      * Poll incoming, decrypt, file into the sender's chat. @return true if
