@@ -101,6 +101,14 @@ fun VpnkaMessengerApp() {
     DisposableEffect(Unit) { onDispose { Messenger.disconnectWs() } }
     LaunchedEffect(tick) { myChannels = Channels.mine() }
 
+    // Opened from a message notification: jump into that chat. The contact may
+    // not be loaded yet on a cold start — poll() above adds it, and the tick
+    // bump then lets openId resolve to it.
+    LaunchedEffect(Unit) {
+        val pending = Messenger.consumePendingChat()
+        if (pending != 0L) openId = pending
+    }
+
     // Debounced search over people and channels.
     LaunchedEffect(query) {
         if (query.trim().length < 2) { results = emptyList(); channelResults = emptyList() } else {

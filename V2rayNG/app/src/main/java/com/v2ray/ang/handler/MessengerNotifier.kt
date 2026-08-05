@@ -1,0 +1,128 @@
+package com.v2ray.ang.handler
+
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Context
+import android.content.Intent
+import android.os.Build
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.work.Constraints
+import androidx.work.CoroutineWorker
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.WorkerParameters
+import com.v2ray.ang.AppConfig
+import com.v2ray.ang.R
+import com.v2ray.ang.enums.NotificationChannelType
+import com.v2ray.ang.ui.MainActivity
+import com.v2ray.ang.util.LogUtil
+import java.util.concurrent.TimeUnit
+
+/**
+ * Poll the E2E messenger in the background and raise a system notification for
+ * a new incoming message, tapping it straight into that chat.
+ *
+ * Same shape as [SupportNotifier]: no FCM (we don't want Google services on a
+ * censorship-circumvention app), so the check is WorkManager's 15-min floor for
+ * periodic work. The messenger UI, when open, polls every 2.5s and advances the
+ * shared cursor first — so this only fires for messages that arrived while the
+ * app wasn't being looked at, which is exactly when a notification is wanted.
+ *
+ * Zero-knowledge caveat: decrypting needs the vault unlocked (the RSA private
+ * key lives there). On a cold process the master key isn't cached, `poll()`
+ * returns nothing, and no notification is raised until the user next unlocks —
+ * an acceptable trade for never holding the key where the server could reach it.
+ */
+object MessengerNotifier {
+
+    private const val TASK_NAME = "vpnka_messenger_notify"
+    private const val INTERVAL_MIN = 15L
+
+    fun schedule(context: Context) {
+        val request = PeriodicWorkRequestBuilder<NotifyTask>(
+            INTERVAL_MIN, TimeUnit.MINUTES,
+        )
+            .setConstraints(
+                Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build()
+            )
+            .addTag(TASK_NAME)
+            .build()
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            TASK_NAME, ExistingPeriodicWorkPolicy.KEEP, request,
+        )
+    }
+
+    class NotifyTask(context: Context, params: WorkerParameters) :
+        CoroutineWorker(context, params) {
+
+        override suspend fun doWork(): Result {
+            // No account or messenger notifications turned off → nothing to do.
+            MmkvManager.getAccountToken() ?: return Result.success()
+            if (!Messenger.setting("notify", true)) return Result.success()
+
+            val fresh = mutableListOf<Messenger.NewIncoming>()
+            try {
+                Messenger.poll(fresh)
+            } catch (e: Exception) {
+                LogUtil.w(AppConfig.TAG, "MessengerNotifier: poll failed: ${e.message}")
+                return Result.retry()
+            }
+            if (fresh.isEmpty()) return Result.success()
+
+            // One notification per sender, showing their latest message.
+            fresh.groupBy { it.contactId }.forEach { (chat, msgs) ->
+                val last = msgs.last()
+                postNotification(applicationContext, chat, last.name, last.preview.ifBlank { "Новое сообщение" })
+            }
+            return Result.success()
+        }
+    }
+
+    private fun postNotification(context: Context, chatId: Long, name: String, body: String) {
+        val ch = NotificationChannelType.MESSENGER
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE)
+                as NotificationManager
+            if (nm.getNotificationChannel(ch.channelId) == null) {
+                nm.createNotificationChannel(
+                    NotificationChannel(ch.channelId, ch.channelName, ch.importance)
+                )
+            }
+        }
+
+        // Tapping opens the app → SmartDesk → the messenger, on this chat.
+        val tap = Intent(context, MainActivity::class.java).apply {
+            putExtra(MainActivity.EXTRA_OPEN, MainActivity.OPEN_MESSENGER)
+            putExtra(MainActivity.EXTRA_CHAT, chatId)
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        // Distinct requestCode per chat so per-sender intents don't collide.
+        val pi = PendingIntent.getActivity(
+            context, chatId.toInt(), tap,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
+        val notif = NotificationCompat.Builder(context, ch.channelId)
+            .setSmallIcon(R.drawable.ic_stat_name)
+            .setContentTitle(name)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(pi)
+            .setAutoCancel(true)
+            .build()
+
+        // notify() no-ops without POST_NOTIFICATIONS on 33+; guard so a missing
+        // grant can't crash the worker. Per-chat id keeps senders separate.
+        runCatching {
+            NotificationManagerCompat.from(context)
+                .notify(ch.notificationId + chatId.toInt(), notif)
+        }
+    }
+}

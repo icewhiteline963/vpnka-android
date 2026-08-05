@@ -43,5 +43,11 @@ enum class NotificationChannelType(
         channelName = "Ответ поддержки",
         notificationId = 16,
         importance = android.app.NotificationManager.IMPORTANCE_HIGH
+    ),
+    MESSENGER(
+        channelId = "messenger_channel",
+        channelName = "Сообщения",
+        notificationId = 17,
+        importance = android.app.NotificationManager.IMPORTANCE_HIGH
     )
 }

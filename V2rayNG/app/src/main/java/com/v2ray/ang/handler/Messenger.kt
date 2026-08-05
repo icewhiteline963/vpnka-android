@@ -138,15 +138,33 @@ object Messenger {
         catch (e: Exception) { emptyList() }
     }
 
-    private fun appendMessage(contactId: Long, m: Msg) {
+    /** @return true if the message was actually stored (not a dedup hit). */
+    private fun appendMessage(contactId: Long, m: Msg): Boolean {
         val list = messages(contactId).toMutableList()
         // Dedup by uuid first (the sent-copy that syncs history carries the same
         // uuid as the local copy), then by server id for legacy messages.
-        if (m.u.isNotEmpty() && list.any { it.u == m.u }) return
-        if (m.id != 0L && list.any { it.id == m.id }) return
+        if (m.u.isNotEmpty() && list.any { it.u == m.u }) return false
+        if (m.id != 0L && list.any { it.id == m.id }) return false
         list.add(m)
         store.encode("msg_$contactId", gson.toJson(list))
+        return true
     }
+
+    /** A newly-arrived incoming message, for the background notifier. */
+    data class NewIncoming(val contactId: Long, val name: String, val preview: String)
+
+    // Deep-link target: the notifier sets the chat to open, the messenger UI
+    // consumes it on first composition. 0 = nothing pending.
+    @Volatile private var pendingChat: Long = 0L
+
+    /** Ask the UI to open a given chat next time SmartDesk/messenger draws. */
+    fun requestOpenChat(id: Long) { pendingChat = id }
+
+    /** Is a chat waiting to be opened? (SmartDesk uses this to open Messages.) */
+    fun peekPendingChat(): Long = pendingChat
+
+    /** Take and clear the pending chat (the messenger screen calls this). */
+    fun consumePendingChat(): Long { val v = pendingChat; pendingChat = 0L; return v }
 
     // --- crypto ---
 
@@ -500,8 +518,12 @@ object Messenger {
         if (o != null && o.k.isNotEmpty()) o else MsgPayload(k = "text", t = raw)
     } catch (e: Exception) { MsgPayload(k = "text", t = raw) }
 
-    /** Poll incoming, decrypt, file into the sender's chat. @return true if anything new. */
-    suspend fun poll(): Boolean = withContext(Dispatchers.IO) {
+    /**
+     * Poll incoming, decrypt, file into the sender's chat. @return true if
+     * anything new. Pass [collect] to gather freshly-arrived incoming messages
+     * (from other people, not our own history sync) for the notifier.
+     */
+    suspend fun poll(collect: MutableList<NewIncoming>? = null): Boolean = withContext(Dispatchers.IO) {
         if (!ensureIdentity()) return@withContext false
         val since = store.decodeLong(KEY_CURSOR, 0L)
         val req = authed("/app/messenger/poll?since=$since")
@@ -533,14 +555,23 @@ object Messenger {
                             else Contact(chat, "Контакт $chat", "")
                         )
                     }
+                    val added: Boolean
+                    val preview: String
                     if (o.k == "image" && o.media > 0 && o.key.isNotEmpty()) {
                         val blob = downloadMedia(o.media)
                         val img = if (blob != null) try {
                             Base64.encodeToString(aesGcmDec(Base64.decode(o.key, b64f), blob), b64f)
                         } catch (e: Exception) { "" } else ""
-                        appendMessage(chat, Msg(id = id, mine = mine, text = "", ts = System.currentTimeMillis(), u = o.u, k = "image", img = img))
+                        added = appendMessage(chat, Msg(id = id, mine = mine, text = "", ts = System.currentTimeMillis(), u = o.u, k = "image", img = img))
+                        preview = "📷 Фото"
                     } else {
-                        appendMessage(chat, Msg(id = id, mine = mine, text = o.t, ts = System.currentTimeMillis(), u = o.u))
+                        added = appendMessage(chat, Msg(id = id, mine = mine, text = o.t, ts = System.currentTimeMillis(), u = o.u))
+                        preview = o.t
+                    }
+                    // Only genuinely-new messages from other people are worth a
+                    // system notification — not our own history sync, not dups.
+                    if (added && !mine) {
+                        collect?.add(NewIncoming(chat, contact(chat)?.name ?: "Контакт $chat", preview))
                     }
                     changed = true
                 }

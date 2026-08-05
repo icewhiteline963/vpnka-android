@@ -138,6 +138,7 @@ import com.v2ray.ang.handler.AngConfigManager
 import com.v2ray.ang.util.QRCodeDecoder
 import androidx.compose.ui.graphics.asImageBitmap
 import com.v2ray.ang.handler.ExpiryReminder
+import com.v2ray.ang.handler.MessengerNotifier
 import com.v2ray.ang.handler.SupportNotifier
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsChangeManager
@@ -222,12 +223,23 @@ class MainActivity : HelperBaseComponentActivity() {
         /** Intent extra: which screen to open on launch. */
         const val EXTRA_OPEN = "vpnka_open"
         const val OPEN_SUPPORT = "support"
+        const val OPEN_MESSENGER = "messenger"
+        /** Intent extra: chat (peer client id) to open in the messenger. */
+        const val EXTRA_CHAT = "vpnka_chat"
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         if (intent.getStringExtra(EXTRA_OPEN) == OPEN_SUPPORT) showSupport = true
+        if (intent.getStringExtra(EXTRA_OPEN) == OPEN_MESSENGER) openMessengerFromIntent(intent)
+    }
+
+    /** A messenger notification was tapped: open SmartDesk on that chat. */
+    private fun openMessengerFromIntent(intent: Intent) {
+        val chat = intent.getLongExtra(EXTRA_CHAT, 0L)
+        if (chat != 0L) com.v2ray.ang.handler.Messenger.requestOpenChat(chat)
+        showSmartDesk = true
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -249,11 +261,13 @@ class MainActivity : HelperBaseComponentActivity() {
         VpnkaColors.dark = MmkvManager.isDarkTheme()
         ExpiryReminder.schedule(this)
         SupportNotifier.schedule(this)
+        MessengerNotifier.schedule(this)
 
         // Launched by tapping a "поддержка ответила" notification: open the
         // chat rather than the home screen. onNewIntent handles the same for
         // an app that was already running.
         if (intent?.getStringExtra(EXTRA_OPEN) == OPEN_SUPPORT) showSupport = true
+        if (intent?.getStringExtra(EXTRA_OPEN) == OPEN_MESSENGER) intent?.let { openMessengerFromIntent(it) }
 
         onBackPressedDispatcher.addCallback(this) {
             if (!closeTopVpnkaScreen()) {

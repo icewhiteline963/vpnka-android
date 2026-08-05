@@ -34,6 +34,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import com.v2ray.ang.handler.Messenger
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -152,6 +153,14 @@ fun VpnkaSmartDeskScreen(
     // app around for the closing animation after `openApp` goes null.
     var lastApp by remember { mutableStateOf<DeskApp?>(null) }
     openApp?.let { lastApp = it }
+
+    // Opened by tapping a message notification: jump straight into the
+    // messenger. The chat itself is consumed inside VpnkaMessengerApp.
+    LaunchedEffect(Unit) {
+        if (Messenger.peekPendingChat() != 0L) {
+            CATALOG_BY_ID["messages"]?.let { openApp = it }
+        }
+    }
 
     val order = remember(deskTick) { mutableStateListOf<Pair<DeskApp, Int>>().apply { addAll(loadOrder()) } }
     var contextFor by remember { mutableStateOf<DeskApp?>(null) }
@@ -594,6 +603,7 @@ private fun DesktopSettingsSheet(
                 fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp, color = VpnkaColors.TextStrong,
             )
             Spacer(Modifier.height(8.dp))
+            MsgrToggle("Уведомлять о новых сообщениях", "notify")
             MsgrToggle("Отправлять «печатает…»", "typing")
             MsgrToggle("Отправлять отметку о прочтении", "read")
             Spacer(Modifier.height(6.dp))
