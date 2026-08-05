@@ -65,7 +65,7 @@ object Messenger {
     private val store: MMKV by lazy { MMKV.mmkvWithID(ID_STORE, MMKV.SINGLE_PROCESS_MODE, cryptKey()) }
 
     data class Contact(val id: Long, val name: String, val pubKey: String)
-    data class Msg(val id: Long, val mine: Boolean, val text: String, val ts: Long)
+    data class Msg(val id: Long, val mine: Boolean, val text: String, val ts: Long, val u: String = "")
 
     // --- keys: the RSA identity now lives in the VAULT, shared across devices
     //     (phone + web speak as the same @handle). `ensureIdentity()` loads and
@@ -137,7 +137,10 @@ object Messenger {
 
     private fun appendMessage(contactId: Long, m: Msg) {
         val list = messages(contactId).toMutableList()
-        if (list.any { it.id == m.id && m.id != 0L }) return
+        // Dedup by uuid first (the sent-copy that syncs history carries the same
+        // uuid as the local copy), then by server id for legacy messages.
+        if (m.u.isNotEmpty() && list.any { it.u == m.u }) return
+        if (m.id != 0L && list.any { it.id == m.id }) return
         list.add(m)
         store.encode("msg_$contactId", gson.toJson(list))
     }
@@ -263,27 +266,39 @@ object Messenger {
     /** Open a chat with a searched user (stores them as a contact). */
     fun startChat(found: Found) = addContact(Contact(found.id, "@" + found.handle, found.pubKey))
 
-    /** Send a plaintext message to a contact. Stores our own copy locally. */
+    private fun postMessage(to: Long, ciphertext: String): Long? {
+        val body = gson.toJson(SendReq(to = to, ciphertext = ciphertext))
+        val req = authed("/app/messenger/send")
+            ?.post(body.toRequestBody("application/json".toMediaType()))?.build() ?: return null
+        return try {
+            http().newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) null
+                else gson.fromJson(resp.body?.string().orEmpty(), SendResp::class.java)?.id ?: 0L
+            }
+        } catch (e: Exception) { null }
+    }
+
+    /** Send a message. Stores our copy locally + a self-copy so our other
+     *  devices sync the same history. */
     suspend fun send(contactId: Long, text: String): Boolean = withContext(Dispatchers.IO) {
         val c = contact(contactId) ?: return@withContext false
-        val ciphertext = try { seal(text, c.pubKey) } catch (e: Exception) { return@withContext false }
-        val bodyJson = gson.toJson(SendReq(to = contactId, ciphertext = ciphertext))
-        val req = authed("/app/messenger/send")
-            ?.post(bodyJson.toRequestBody("application/json".toMediaType()))?.build()
-            ?: return@withContext false
-        try {
-            http().newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) return@withContext false
-                // Keep the server id so we can match this message against the
-                // recipient's ✓/✓✓ watermark.
-                val r = gson.fromJson(resp.body?.string().orEmpty(), SendResp::class.java)
-                appendMessage(
-                    contactId,
-                    Msg(id = r?.id ?: 0L, mine = true, text = text, ts = System.currentTimeMillis()),
+        val u = java.util.UUID.randomUUID().toString()
+        val ct = try { seal(gson.toJson(MsgPayload(u = u, k = "text", t = text)), c.pubKey) }
+            catch (e: Exception) { return@withContext false }
+        val mid = postMessage(contactId, ct) ?: return@withContext false
+        appendMessage(contactId, Msg(id = mid, mine = true, text = text, ts = System.currentTimeMillis(), u = u))
+        // A copy to ourselves (sealed to our own key), carrying the peer + the
+        // recipient-copy id so other devices show it as sent with correct ticks.
+        val myId = myClientId()
+        if (myId > 0) {
+            try {
+                val self = gson.toJson(
+                    MsgPayload(u = u, k = "text", t = text, peer = contactId, self = true, mid = mid)
                 )
-                true
-            }
-        } catch (e: Exception) { false }
+                postMessage(myId, seal(self, myPublicKey()))
+            } catch (e: Exception) { /* best-effort sync */ }
+        }
+        true
     }
 
     // --- delivery/read receipts (✓/✓✓) ---
@@ -381,6 +396,18 @@ object Messenger {
     private data class WsFrame(val t: String = "", val from: Long = 0)
     private data class WsTyping(val t: String = "typing", val to: Long)
 
+    // The E2E plaintext is a JSON payload: uuid + kind + text (+ peer/mid on a
+    // self-copy). Legacy messages were raw text, so a parse failure falls back.
+    private data class MsgPayload(
+        val u: String = "", val k: String = "text", val t: String = "",
+        val peer: Long = 0, val self: Boolean = false, val mid: Long = 0,
+    )
+
+    private fun parsePayload(raw: String): MsgPayload = try {
+        val o = gson.fromJson(raw, MsgPayload::class.java)
+        if (o != null && o.k.isNotEmpty()) o else MsgPayload(k = "text", t = raw)
+    } catch (e: Exception) { MsgPayload(k = "text", t = raw) }
+
     /** Poll incoming, decrypt, file into the sender's chat. @return true if anything new. */
     suspend fun poll(): Boolean = withContext(Dispatchers.IO) {
         if (!ensureIdentity()) return@withContext false
@@ -393,18 +420,28 @@ object Messenger {
                 val out = gson.fromJson(resp.body?.string().orEmpty(), PollResp::class.java)
                     ?: return@withContext false
                 var changed = false
+                val me = myClientId()
                 for (m in out.messages) {
-                    val text = open(m.ciphertext) ?: continue
-                    // First message from someone new: pull their handle + key
-                    // so the reply can be encrypted. Fall back to a stub.
-                    if (contact(m.fromClient) == null) {
-                        val prof = getProfile(m.fromClient)
+                    val raw = open(m.ciphertext) ?: continue
+                    val o = parsePayload(raw)
+                    // A message from ourselves is a sent-copy syncing history:
+                    // file it into the peer's chat on the sent side. Otherwise
+                    // it's a real incoming message.
+                    val chat: Long; val mine: Boolean; val id: Long
+                    if (m.fromClient == me) {
+                        if (o.peer <= 0) continue
+                        chat = o.peer; mine = true; id = if (o.mid > 0) o.mid else m.id
+                    } else {
+                        chat = m.fromClient; mine = false; id = m.id
+                    }
+                    if (contact(chat) == null) {
+                        val prof = getProfile(chat)
                         addContact(
                             if (prof != null) Contact(prof.id, "@" + prof.handle, prof.pubKey)
-                            else Contact(m.fromClient, "Контакт ${m.fromClient}", "")
+                            else Contact(chat, "Контакт $chat", "")
                         )
                     }
-                    appendMessage(m.fromClient, Msg(id = m.id, mine = false, text = text, ts = System.currentTimeMillis()))
+                    appendMessage(chat, Msg(id = id, mine = mine, text = o.t, ts = System.currentTimeMillis(), u = o.u))
                     changed = true
                 }
                 store.encode(KEY_CURSOR, out.cursor)
