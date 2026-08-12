@@ -98,7 +98,12 @@ class VpnkaDownloader(private val client: OkHttpClient) : Downloader() {
             "GET" -> rb.get()
             else -> rb.method(request.httpMethod(), body)
         }
-        if (request.headers()["User-Agent"] == null) {
+        // NewPipeExtractor scrapes YouTube's DESKTOP HTML (its ytInitialData
+        // regex is desktop-shaped). A mobile UA makes YouTube return the m.
+        // layout → "Could not get ytInitialData". Match NewPipe's reference
+        // Downloader and default to a desktop Firefox UA when the extractor
+        // didn't set one itself.
+        if (request.headers().keys.none { it.equals("User-Agent", ignoreCase = true) }) {
             rb.header("User-Agent", USER_AGENT)
         }
         client.newCall(rb.build()).execute().use { resp ->
@@ -108,7 +113,8 @@ class VpnkaDownloader(private val client: OkHttpClient) : Downloader() {
     }
 
     companion object {
+        // Desktop UA — matches NewPipe's reference DownloaderImpl.
         private const val USER_AGENT =
-            "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36"
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
     }
 }
