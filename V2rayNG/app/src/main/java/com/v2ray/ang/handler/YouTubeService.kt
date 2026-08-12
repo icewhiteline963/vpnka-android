@@ -1,6 +1,5 @@
 package com.v2ray.ang.handler
 
-import com.v2ray.ang.util.SettingsManager
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.schabi.newpipe.extractor.NewPipe
@@ -35,8 +34,10 @@ object YouTubeService {
 
     @Volatile private var inited = false
 
-    /** OkHttp client bound to the local VPN proxy. Rebuilt each call so a
-     *  reconnect on a new port is picked up. */
+    /** OkHttp client bound to the local VPN proxy. NewPipe captures this once at
+     *  init, so the extractor's proxy port is fixed for the process (the HTTP
+     *  port is a stable setting). The player builds its own proxied client per
+     *  playback and always reads the current port. */
     fun proxiedClient(): OkHttpClient {
         val port = SettingsManager.getHttpPort()
         return OkHttpClient.Builder()

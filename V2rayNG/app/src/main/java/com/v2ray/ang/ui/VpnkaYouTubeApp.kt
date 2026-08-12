@@ -48,7 +48,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.ui.PlayerView
 import com.v2ray.ang.handler.YouTubeService
-import com.v2ray.ang.util.SettingsManager
+import com.v2ray.ang.handler.SettingsManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -207,7 +207,11 @@ private fun VideoRow(v: YouTubeService.Video, onClick: () -> Unit) {
     }
 }
 
-@UnstableApi
+// Non-propagating opt-in: enables use of @UnstableApi Media3 symbols inside this
+// function without marking the function itself unstable (which would force every
+// caller to opt in too). Must be androidx.annotation.OptIn — UnstableApi is built
+// on androidx.annotation.RequiresOptIn, not kotlin.RequiresOptIn.
+@androidx.annotation.OptIn(markerClass = UnstableApi::class)
 @Composable
 private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit) {
     val context = LocalContext.current

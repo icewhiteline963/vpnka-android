@@ -150,6 +150,12 @@ fun installedIds(): List<String> {
     val stored = MmkvManager.decodeSettingsString(KEY_INSTALLED)
     var ids = if (stored == null) DEFAULT_INSTALLED
         else stored.split(",").filter { it.isNotBlank() && it in CATALOG_BY_ID }
+    // Fresh install already has these via DEFAULT_INSTALLED — mark them seeded so
+    // that if the user later removes one, the migration below never re-adds it.
+    if (stored == null) {
+        MmkvManager.encodeSettings(KEY_HELP_SEEDED, "1")
+        MmkvManager.encodeSettings(KEY_YOUTUBE_SEEDED, "1")
+    }
     var seeded = false
     // One-time seeds: existing installs (a stored list without a newly-shipped
     // app) get it added once, so it appears on update without a manual store
