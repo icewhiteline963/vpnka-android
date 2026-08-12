@@ -6,7 +6,10 @@ import com.google.gson.JsonObject
 import com.google.gson.annotations.SerializedName
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.util.LogUtil
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -115,6 +118,22 @@ object SmartDeskSync {
             false
         }
     }
+
+    // Process-lived scope for the fire-and-forget wipe when leaving SmartDesk.
+    private val bgScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    /** Push everything, then — ONLY if the push fully succeeded (queue drained) —
+     *  wipe the local records. Offline (push failed) keeps the data and queue
+     *  intact so nothing is lost; the wipe happens next time we're online. */
+    suspend fun syncAndWipe(): Boolean {
+        val ok = sync()
+        if (ok && SmartDeskStore.pending().isEmpty()) SmartDeskStore.wipeLocal()
+        return ok
+    }
+
+    /** Non-suspend hook for leaving SmartDesk / app going to background:
+     *  schedules a sync-then-wipe without blocking the caller. */
+    fun scheduleSyncAndWipe() { bgScope.launch { syncAndWipe() } }
 
     /**
      * Server payload → plaintext JSON. Encrypted items carry `{"ct": envelope}`

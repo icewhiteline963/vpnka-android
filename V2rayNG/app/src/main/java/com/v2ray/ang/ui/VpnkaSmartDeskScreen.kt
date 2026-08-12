@@ -31,15 +31,16 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
-import kotlinx.coroutines.delay
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import com.v2ray.ang.handler.Messenger
+import com.v2ray.ang.handler.SmartDeskSync
+import androidx.compose.runtime.DisposableEffect
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -91,14 +92,15 @@ data class DeskApp(
 /** Everything the vpnka store knows about. «store» is always present. */
 val SMARTDESK_CATALOG = listOf(
     DeskApp("store", "vpnka store", "🛍️", "Устанавливайте приложения на рабочий стол", removable = false),
-    DeskApp("messages", "Сообщения", "💬", "Зашифрованный мессенджер через наш сервер"),
+    DeskApp("messages", "VPNka мессенджер", "💬", "Зашифрованный мессенджер через наш сервер"),
     DeskApp("calendar", "Календарь", "📅", "Календарь с событиями и напоминаниями"),
     DeskApp("contacts", "Контакты", "👤", "Ваши контакты: звонки, почта, поиск"),
     DeskApp("browser", "Браузер", "🌐", "Веб-браузер — весь трафик через VPN"),
+    DeskApp("help", "Помощь", "🛡️", "Как устроена приватность SmartDesk"),
 )
 
 private val CATALOG_BY_ID = SMARTDESK_CATALOG.associateBy { it.id }
-private val DEFAULT_INSTALLED = listOf("store", "messages", "calendar", "contacts", "browser")
+private val DEFAULT_INSTALLED = listOf("store", "messages", "help", "calendar", "contacts", "browser")
 
 // ---- «Android 17» look: gradient wallpapers + colourful squircle app tiles ----
 
@@ -133,6 +135,7 @@ fun appTint(id: String): List<Color> = when (id) {
     "calendar" -> listOf(Color(0xFFFB7185), Color(0xFFE11D48))
     "contacts" -> listOf(Color(0xFF60A5FA), Color(0xFF2563EB))
     "browser" -> listOf(Color(0xFF22D3EE), Color(0xFF0891B2))
+    "help" -> listOf(Color(0xFF818CF8), Color(0xFF4F46E5))
     "settings" -> listOf(Color(0xFF94A3B8), Color(0xFF475569))
     else -> listOf(Color(0xFFC4B5FD), Color(0xFF7C3AED))
 }
@@ -217,47 +220,50 @@ fun VpnkaSmartDeskScreen(
 
     // Desktop text colour adapts to the wallpaper so labels read on any of them.
     val ink = if (wallpaperLightInk(wallpaper)) Color.White else Color(0xFF4A3312)
-    // A slow clock tick — the home screen shows the time like a real launcher.
-    var now by remember { mutableStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); delay(15_000) } }
+
+    // Maximum-privacy self-wipe. Leaving SmartDesk (onDispose) or the app going
+    // to background / screen-lock (ON_STOP) pushes any pending edits and then
+    // erases the local copy. Between sessions the phone holds no SmartDesk data;
+    // the next open re-pulls it from the encrypted server. Offline → nothing is
+    // wiped (see SmartDeskSync.syncAndWipe), so no edits are lost.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val obs = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) SmartDeskSync.scheduleSyncAndWipe()
+        }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(obs)
+            SmartDeskSync.scheduleSyncAndWipe()
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(wallpaperBrush(wallpaper))) {
     Column(
         modifier = Modifier.fillMaxSize(),
     ) {
-        // Clock header — large time + date, server-status pill. The top edge is
-        // reserved for the shade/control swipes; exit is the bottom dock.
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(start = 22.dp, end = 18.dp, top = 22.dp, bottom = 2.dp),
+        // Server-status pill only — the clock and date were removed. It sits a
+        // bit lower (top padding), and the top edge stays clear for the
+        // shade/control swipes; exit is the bottom dock.
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 22.dp, end = 18.dp, top = 46.dp, bottom = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Spacer(Modifier.weight(1f))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .background(ink.copy(alpha = 0.16f))
+                    .padding(horizontal = 11.dp, vertical = 6.dp),
+            ) {
+                Box(Modifier.size(8.dp).clip(CircleShape).background(if (online) VpnkaColors.Green else VpnkaColors.Warning))
+                Spacer(Modifier.width(6.dp))
                 Text(
-                    text = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(now)),
-                    fontFamily = VpnkaFonts.nunito900,
-                    fontSize = 46.sp,
-                    color = ink,
+                    text = if (online) "На связи" else "Автономно",
+                    fontFamily = VpnkaFonts.manrope700, fontSize = 12.sp, color = ink,
                 )
-                Spacer(Modifier.weight(1f))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .clip(CircleShape)
-                        .background(ink.copy(alpha = 0.16f))
-                        .padding(horizontal = 11.dp, vertical = 6.dp),
-                ) {
-                    Box(Modifier.size(8.dp).clip(CircleShape).background(if (online) VpnkaColors.Green else VpnkaColors.Warning))
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = if (online) "На связи" else "Автономно",
-                        fontFamily = VpnkaFonts.manrope700, fontSize = 12.sp, color = ink,
-                    )
-                }
             }
-            Text(
-                text = SimpleDateFormat("EEEE, d MMMM", Locale("ru")).format(Date(now))
-                    .replaceFirstChar { it.uppercase() },
-                fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp, color = ink.copy(alpha = 0.8f),
-            )
         }
 
         // The desktop grid. Long-press empty → settings. A downward swipe
@@ -288,8 +294,12 @@ fun VpnkaSmartDeskScreen(
                 },
         ) {
             val density = LocalDensity.current
-            val cellDp = 88.dp
-            val cellPx = with(density) { cellDp.toPx() }
+            // Non-square cells: width keeps all 4 columns on-screen, height is
+            // taller so each row has more room (fits one row fewer — fine).
+            val cellW = 88.dp
+            val cellH = 106.dp
+            val cellWPx = with(density) { cellW.toPx() }
+            val cellHPx = with(density) { cellH.toPx() }
 
             order.forEach { (app, cell) ->
                 key(app.id) {
@@ -297,8 +307,8 @@ fun VpnkaSmartDeskScreen(
                 var dragging by remember { mutableStateOf(false) }
                 val col = cell % COLUMNS
                 val row = cell / COLUMNS
-                val baseX = col * cellPx
-                val baseY = row * cellPx
+                val baseX = col * cellWPx
+                val baseY = row * cellHPx
 
                 Box(
                     modifier = Modifier
@@ -309,7 +319,7 @@ fun VpnkaSmartDeskScreen(
                             )
                         }
                         .zIndex(if (dragging) 1f else 0f)
-                        .size(cellDp)
+                        .size(cellW, cellH)
                         .pointerInput(app.id) {
                             detectTapGestures(
                                 onTap = { openApp = app },
@@ -325,9 +335,9 @@ fun VpnkaSmartDeskScreen(
                                 },
                                 onDragEnd = {
                                     // Snap to the nearest cell; if occupied, swap.
-                                    val newCol = ((baseX + drag.x) / cellPx).roundToInt()
+                                    val newCol = ((baseX + drag.x) / cellWPx).roundToInt()
                                         .coerceIn(0, COLUMNS - 1)
-                                    val newRow = ((baseY + drag.y) / cellPx).roundToInt()
+                                    val newRow = ((baseY + drag.y) / cellHPx).roundToInt()
                                         .coerceAtLeast(0)
                                     val target = newRow * COLUMNS + newCol
                                     val idx = order.indexOfFirst { it.first.id == app.id }
@@ -362,9 +372,10 @@ fun VpnkaSmartDeskScreen(
                             fontFamily = VpnkaFonts.manrope600,
                             fontSize = 12.sp,
                             color = ink,
-                            maxLines = 1,
+                            maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                             textAlign = TextAlign.Center,
+                            lineHeight = 14.sp,
                         )
                     }
 
@@ -650,7 +661,7 @@ private fun DesktopSettingsSheet(
             }
 
             Spacer(Modifier.height(18.dp))
-            Text("Сообщения", fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp, color = VpnkaColors.TextMuted)
+            Text("VPNka мессенджер", fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp, color = VpnkaColors.TextMuted)
             Spacer(Modifier.height(8.dp))
             Text(
                 "Ваш ник: " + Messenger.myHandle().let { if (it.isNotEmpty()) "@$it" else "—" },

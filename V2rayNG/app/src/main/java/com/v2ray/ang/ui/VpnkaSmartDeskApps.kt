@@ -1,9 +1,17 @@
 package com.v2ray.ang.ui
 
 import android.annotation.SuppressLint
+import android.content.Context
+import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,6 +19,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -69,7 +78,11 @@ fun VpnkaSmartDeskAppScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(VpnkaColors.BgOffMid),
+            .background(VpnkaColors.BgOffMid)
+            // Keep the app bar (icon + title) and bottom bar clear of the
+            // system status/navigation bars — the host owns this inset so the
+            // apps inside don't each have to.
+            .systemBarsPadding(),
     ) {
         SmartDeskAppBar(appId = appId, title = appLabel, glyph = appGlyph, online = online)
         // Sync on open (through the VPN) and after every edit; syncTick keys
@@ -90,6 +103,7 @@ fun VpnkaSmartDeskAppScreen(
                 "browser" -> BrowserApp()
                 "messages" -> VpnkaMessengerApp()
                 "store" -> VpnkaStoreApp()
+                "help" -> HelpApp()
                 else -> EmptyHint("Приложение недоступно")
             }
         }
@@ -599,6 +613,69 @@ private fun EmptyHint(text: String) {
     }
 }
 
+/** «Помощь» — a short, persuasive privacy pitch for SmartDesk. */
+@Composable
+private fun HelpApp() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 18.dp, vertical = 16.dp),
+    ) {
+        Text("🛡️", fontSize = 40.sp)
+        Spacer(Modifier.height(8.dp))
+        Text("SmartDesk", fontFamily = VpnkaFonts.nunito900, fontSize = 26.sp, color = VpnkaColors.TextStrong)
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Скрытый рабочий стол для тех, кому важна приватность. О нём знаете только вы — снаружи это обычное VPN-приложение.",
+            fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp, color = VpnkaColors.TextMuted,
+        )
+        Spacer(Modifier.height(18.dp))
+        HelpCard(
+            "🔐", "Шифрование на устройстве",
+            "Заметки, контакты, переписка шифруются прямо в телефоне, в защищённом контейнере. Ключи никогда не покидают устройство — у сервера их нет.",
+        )
+        HelpCard(
+            "☁️", "Сразу в облако",
+            "Данные мгновенно уходят в облако уже зашифрованными. Отобрали телефон — внутри пусто: расшифровать нечем.",
+        )
+        HelpCard(
+            "🧹", "Самоочистка",
+            "На самом телефоне ничего не оседает: после синхронизации локальная копия стирается. Остаётся лишь зашифрованный контейнер, который без вашего ключа — просто шум.",
+        )
+        HelpCard(
+            "🕶️", "Только для своих",
+            "Раздел не виден посторонним и не оставляет следов. Весь трафик идёт через наш VPN — ни провайдер, ни кто-либо ещё не видит, чем вы пользуетесь.",
+        )
+        Spacer(Modifier.height(12.dp))
+        Text(
+            "Приватность здесь — не галочка в настройках, а то, как всё устроено с самого начала.",
+            fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp, color = VpnkaColors.Accent,
+        )
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun HelpCard(glyph: String, title: String, body: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(VpnkaColors.CardServer)
+            .padding(16.dp),
+    ) {
+        Text(glyph, fontSize = 26.sp)
+        Spacer(Modifier.width(14.dp))
+        Column {
+            Text(title, fontFamily = VpnkaFonts.nunito800, fontSize = 15.sp, color = VpnkaColors.TextStrong)
+            Spacer(Modifier.height(3.dp))
+            Text(body, fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp, color = VpnkaColors.TextMuted)
+        }
+    }
+}
+
 @Composable
 private fun EditorDialog(
     heading: String,
@@ -661,7 +738,43 @@ private fun DeskField(label: String, value: String, minLines: Int = 1, onChange:
  * requirement. The screen is also gated on the VPN being up for a clear message
  * rather than a raw error.
  */
+/** One browser tab: a live WebView plus the reactive state the chrome reads. */
 @SuppressLint("SetJavaScriptEnabled")
+private class BrowserTab(context: Context, val id: Int, startUrl: String) {
+    val url = mutableStateOf(startUrl)
+    val title = mutableStateOf("")
+    val progress = mutableStateOf(0)
+    val canBack = mutableStateOf(false)
+    val canFwd = mutableStateOf(false)
+    val webView: WebView = WebView(context).apply {
+        settings.javaScriptEnabled = true
+        settings.domStorageEnabled = true
+        settings.useWideViewPort = true
+        settings.loadWithOverviewMode = true
+        settings.builtInZoomControls = true
+        settings.displayZoomControls = false
+        webViewClient = object : WebViewClient() {
+            override fun onPageStarted(view: WebView?, u: String?, favicon: android.graphics.Bitmap?) {
+                u?.let { url.value = it }; canBack.value = canGoBack(); canFwd.value = canGoForward()
+            }
+            override fun onPageFinished(view: WebView?, u: String?) {
+                u?.let { url.value = it }; canBack.value = canGoBack(); canFwd.value = canGoForward()
+            }
+        }
+        webChromeClient = object : WebChromeClient() {
+            override fun onProgressChanged(view: WebView?, p: Int) { progress.value = p }
+            override fun onReceivedTitle(view: WebView?, t: String?) { if (!t.isNullOrBlank()) title.value = t }
+        }
+        loadUrl(startUrl)
+    }
+    fun go(input: String) = webView.loadUrl(normalizeUrl(input))
+}
+
+/** Bare domain («example.com») for the omnibox. */
+private fun domainOf(url: String): String = try {
+    (android.net.Uri.parse(url).host ?: url).removePrefix("www.")
+} catch (e: Exception) { url }
+
 @Composable
 private fun BrowserApp() {
     val connected = VpnkaColors.connected
@@ -682,6 +795,28 @@ private fun BrowserApp() {
                     fontFamily = VpnkaFonts.manrope600,
                     fontSize = 14.sp,
                     color = VpnkaColors.TextMuted,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+            }
+        }
+        return
+    }
+
+    // Fail-closed: if this device's WebView can't be forced through our proxy,
+    // do NOT open a browser at all — otherwise traffic would egress directly,
+    // breaking the «only through VPN» guarantee.
+    val proxyOk = remember { WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE) }
+    if (!proxyOk) {
+        Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("🔒", fontSize = 44.sp)
+                Spacer(Modifier.height(12.dp))
+                Text("Браузер недоступен на этом устройстве", fontFamily = VpnkaFonts.nunito800,
+                    fontSize = 17.sp, color = VpnkaColors.TextStrong)
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Обновите «Android System WebView» в Google Play. Без него мы не можем гарантировать, что трафик идёт только через VPN.",
+                    fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp, color = VpnkaColors.TextMuted,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 )
             }
@@ -712,46 +847,131 @@ private fun BrowserApp() {
         }
     }
 
-    val webView = remember {
-        WebView(context).apply {
-            settings.javaScriptEnabled = true
-            settings.domStorageEnabled = true
-            webViewClient = WebViewClient()
-            loadUrl("https://duckduckgo.com/")
-        }
+    val home = "https://duckduckgo.com/"
+    val tabs = remember { mutableStateListOf(BrowserTab(context, 0, home)) }
+    var nextId by remember { mutableIntStateOf(1) }
+    var activeId by remember { mutableIntStateOf(0) }
+    val active = tabs.firstOrNull { it.id == activeId } ?: tabs.first()
+    var editing by remember { mutableStateOf(false) }
+    var omni by remember { mutableStateOf("") }
+    var showTabs by remember { mutableStateOf(false) }
+    var menuOpen by remember { mutableStateOf(false) }
+
+    fun openTab(u: String) { tabs.add(BrowserTab(context, nextId, u)); activeId = nextId; nextId++; showTabs = false }
+    fun closeTab(t: BrowserTab) {
+        val i = tabs.indexOf(t); tabs.remove(t)
+        if (tabs.isEmpty()) { tabs.add(BrowserTab(context, nextId, home)); activeId = nextId; nextId++ }
+        else if (activeId == t.id) activeId = tabs[i.coerceAtMost(tabs.lastIndex)].id
+        // Halt the closed tab so it stops running JS/media/network in the bg.
+        runCatching { t.webView.loadUrl("about:blank"); t.webView.onPause() }
     }
-    var address by remember { mutableStateOf("https://duckduckgo.com/") }
+
+    // Leaving the browser: pause every tab so nothing keeps running after exit.
+    DisposableEffect(Unit) {
+        onDispose { tabs.forEach { runCatching { it.webView.onPause(); it.webView.loadUrl("about:blank") } } }
+    }
 
     Column(modifier = Modifier.fillMaxSize()) {
+        // Chrome-style top bar: omnibox (lock + domain) · tab count · menu.
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = "‹",
-                fontSize = 22.sp,
-                color = VpnkaColors.TextStrong,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(10.dp))
-                    .clickable { if (webView.canGoBack()) webView.goBack() }
-                    .padding(horizontal = 10.dp, vertical = 4.dp),
-            )
-            Box(modifier = Modifier.weight(1f)) {
-                DeskField("Адрес или запрос", address) { address = it }
+            Row(
+                modifier = Modifier.weight(1f).clip(RoundedCornerShape(22.dp))
+                    .background(VpnkaColors.CardServer)
+                    .clickable { omni = active.url.value; editing = true }
+                    .padding(horizontal = 14.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("🔒", fontSize = 12.sp)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = domainOf(active.url.value),
+                    fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp, color = VpnkaColors.TextStrong,
+                    maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                )
             }
-            Text(
-                text = "→",
-                fontSize = 22.sp,
-                color = VpnkaColors.Accent,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(10.dp))
-                    .clickable { webView.loadUrl(normalizeUrl(address)) }
-                    .padding(horizontal = 10.dp, vertical = 4.dp),
-            )
+            Spacer(Modifier.width(6.dp))
+            Box(
+                modifier = Modifier.size(30.dp).clip(RoundedCornerShape(7.dp))
+                    .background(VpnkaColors.CardServer).clickable { showTabs = true },
+                contentAlignment = Alignment.Center,
+            ) { Text("${tabs.size}", fontFamily = VpnkaFonts.nunito800, fontSize = 13.sp, color = VpnkaColors.TextStrong) }
+            Spacer(Modifier.width(2.dp))
+            Box {
+                Text("⋮", fontSize = 22.sp, color = VpnkaColors.TextStrong,
+                    modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { menuOpen = true }.padding(horizontal = 8.dp, vertical = 2.dp))
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    DropdownMenuItem(text = { Text("← Назад") }, enabled = active.canBack.value, onClick = { menuOpen = false; active.webView.goBack() })
+                    DropdownMenuItem(text = { Text("→ Вперёд") }, enabled = active.canFwd.value, onClick = { menuOpen = false; active.webView.goForward() })
+                    DropdownMenuItem(text = { Text("⟳ Обновить") }, onClick = { menuOpen = false; active.webView.reload() })
+                    DropdownMenuItem(text = { Text("＋ Новая вкладка") }, onClick = { menuOpen = false; openTab(home) })
+                    DropdownMenuItem(text = { Text("🏠 Домой") }, onClick = { menuOpen = false; active.webView.loadUrl(home) })
+                }
+            }
         }
-        AndroidView(
-            factory = { webView },
-            modifier = Modifier.fillMaxSize().weight(1f),
+        // Thin load progress under the bar (custom — no version-sensitive widget).
+        if (active.progress.value in 1..99) {
+            Box(modifier = Modifier.fillMaxWidth(active.progress.value / 100f).height(2.5.dp).background(VpnkaColors.Accent))
+        }
+        // Active tab's WebView. key() gives a fresh host on tab switch so the
+        // (detached) WebView re-attaches here without a double-parent crash.
+        Box(modifier = Modifier.fillMaxSize().weight(1f)) {
+            key(active.id) {
+                AndroidView(
+                    factory = {
+                        (active.webView.parent as? android.view.ViewGroup)?.removeView(active.webView)
+                        active.webView
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+    }
+
+    if (editing) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { editing = false },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { active.go(omni); editing = false }) { Text("Открыть") } },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { editing = false }) { Text("Отмена") } },
+            title = { Text("Адрес или поиск", fontFamily = VpnkaFonts.nunito800, color = VpnkaColors.TextStrong) },
+            text = { DeskField("Адрес или запрос", omni) { omni = it } },
+            containerColor = VpnkaColors.BgOffCentre,
+        )
+    }
+
+    if (showTabs) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showTabs = false },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { openTab(home) }) { Text("＋ Новая") } },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { showTabs = false }) { Text("Закрыть") } },
+            title = { Text("Вкладки · ${tabs.size}", fontFamily = VpnkaFonts.nunito800, color = VpnkaColors.TextStrong) },
+            text = {
+                LazyColumn {
+                    items(tabs, key = { it.id }) { t ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (t.id == activeId) VpnkaColors.Accent.copy(alpha = 0.18f) else VpnkaColors.CardServer)
+                                .clickable { activeId = t.id; showTabs = false }.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(t.title.value.ifBlank { domainOf(t.url.value) }, fontFamily = VpnkaFonts.nunito800,
+                                    fontSize = 14.sp, color = VpnkaColors.TextStrong, maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                Text(domainOf(t.url.value), fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp,
+                                    color = VpnkaColors.TextMuted, maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                            }
+                            Text("✕", fontSize = 16.sp, color = VpnkaColors.TextMuted,
+                                modifier = Modifier.clickable { closeTab(t) }.padding(start = 8.dp))
+                        }
+                    }
+                }
+            },
+            containerColor = VpnkaColors.BgOffCentre,
         )
     }
 }

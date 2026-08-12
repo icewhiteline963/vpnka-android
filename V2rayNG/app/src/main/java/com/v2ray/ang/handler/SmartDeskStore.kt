@@ -115,6 +115,17 @@ object SmartDeskStore {
     fun pending(): List<Change> = readChanges()
     fun clearPending() { store.remove(KEY_PENDING) }
 
+    /** Maximum-privacy self-wipe. After a confirmed sync (queue empty, so nothing
+     *  is lost) the local records are erased and the cursor reset, so the next
+     *  open re-pulls everything from the encrypted server. Between sessions the
+     *  phone holds no SmartDesk data at all — not even ciphertext. */
+    fun wipeLocal() {
+        store.remove(KEY_CALENDAR)
+        store.remove(KEY_CONTACTS)
+        store.remove(KEY_MAIL)
+        setCursor(0)
+    }
+
     private fun readChanges(): List<Change> {
         val json = store.decodeString(KEY_PENDING) ?: return emptyList()
         return try {

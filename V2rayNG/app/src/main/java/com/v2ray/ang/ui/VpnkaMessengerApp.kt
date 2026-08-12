@@ -2,6 +2,8 @@ package com.v2ray.ang.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,7 +16,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -88,6 +89,7 @@ fun VpnkaMessengerApp() {
     var tick by remember { mutableIntStateOf(0) }
     var openId by remember { mutableStateOf<Long?>(null) }
     var handle by remember { mutableStateOf(Messenger.myHandle()) }
+    var showMyProfile by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<Messenger.Found>>(emptyList()) }
     var channelResults by remember { mutableStateOf<List<Channels.Channel>>(emptyList()) }
@@ -146,6 +148,11 @@ fun VpnkaMessengerApp() {
 
     val contacts = remember(tick) { Messenger.contacts() }
 
+    if (showMyProfile) {
+        MyProfileScreen(handle = handle, onBack = { showMyProfile = false })
+        return
+    }
+
     openChannel?.let { ch ->
         ChannelScreen(channel = ch, onBack = { openChannel = null; tick++ })
         return
@@ -160,18 +167,26 @@ fun VpnkaMessengerApp() {
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
+    Column(modifier = Modifier.fillMaxSize()) {
         // Current user's @handle up top.
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            MsgAvatar(if (handle.isBlank()) "?" else handle, size = 36)
-            Spacer(Modifier.width(10.dp))
-            Text(
-                text = if (handle.isBlank()) "…" else "@$handle",
-                fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.TextStrong,
-            )
+            // Tap your own name/avatar → your profile (nick, key, settings).
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clip(RoundedCornerShape(14.dp))
+                    .clickable { showMyProfile = true }
+                    .padding(end = 8.dp, top = 2.dp, bottom = 2.dp),
+            ) {
+                MsgAvatar(if (handle.isBlank()) "?" else handle, size = 36)
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text = if (handle.isBlank()) "…" else "@$handle",
+                    fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.TextStrong,
+                )
+            }
             Spacer(Modifier.weight(1f))
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -341,7 +356,7 @@ private fun ChannelScreen(channel: Channels.Channel, onBack: () -> Unit) {
         if (subscribed) posts = Channels.feed(channel.id)
     }
 
-    Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
+    Column(modifier = Modifier.fillMaxSize()) {
         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("‹", fontSize = 24.sp, color = VpnkaColors.TextStrong,
                 modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onBack).padding(horizontal = 8.dp, vertical = 4.dp))
@@ -464,7 +479,7 @@ private fun ChatScreen(
         return
     }
 
-    Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
+    Column(modifier = Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -604,10 +619,77 @@ private fun keyFingerprint(pubKey: String): String = try {
     h.take(8).joinToString(" ") { "%02X".format(it) }
 } catch (e: Exception) { "—" }
 
+/** «Мой профиль» — your own identity, encryption key and messenger settings.
+ *  Opened by tapping your @handle on the chat list. */
+@Composable
+private fun MyProfileScreen(handle: String, onBack: () -> Unit) {
+    val myKey = remember { Messenger.myPublicKey() }
+    Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("‹", fontSize = 24.sp, color = VpnkaColors.TextStrong,
+                modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onBack).padding(horizontal = 8.dp, vertical = 4.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Мой профиль", fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.TextStrong)
+        }
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            MsgAvatar(if (handle.isBlank()) "?" else handle, size = 96)
+            Spacer(Modifier.height(12.dp))
+            Text(if (handle.isBlank()) "…" else "@$handle", fontFamily = VpnkaFonts.nunito800, fontSize = 22.sp, color = VpnkaColors.TextStrong)
+            Spacer(Modifier.height(2.dp))
+            Text("Ваш постоянный ник в мессенджере", fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp, color = VpnkaColors.TextMuted)
+        }
+        Spacer(Modifier.height(14.dp))
+        ProfileCard("🔒 Безопасность") {
+            Text("Отпечаток вашего ключа шифрования", fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp, color = VpnkaColors.TextMuted)
+            Spacer(Modifier.height(4.dp))
+            Text(keyFingerprint(myKey), fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.Accent)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Переписка шифруется прямо на вашем устройстве. Сервер видит только зашифрованные пакеты — ни сообщений, ни ключей у него нет.",
+                fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp, color = VpnkaColors.TextMuted,
+            )
+        }
+        ProfileCard("⚙️ Настройки") {
+            MyProfileToggle("Уведомлять о новых сообщениях", "notify")
+            MyProfileToggle("Отправлять «печатает…»", "typing")
+            MyProfileToggle("Отправлять отметку о прочтении", "read")
+        }
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun ProfileCard(title: String, content: @Composable () -> Unit) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(16.dp)).background(VpnkaColors.CardServer).padding(16.dp),
+    ) {
+        Text(title, fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp, color = VpnkaColors.TextStrong)
+        Spacer(Modifier.height(10.dp))
+        content()
+    }
+}
+
+@Composable
+private fun MyProfileToggle(label: String, key: String) {
+    var on by remember { mutableStateOf(Messenger.setting(key, true)) }
+    Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp,
+            color = VpnkaColors.TextStrong, modifier = Modifier.weight(1f))
+        androidx.compose.material3.Switch(checked = on, onCheckedChange = { on = it; Messenger.setSetting(key, it) })
+    }
+}
+
 /** Contact profile: avatar, name, and the E2E key fingerprint. */
 @Composable
 private fun ContactProfileScreen(contact: Messenger.Contact, onBack: () -> Unit) {
-    Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
+    Column(modifier = Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
