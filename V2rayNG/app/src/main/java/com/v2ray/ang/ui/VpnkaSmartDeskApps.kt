@@ -755,15 +755,15 @@ private class BrowserTab(context: Context, val id: Int, startUrl: String) {
         settings.displayZoomControls = false
         webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView?, u: String?, favicon: android.graphics.Bitmap?) {
-                u?.let { url.value = it }; canBack.value = canGoBack(); canFwd.value = canGoForward()
+                u?.let { this@BrowserTab.url.value = it }; this@BrowserTab.canBack.value = canGoBack(); this@BrowserTab.canFwd.value = canGoForward()
             }
             override fun onPageFinished(view: WebView?, u: String?) {
-                u?.let { url.value = it }; canBack.value = canGoBack(); canFwd.value = canGoForward()
+                u?.let { this@BrowserTab.url.value = it }; this@BrowserTab.canBack.value = canGoBack(); this@BrowserTab.canFwd.value = canGoForward()
             }
         }
         webChromeClient = object : WebChromeClient() {
-            override fun onProgressChanged(view: WebView?, p: Int) { progress.value = p }
-            override fun onReceivedTitle(view: WebView?, t: String?) { if (!t.isNullOrBlank()) title.value = t }
+            override fun onProgressChanged(view: WebView?, p: Int) { this@BrowserTab.progress.value = p }
+            override fun onReceivedTitle(view: WebView?, t: String?) { if (!t.isNullOrBlank()) this@BrowserTab.title.value = t }
         }
         loadUrl(startUrl)
     }
