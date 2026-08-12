@@ -14,9 +14,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalTextStyle
@@ -158,7 +160,7 @@ fun VpnkaMessengerApp() {
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
         // Current user's @handle up top.
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
@@ -339,7 +341,7 @@ private fun ChannelScreen(channel: Channels.Channel, onBack: () -> Unit) {
         if (subscribed) posts = Channels.feed(channel.id)
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
         Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("‹", fontSize = 24.sp, color = VpnkaColors.TextStrong,
                 modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onBack).padding(horizontal = 8.dp, vertical = 4.dp))
@@ -429,6 +431,14 @@ private fun ChatScreen(
     val receipt = remember(tick, contact.id) { Messenger.receiptFor(contact.id) }
     // null = no photo being sent; 0..100 = upload progress; -1 = failed.
     var sendPct by remember { mutableStateOf<Int?>(null) }
+    val listState = rememberLazyListState()
+    var showProfile by remember { mutableStateOf(false) }
+    // Follow the conversation: when a message is sent OR arrives (msgs grows),
+    // and while a photo uploads, keep the newest row on screen.
+    LaunchedEffect(msgs.size, sendPct) {
+        val total = msgs.size + (if (sendPct != null) 1 else 0)
+        if (total > 0) listState.animateScrollToItem(total - 1)
+    }
 
     // Opening the chat (and each new incoming message) marks it read (✓✓).
     LaunchedEffect(tick, contact.id) {
@@ -449,7 +459,12 @@ private fun ChatScreen(
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    if (showProfile) {
+        ContactProfileScreen(contact = contact, onBack = { showProfile = false })
+        return
+    }
+
+    Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -459,14 +474,16 @@ private fun ChatScreen(
             Spacer(Modifier.width(4.dp))
             MsgAvatar(contact.name)
             Spacer(Modifier.width(10.dp))
-            Column {
+            // Tapping the name (or the "typing…" line under it) opens the
+            // contact's profile with the E2E key fingerprint.
+            Column(modifier = Modifier.clickable { showProfile = true }) {
                 Text(contact.name, fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.TextStrong)
                 if (typing) {
                     Text("печатает…", fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp, color = VpnkaColors.Accent)
                 }
             }
         }
-        LazyColumn(modifier = Modifier.fillMaxSize().weight(1f).padding(horizontal = 12.dp)) {
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize().weight(1f).padding(horizontal = 12.dp)) {
             // Outgoing messages all carry id=0 and can share a millisecond, so
             // the list index guarantees a unique key (Compose crashes on dupes).
             itemsIndexed(msgs, key = { i, m -> "$i:${m.id}:${m.ts}" }) { _, m ->
@@ -575,6 +592,52 @@ private fun ChatScreen(
                     },
                 contentAlignment = Alignment.Center,
             ) { Text("➤", fontSize = 20.sp, color = Color.White) }
+        }
+    }
+}
+
+/** Short, human-readable fingerprint of a contact's public key (first 8
+ *  bytes of its SHA-256, hex). Two people compare it to be sure no one
+ *  substituted the key — the safety-number idea, kept compact. */
+private fun keyFingerprint(pubKey: String): String = try {
+    val h = java.security.MessageDigest.getInstance("SHA-256").digest(pubKey.toByteArray())
+    h.take(8).joinToString(" ") { "%02X".format(it) }
+} catch (e: Exception) { "—" }
+
+/** Contact profile: avatar, name, and the E2E key fingerprint. */
+@Composable
+private fun ContactProfileScreen(contact: Messenger.Contact, onBack: () -> Unit) {
+    Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("‹", fontSize = 24.sp, color = VpnkaColors.TextStrong,
+                modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onBack).padding(horizontal = 8.dp, vertical = 4.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Профиль", fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.TextStrong)
+        }
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            MsgAvatar(contact.name, size = 96)
+            Spacer(Modifier.height(14.dp))
+            Text(contact.name, fontFamily = VpnkaFonts.nunito800, fontSize = 22.sp, color = VpnkaColors.TextStrong)
+            Spacer(Modifier.height(24.dp))
+            Column(
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
+                    .background(VpnkaColors.CardServer).padding(16.dp),
+            ) {
+                Text("🔒 Ключ шифрования", fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp, color = VpnkaColors.TextStrong)
+                Spacer(Modifier.height(8.dp))
+                Text(keyFingerprint(contact.pubKey), fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.Accent)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Если этот код совпадает у вас и у собеседника — переписку никто не подменил.",
+                    fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp, color = VpnkaColors.TextMuted,
+                )
+            }
         }
     }
 }

@@ -148,6 +148,7 @@ fun VpnkaConnectScreen(
     activeDaysLeft: Int?,
     activeDevicesUsed: Int?,
     activeDevicesLimit: Int?,
+    telegramLinked: Boolean,
 ) {
     val accent by animateColorAsState(
         targetValue = if (isRunning) VpnkaColors.Green else VpnkaColors.Accent,
@@ -240,6 +241,7 @@ fun VpnkaConnectScreen(
                     // rather than floating above the button.
                     status = if (isRunning) "ЗАЩИЩЕНО" else "НЕ ЗАЩИЩЕНО",
                     statusColor = accent,
+                    telegramLinked = telegramLinked,
                 )
 
                 Text(
@@ -435,11 +437,16 @@ private fun VpnkaHeader(
     topPadding: Dp,
     status: String,
     statusColor: Color,
+    telegramLinked: Boolean,
 ) {
+    // Remind an unlinked user to sign in — shown on each launch, points at
+    // the profile button (top-left), dismissible.
+    var showAuthTip by remember { mutableStateOf(true) }
+    Column(modifier = Modifier.fillMaxWidth().padding(top = topPadding)) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 20.dp, end = 20.dp, top = topPadding),
+            .padding(start = 20.dp, end = 20.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // Only the account, nothing else. The plan moved down to its own row
@@ -492,6 +499,51 @@ private fun VpnkaHeader(
                 )
             }
         }
+    }
+        if (!telegramLinked && showAuthTip) {
+            AuthReminderCallout(
+                onOpen = { showAuthTip = false; onOpenProfile() },
+                onDismiss = { showAuthTip = false },
+            )
+        }
+    }
+}
+
+/** Speech-bubble under the profile button nudging an unlinked user to sign
+ *  in via Telegram. Tapping it opens the profile; the ✕ dismisses it. */
+@Composable
+private fun AuthReminderCallout(onOpen: () -> Unit, onDismiss: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .padding(start = 20.dp, end = 20.dp, top = 10.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(VpnkaColors.Accent)
+            .clickable(onClick = onOpen)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("☝", fontSize = 18.sp)
+        Spacer(Modifier.width(8.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Войдите через Telegram",
+                fontFamily = VpnkaFonts.nunito800,
+                fontSize = 14.sp,
+                color = Color.White,
+            )
+            Text(
+                text = "Нажмите на кнопку профиля слева, чтобы привязать аккаунт",
+                fontFamily = VpnkaFonts.manrope600,
+                fontSize = 12.sp,
+                color = Color.White.copy(alpha = 0.9f),
+            )
+        }
+        Text(
+            text = "✕",
+            fontSize = 14.sp,
+            color = Color.White.copy(alpha = 0.85f),
+            modifier = Modifier.clickable(onClick = onDismiss).padding(6.dp),
+        )
     }
 }
 
