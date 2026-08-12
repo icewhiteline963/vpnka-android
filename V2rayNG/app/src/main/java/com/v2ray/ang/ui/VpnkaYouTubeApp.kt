@@ -35,6 +35,26 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import android.Manifest
+import android.app.Activity
+import android.content.Context
+import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
+import android.os.Build
+import android.view.ViewGroup
+import android.widget.Toast
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -215,6 +235,8 @@ private fun VideoRow(v: YouTubeService.Video, onClick: () -> Unit) {
 @Composable
 private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit) {
     val context = LocalContext.current
+    val activity = context as? Activity
+    val scope = rememberCoroutineScope()
     val port = remember { SettingsManager.getHttpPort() }
     val player = remember(pb.streamUrl) {
         val ok = OkHttpClient.Builder()
@@ -230,25 +252,163 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
     }
     DisposableEffect(player) { onDispose { player.release() } }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("‹", fontSize = 24.sp, color = VpnkaColors.TextStrong,
-                modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onBack)
-                    .padding(horizontal = 8.dp, vertical = 4.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("YouTube", fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.TextStrong)
+    var fullscreen by remember { mutableStateOf(false) }
+    var qualities by remember { mutableStateOf<List<YouTubeService.DownloadOption>?>(null) }
+    var loadingQ by remember { mutableStateOf(false) }
+    // Held while we wait for a storage-permission grant on pre-Android-10.
+    var pendingDownload by remember { mutableStateOf<YouTubeService.DownloadOption?>(null) }
+
+    // One PlayerView, re-parented between the inline slot and the fullscreen
+    // Dialog so playback survives the switch (same trick as the browser WebView).
+    val playerView = remember {
+        PlayerView(context).apply {
+            this.player = player
+            useController = true
+            setFullscreenButtonClickListener { fullscreen = !fullscreen }
         }
-        AndroidView(
-            factory = { ctx -> PlayerView(ctx).apply { this.player = player; useController = true } },
-            modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black),
-        )
-        Text(
-            pb.title,
-            fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.TextStrong,
-            modifier = Modifier.fillMaxWidth().padding(14.dp),
+    }
+    val attach: (Context) -> PlayerView = {
+        (playerView.parent as? ViewGroup)?.removeView(playerView)
+        playerView
+    }
+
+    // Landscape while fullscreen; MainActivity declares configChanges so this
+    // rotation does NOT recreate the activity (which would kill the player).
+    DisposableEffect(fullscreen) {
+        activity?.requestedOrientation =
+            if (fullscreen) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        onDispose {}
+    }
+    DisposableEffect(Unit) {
+        onDispose { activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
+    }
+
+    fun runDownload(opt: YouTubeService.DownloadOption) {
+        qualities = null
+        Toast.makeText(context, "Скачивание ${opt.label}…", Toast.LENGTH_SHORT).show()
+        scope.launch {
+            val r = withContext(Dispatchers.IO) { runCatching { YouTubeService.download(context, opt, pb.title) } }
+            r.onSuccess { Toast.makeText(context, "Сохранено в «Загрузки»: $it", Toast.LENGTH_LONG).show() }
+                .onFailure { Toast.makeText(context, "Не удалось скачать: ${it.message}", Toast.LENGTH_LONG).show() }
+        }
+    }
+
+    val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val opt = pendingDownload
+        pendingDownload = null
+        if (granted && opt != null) runDownload(opt)
+        else if (!granted) Toast.makeText(context, "Без доступа к хранилищу скачивание невозможно", Toast.LENGTH_LONG).show()
+    }
+
+    fun onPickQuality(opt: YouTubeService.DownloadOption) {
+        // API 29+ writes via MediaStore without any permission.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            runDownload(opt)
+        } else {
+            pendingDownload = opt
+            qualities = null
+            permLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        }
+    }
+
+    if (fullscreen) {
+        Dialog(
+            onDismissRequest = { fullscreen = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+        ) {
+            val view = LocalView.current
+            DisposableEffect(Unit) {
+                val w = (view.parent as? DialogWindowProvider)?.window
+                if (w != null) {
+                    WindowCompat.setDecorFitsSystemWindows(w, false)
+                    val c = WindowCompat.getInsetsController(w, view)
+                    c.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                    c.hide(WindowInsetsCompat.Type.systemBars())
+                }
+                onDispose {}
+            }
+            Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+                AndroidView(
+                    factory = attach,
+                    update = { it.setFullscreenButtonState(true) },
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+    } else {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("‹", fontSize = 24.sp, color = VpnkaColors.TextStrong,
+                    modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onBack)
+                        .padding(horizontal = 8.dp, vertical = 4.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("YouTube", fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.TextStrong)
+            }
+            AndroidView(
+                factory = attach,
+                update = { it.setFullscreenButtonState(false) },
+                modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black),
+            )
+            Text(
+                pb.title,
+                fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.TextStrong,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+            )
+            Box(
+                modifier = Modifier.padding(horizontal = 14.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(VpnkaColors.CardServer)
+                    .clickable(enabled = !loadingQ) {
+                        loadingQ = true
+                        scope.launch {
+                            val r = withContext(Dispatchers.IO) { runCatching { YouTubeService.videoStreams(pb.pageUrl) } }
+                            loadingQ = false
+                            r.onSuccess {
+                                if (it.isEmpty()) Toast.makeText(context, "Нет форматов для скачивания", Toast.LENGTH_SHORT).show()
+                                else qualities = it
+                            }.onFailure { Toast.makeText(context, "Не удалось: ${it.message}", Toast.LENGTH_SHORT).show() }
+                        }
+                    }
+                    .padding(horizontal = 18.dp, vertical = 11.dp),
+            ) {
+                Text(
+                    if (loadingQ) "Загрузка форматов…" else "⬇  Скачать видео",
+                    fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp, color = VpnkaColors.TextStrong,
+                )
+            }
+        }
+    }
+
+    val opts = qualities
+    if (opts != null && opts.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { qualities = null },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { qualities = null }) { Text("Отмена") } },
+            title = { Text("Выберите качество", fontFamily = VpnkaFonts.nunito800, color = VpnkaColors.TextStrong) },
+            text = {
+                Column {
+                    opts.forEach { opt ->
+                        Box(
+                            modifier = Modifier.fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable { onPickQuality(opt) }
+                                .padding(vertical = 12.dp, horizontal = 6.dp),
+                        ) {
+                            Text("${opt.label}  ·  ${opt.ext.uppercase()}",
+                                color = VpnkaColors.TextStrong, fontFamily = VpnkaFonts.manrope600, fontSize = 15.sp)
+                        }
+                    }
+                }
+            },
+            containerColor = VpnkaColors.BgOffCentre,
         )
     }
 }

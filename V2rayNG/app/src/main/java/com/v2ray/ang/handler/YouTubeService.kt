@@ -1,7 +1,14 @@
 package com.v2ray.ang.handler
 
+import android.content.ContentValues
+import android.content.Context
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.io.File
+import java.io.IOException
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.downloader.Downloader
@@ -30,7 +37,10 @@ object YouTubeService {
         val thumb: String?,
     )
 
-    data class Playback(val title: String, val streamUrl: String)
+    data class Playback(val title: String, val streamUrl: String, val pageUrl: String)
+
+    /** A muxed (audio+video) progressive stream the user can save as one file. */
+    data class DownloadOption(val label: String, val url: String, val mime: String, val ext: String)
 
     @Volatile private var inited = false
 
@@ -81,8 +91,68 @@ object YouTubeService {
         val stream = si.videoStreams.firstOrNull { !it.isVideoOnly }
             ?: si.videoStreams.firstOrNull()
             ?: throw IllegalStateException("no playable stream")
-        return Playback(si.name, stream.content)
+        return Playback(si.name, stream.content, videoUrl)
     }
+
+    /** Muxed streams offered for download, best-first. Blocking — off main. */
+    fun videoStreams(videoUrl: String): List<DownloadOption> {
+        ensureInit()
+        val si = StreamInfo.getInfo(ServiceList.YouTube, videoUrl)
+        return si.videoStreams
+            .filter { !it.isVideoOnly && it.content.isNotBlank() }
+            .map {
+                DownloadOption(
+                    label = it.resolution ?: "видео",
+                    url = it.content,
+                    mime = it.format?.mimeType ?: "video/mp4",
+                    ext = it.format?.suffix ?: "mp4",
+                )
+            }
+            .distinctBy { it.label }
+    }
+
+    /** Streams the chosen quality to the public Downloads folder THROUGH the VPN
+     *  proxy. Blocking — off main. Returns the saved file name. */
+    fun download(context: Context, option: DownloadOption, title: String): String {
+        ensureInit()
+        val safe = title.replace(Regex("[^\\p{L}\\p{N} ._-]"), "_").trim().take(80).ifBlank { "video" }
+        val fileName = "$safe.${option.ext}"
+        val client = proxiedClient().newBuilder()
+            .readTimeout(0, TimeUnit.SECONDS)
+            .callTimeout(0, TimeUnit.SECONDS)
+            .build()
+        val req = okhttp3.Request.Builder()
+            .url(option.url)
+            .header("User-Agent", USER_AGENT_DESKTOP)
+            .build()
+        client.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) throw IOException("HTTP ${resp.code}")
+            val body = resp.body ?: throw IOException("empty body")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val values = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, fileName)
+                    put(MediaStore.Downloads.MIME_TYPE, option.mime)
+                    put(MediaStore.Downloads.IS_PENDING, 1)
+                }
+                val resolver = context.contentResolver
+                val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                    ?: throw IOException("insert failed")
+                resolver.openOutputStream(uri)?.use { out -> body.byteStream().copyTo(out) }
+                    ?: throw IOException("openOutputStream null")
+                values.clear()
+                values.put(MediaStore.Downloads.IS_PENDING, 0)
+                resolver.update(uri, values, null, null)
+            } else {
+                val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                if (!dir.exists()) dir.mkdirs()
+                File(dir, fileName).outputStream().use { out -> body.byteStream().copyTo(out) }
+            }
+        }
+        return fileName
+    }
+
+    const val USER_AGENT_DESKTOP =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
 }
 
 /** NewPipeExtractor Downloader backed by our proxied OkHttp client. */
