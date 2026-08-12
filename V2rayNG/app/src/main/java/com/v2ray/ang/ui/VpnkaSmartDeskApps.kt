@@ -3,8 +3,17 @@ package com.v2ray.ang.ui
 import android.annotation.SuppressLint
 import android.content.Context
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import com.v2ray.ang.handler.MmkvManager
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.key
@@ -20,6 +29,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -75,14 +88,18 @@ fun VpnkaSmartDeskAppScreen(
     onBack: () -> Unit,   // back to the SmartDesk desktop
     onExit: () -> Unit,   // out to the vpnka home screen
 ) {
+    Box(modifier = Modifier.fillMaxSize().background(VpnkaColors.BgOffMid)) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(VpnkaColors.BgOffMid)
             // Keep the app bar (icon + title) and bottom bar clear of the
             // system status/navigation bars — the host owns this inset so the
             // apps inside don't each have to.
-            .systemBarsPadding(),
+            .systemBarsPadding()
+            // Lift the whole app above the soft keyboard whenever any input
+            // (messenger, browser omnibox, YouTube search, editors) opens it,
+            // so the bottom controls are never hidden behind it.
+            .imePadding(),
     ) {
         SmartDeskAppBar(appId = appId, title = appLabel, glyph = appGlyph, online = online)
         // Sync on open (through the VPN) and after every edit; syncTick keys
@@ -101,6 +118,7 @@ fun VpnkaSmartDeskAppScreen(
                 "calendar" -> CalendarApp(syncTick, onChanged)
                 "contacts" -> ContactsApp(syncTick, onChanged)
                 "browser" -> BrowserApp()
+                "youtube" -> YouTubeApp()
                 "messages" -> VpnkaMessengerApp()
                 "store" -> VpnkaStoreApp()
                 "help" -> HelpApp()
@@ -108,6 +126,22 @@ fun VpnkaSmartDeskAppScreen(
             }
         }
         SmartDeskBottomBar(onBack = onBack, onExit = onExit)
+    }
+        SmartDeskStatusScrim()
+    }
+}
+
+/**
+ * Тёмная полоска за системным статус-баром Android. Белые иконки (часы,
+ * батарея, сеть) невидимы на светлом/жёлтом фоне SmartDesk, поэтому под них
+ * подкладываем тёмный скрим ровно в высоту статус-бара. Рисуется поверх
+ * контента, у самого верха экрана.
+ */
+@Composable
+fun SmartDeskStatusScrim() {
+    val h = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+    if (h > 0.dp) {
+        Box(modifier = Modifier.fillMaxWidth().height(h).background(Color(0xFF181B21)))
     }
 }
 
@@ -738,6 +772,58 @@ private fun DeskField(label: String, value: String, minLines: Int = 1, onChange:
  * requirement. The screen is also gated on the VPN being up for a clear message
  * rather than a raw error.
  */
+/** Lightweight ad/tracker blocker for the SmartDesk browser: drops WebView
+ *  resource requests to known ad/analytics domains (and their subdomains).
+ *  On by default; toggled from the browser menu. */
+private object AdBlocker {
+    private const val KEY = "vpnka_browser_adblock"
+    var enabled: Boolean
+        get() = MmkvManager.decodeSettingsString(KEY) != "0"
+        set(v) { MmkvManager.encodeSettings(KEY, if (v) "1" else "0") }
+
+    // Registrable domains of major ad / tracking networks — subdomains match too
+    // (we walk the host up to its registrable domain).
+    private val BLOCKED = setOf(
+        "doubleclick.net", "googlesyndication.com", "googleadservices.com",
+        "google-analytics.com", "googletagmanager.com", "googletagservices.com",
+        "adservice.google.com", "app-measurement.com", "admob.com",
+        "amazon-adsystem.com", "adnxs.com", "adsrvr.org", "rubiconproject.com",
+        "pubmatic.com", "openx.net", "criteo.com", "criteo.net", "taboola.com",
+        "outbrain.com", "scorecardresearch.com", "quantserve.com", "quantcount.com",
+        "moatads.com", "adform.net", "casalemedia.com", "smartadserver.com",
+        "yieldmo.com", "sharethrough.com", "teads.tv", "3lift.com", "bidswitch.net",
+        "serving-sys.com", "adroll.com", "bluekai.com", "demdex.net", "rlcdn.com",
+        "crwdcntrl.net", "agkn.com", "mathtag.com", "advertising.com", "adtechus.com",
+        "contextweb.com", "gumgum.com", "inmobi.com", "applovin.com",
+        "chartboost.com", "vungle.com", "connect.facebook.net", "ads-twitter.com",
+        "an.yandex.ru", "mc.yandex.ru", "yandexadexchange.net", "adfox.ru",
+        "ads.mail.ru", "rs.mail.ru", "top-fwz1.mail.ru", "ad.mail.ru", "ads.vk.com",
+        "hotjar.com", "mixpanel.com", "segment.com", "amplitude.com", "branch.io",
+        "appsflyer.com", "adjust.com", "kochava.com", "onesignal.com", "pushwoosh.com",
+        "flurry.com", "adcolony.com", "startapp.com", "mopub.com", "smaato.net",
+        "mgid.com", "propellerads.com", "popads.net", "exoclick.com", "juicyads.com",
+        "trafficjunky.net", "revcontent.com",
+    )
+
+    fun maybeBlock(url: String): WebResourceResponse? {
+        if (!enabled) return null
+        val host = try { android.net.Uri.parse(url).host?.lowercase() } catch (e: Exception) { null } ?: return null
+        var h = host
+        while (h.contains('.')) {
+            if (h in BLOCKED) return blank()
+            h = h.substringAfter('.')
+        }
+        // Path-based trackers on otherwise-legit hosts.
+        if (url.contains("facebook.com/tr") || url.contains("vk.com/rtrg")) return blank()
+        return null
+    }
+
+    // A fresh empty response per block — a WebResourceResponse's stream is
+    // single-use, so it can't be shared across requests.
+    private fun blank(): WebResourceResponse =
+        WebResourceResponse("text/plain", "utf-8", java.io.ByteArrayInputStream(ByteArray(0)))
+}
+
 /** One browser tab: a live WebView plus the reactive state the chrome reads. */
 @SuppressLint("SetJavaScriptEnabled")
 private class BrowserTab(context: Context, val id: Int, startUrl: String) {
@@ -759,6 +845,10 @@ private class BrowserTab(context: Context, val id: Int, startUrl: String) {
             }
             override fun onPageFinished(view: WebView?, u: String?) {
                 u?.let { this@BrowserTab.url.value = it }; this@BrowserTab.canBack.value = canGoBack(); this@BrowserTab.canFwd.value = canGoForward()
+            }
+            override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
+                val u = request?.url?.toString()
+                return (u?.let { AdBlocker.maybeBlock(it) }) ?: super.shouldInterceptRequest(view, request)
             }
         }
         webChromeClient = object : WebChromeClient() {
@@ -856,6 +946,7 @@ private fun BrowserApp() {
     var omni by remember { mutableStateOf("") }
     var showTabs by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
+    var adblock by remember { mutableStateOf(AdBlocker.enabled) }
 
     fun openTab(u: String) { tabs.add(BrowserTab(context, nextId, u)); activeId = nextId; nextId++; showTabs = false }
     fun closeTab(t: BrowserTab) {
@@ -877,20 +968,48 @@ private fun BrowserApp() {
             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                modifier = Modifier.weight(1f).clip(RoundedCornerShape(22.dp))
-                    .background(VpnkaColors.CardServer)
-                    .clickable { omni = active.url.value; editing = true }
-                    .padding(horizontal = 14.dp, vertical = 9.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("🔒", fontSize = 12.sp)
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = domainOf(active.url.value),
-                    fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp, color = VpnkaColors.TextStrong,
-                    maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            if (editing) {
+                val focus = remember { FocusRequester() }
+                var hadFocus by remember { mutableStateOf(false) }
+                LaunchedEffect(Unit) { focus.requestFocus() }
+                OutlinedTextField(
+                    value = omni,
+                    onValueChange = { omni = it },
+                    singleLine = true,
+                    leadingIcon = { Text("🔒", fontSize = 12.sp) },
+                    trailingIcon = {
+                        if (omni.isNotEmpty()) Text("✕", fontSize = 16.sp, color = VpnkaColors.TextMuted,
+                            modifier = Modifier.clickable { omni = "" }.padding(horizontal = 10.dp, vertical = 4.dp))
+                    },
+                    textStyle = LocalTextStyle.current.copy(color = VpnkaColors.TextStrong, fontSize = 15.sp),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+                    keyboardActions = KeyboardActions(onGo = { active.go(omni); editing = false }),
+                    shape = RoundedCornerShape(22.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = VpnkaColors.TextStrong, unfocusedTextColor = VpnkaColors.TextStrong,
+                        cursorColor = VpnkaColors.Accent, focusedBorderColor = VpnkaColors.Accent,
+                        unfocusedBorderColor = VpnkaColors.Accent,
+                    ),
+                    modifier = Modifier.weight(1f)
+                        .focusRequester(focus)
+                        .onFocusChanged { if (it.isFocused) hadFocus = true else if (hadFocus) editing = false },
                 )
+            } else {
+                Row(
+                    modifier = Modifier.weight(1f).clip(RoundedCornerShape(22.dp))
+                        .background(VpnkaColors.CardServer)
+                        .clickable { omni = active.url.value; editing = true }
+                        .padding(horizontal = 14.dp, vertical = 9.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("🔒", fontSize = 12.sp)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = domainOf(active.url.value),
+                        fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp, color = VpnkaColors.TextStrong,
+                        maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    )
+                }
             }
             Spacer(Modifier.width(6.dp))
             Box(
@@ -908,6 +1027,10 @@ private fun BrowserApp() {
                     DropdownMenuItem(text = { Text("⟳ Обновить") }, onClick = { menuOpen = false; active.webView.reload() })
                     DropdownMenuItem(text = { Text("＋ Новая вкладка") }, onClick = { menuOpen = false; openTab(home) })
                     DropdownMenuItem(text = { Text("🏠 Домой") }, onClick = { menuOpen = false; active.webView.loadUrl(home) })
+                    DropdownMenuItem(
+                        text = { Text(if (adblock) "🛡 Блокировка рекламы: вкл" else "🛡 Блокировка рекламы: выкл") },
+                        onClick = { menuOpen = false; AdBlocker.enabled = !adblock; adblock = !adblock; active.webView.reload() },
+                    )
                 }
             }
         }
@@ -928,17 +1051,6 @@ private fun BrowserApp() {
                 )
             }
         }
-    }
-
-    if (editing) {
-        androidx.compose.material3.AlertDialog(
-            onDismissRequest = { editing = false },
-            confirmButton = { androidx.compose.material3.TextButton(onClick = { active.go(omni); editing = false }) { Text("Открыть") } },
-            dismissButton = { androidx.compose.material3.TextButton(onClick = { editing = false }) { Text("Отмена") } },
-            title = { Text("Адрес или поиск", fontFamily = VpnkaFonts.nunito800, color = VpnkaColors.TextStrong) },
-            text = { DeskField("Адрес или запрос", omni) { omni = it } },
-            containerColor = VpnkaColors.BgOffCentre,
-        )
     }
 
     if (showTabs) {
