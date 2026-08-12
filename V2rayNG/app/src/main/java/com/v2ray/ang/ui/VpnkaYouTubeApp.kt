@@ -211,7 +211,7 @@ private fun VideoRow(v: YouTubeService.Video, onClick: () -> Unit) {
 // function without marking the function itself unstable (which would force every
 // caller to opt in too). Must be androidx.annotation.OptIn — UnstableApi is built
 // on androidx.annotation.RequiresOptIn, not kotlin.RequiresOptIn.
-@androidx.annotation.OptIn(markerClass = UnstableApi::class)
+@androidx.annotation.OptIn(markerClass = [UnstableApi::class])
 @Composable
 private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit) {
     val context = LocalContext.current
