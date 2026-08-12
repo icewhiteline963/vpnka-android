@@ -334,7 +334,6 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
             Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
                 AndroidView(
                     factory = attach,
-                    update = { it.setFullscreenButtonState(true) },
                     modifier = Modifier.fillMaxSize(),
                 )
             }
@@ -353,7 +352,6 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
             }
             AndroidView(
                 factory = attach,
-                update = { it.setFullscreenButtonState(false) },
                 modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black),
             )
             Text(
