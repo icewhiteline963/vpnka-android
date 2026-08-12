@@ -20,7 +20,7 @@ camerax = "1.6.1"
 composeBom = "2026.06.01"
 reorderable = "3.1.0"
 webkit = "1.11.0"
-newpipeExtractor = "v0.24.3"
+newpipeExtractor = "v0.26.4"
 media3 = "1.4.1"
 [libraries]
 androidx-webkit = { group = "androidx.webkit", name = "webkit", version.ref = "webkit" }

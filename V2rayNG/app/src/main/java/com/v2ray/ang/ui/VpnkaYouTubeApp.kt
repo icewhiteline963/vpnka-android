@@ -83,7 +83,7 @@ fun YouTubeApp() {
             loading = true; error = null
             val r = withContext(Dispatchers.IO) { runCatching { YouTubeService.search(q) } }
             r.onSuccess { results = it }
-                .onFailure { error = "Не удалось загрузить. Включён ли VPN?" }
+                .onFailure { error = "Не удалось загрузить: ${it.message ?: it.javaClass.simpleName}. Включён ли VPN?" }
             loading = false
         }
     }
@@ -93,7 +93,7 @@ fun YouTubeApp() {
             resolving = true; error = null
             val r = withContext(Dispatchers.IO) { runCatching { YouTubeService.resolve(video.url) } }
             r.onSuccess { playing = it }
-                .onFailure { error = "Видео недоступно" }
+                .onFailure { error = "Видео недоступно: ${it.message ?: it.javaClass.simpleName}" }
             resolving = false
         }
     }
