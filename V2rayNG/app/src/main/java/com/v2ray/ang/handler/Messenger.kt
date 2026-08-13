@@ -68,7 +68,7 @@ object Messenger {
     data class Contact(val id: Long, val name: String, val pubKey: String)
     data class Msg(
         val id: Long, val mine: Boolean, val text: String, val ts: Long,
-        val u: String = "", val k: String = "text", val img: String = "",
+        val u: String = "", val k: String = "text", val img: String = "", val dur: Int = 0,
     )
 
     // --- keys: the RSA identity now lives in the VAULT, shared across devices
@@ -440,9 +440,10 @@ object Messenger {
     private data class MsgPayload(
         val u: String = "", val k: String = "text", val t: String = "",
         val peer: Long = 0, val self: Boolean = false, val mid: Long = 0,
-        // media (k == "image"): the blob is fetched by `media` id and decrypted
-        // with `key` (AES-256 base64). Cross-platform envelope {iv,ct}.
-        val media: Long = 0, val key: String = "", val mime: String = "",
+        // media (k == "image"/"voice"): the blob is fetched by `media` id and
+        // decrypted with `key` (AES-256 base64). Cross-platform envelope {iv,ct}.
+        // `dur` is the voice-message length in seconds.
+        val media: Long = 0, val key: String = "", val mime: String = "", val dur: Int = 0,
     )
 
     // AES-GCM for media blobs — {iv,ct} envelope, byte-compatible with the web.
@@ -556,6 +557,30 @@ object Messenger {
         true
     }
 
+    /** Send a voice message (m4a/AAC bytes). Same blob pipeline as an image. */
+    suspend fun sendVoice(
+        contactId: Long, m4a: ByteArray, durSec: Int, onProgress: (Int) -> Unit = {},
+    ): Boolean = withContext(Dispatchers.IO) {
+        val c = contact(contactId) ?: return@withContext false
+        val u = java.util.UUID.randomUUID().toString()
+        val k = ByteArray(32).also { SecureRandom().nextBytes(it) }
+        val mediaId = uploadMedia(contactId, aesGcm(k, m4a), onProgress) ?: return@withContext false
+        val keyB = Base64.encodeToString(k, b64f)
+        val ct = try {
+            seal(gson.toJson(MsgPayload(u = u, k = "voice", media = mediaId, key = keyB, mime = "audio/mp4", dur = durSec)), c.pubKey)
+        } catch (e: Exception) { return@withContext false }
+        val mid = postMessage(contactId, ct) ?: return@withContext false
+        appendMessage(contactId, Msg(id = mid, mine = true, text = "", ts = System.currentTimeMillis(), u = u, k = "voice", img = Base64.encodeToString(m4a, b64f), dur = durSec))
+        val myId = myClientId()
+        if (myId > 0) {
+            try {
+                val self = gson.toJson(MsgPayload(u = u, k = "voice", media = mediaId, key = keyB, mime = "audio/mp4", dur = durSec, peer = contactId, self = true, mid = mid))
+                postMessage(myId, seal(self, myPublicKey()))
+            } catch (e: Exception) { /* best-effort sync */ }
+        }
+        true
+    }
+
     private fun parsePayload(raw: String): MsgPayload = try {
         val o = gson.fromJson(raw, MsgPayload::class.java)
         if (o != null && o.k.isNotEmpty()) o else MsgPayload(k = "text", t = raw)
@@ -642,6 +667,13 @@ object Messenger {
                         } catch (e: Exception) { "" } else ""
                         added = appendMessage(chat, Msg(id = id, mine = mine, text = "", ts = System.currentTimeMillis(), u = o.u, k = "image", img = img))
                         preview = "📷 Фото"
+                    } else if (o.k == "voice" && o.media > 0 && o.key.isNotEmpty()) {
+                        val blob = downloadMedia(o.media)
+                        val audio = if (blob != null) try {
+                            Base64.encodeToString(aesGcmDec(Base64.decode(o.key, b64f), blob), b64f)
+                        } catch (e: Exception) { "" } else ""
+                        added = appendMessage(chat, Msg(id = id, mine = mine, text = "", ts = System.currentTimeMillis(), u = o.u, k = "voice", img = audio, dur = o.dur))
+                        preview = "🎤 Голосовое"
                     } else {
                         added = appendMessage(chat, Msg(id = id, mine = mine, text = o.t, ts = System.currentTimeMillis(), u = o.u))
                         preview = o.t

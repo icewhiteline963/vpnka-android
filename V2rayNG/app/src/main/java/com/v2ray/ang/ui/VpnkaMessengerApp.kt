@@ -2,6 +2,9 @@ package com.v2ray.ang.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -514,6 +517,18 @@ private fun ChatScreen(
         }
     }
 
+    var recording by remember { mutableStateOf(false) }
+    var micGranted by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED,
+        )
+    }
+    val micLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { micGranted = it }
+    DisposableEffect(Unit) {
+        onDispose { MessengerVoice.stopPlayback(); if (MessengerVoice.isRecording) MessengerVoice.cancelRecording() }
+    }
+
     if (showProfile) {
         ContactProfileScreen(contact = contact, onBack = { showProfile = false })
         return
@@ -579,6 +594,25 @@ private fun ChatScreen(
                                     Text("🖼 фото", fontFamily = VpnkaFonts.manrope600, fontSize = 15.sp,
                                         color = if (m.mine) Color.White else VpnkaColors.TextStrong)
                                 }
+                            } else if (m.k == "voice") {
+                                val playing = MessengerVoice.playingId == m.id
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .clickable(enabled = m.img.isNotEmpty()) { MessengerVoice.toggle(context, m.id, m.img) }
+                                        .padding(vertical = 2.dp),
+                                ) {
+                                    Text(
+                                        if (playing) "⏸" else "▶", fontSize = 22.sp,
+                                        color = if (m.mine) Color.White else VpnkaColors.Accent,
+                                    )
+                                    Spacer(Modifier.width(10.dp))
+                                    Text(
+                                        "🎤  " + fmtVoice(m.dur),
+                                        fontFamily = VpnkaFonts.manrope600, fontSize = 15.sp,
+                                        color = if (m.mine) Color.White else VpnkaColors.TextStrong,
+                                    )
+                                }
                             } else {
                                 Text(m.text, fontFamily = VpnkaFonts.manrope600, fontSize = 15.sp,
                                     color = if (m.mine) Color.White else VpnkaColors.TextStrong)
@@ -627,29 +661,76 @@ private fun ChatScreen(
             modifier = Modifier.fillMaxWidth().padding(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                modifier = Modifier.size(44.dp).clip(CircleShape)
-                    .background(VpnkaColors.CardSettings)
-                    .clickable { picker.launch("image/*") },
-                contentAlignment = Alignment.Center,
-            ) { Text("📎", fontSize = 20.sp) }
+            if (recording) {
+                Text("🔴", fontSize = 18.sp, modifier = Modifier.padding(start = 8.dp))
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    "Идёт запись… отпустите, чтобы отправить",
+                    fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp, color = VpnkaColors.TextMuted,
+                    modifier = Modifier.weight(1f),
+                )
+            } else {
+                Box(
+                    modifier = Modifier.size(44.dp).clip(CircleShape)
+                        .background(VpnkaColors.CardSettings)
+                        .clickable { picker.launch("image/*") },
+                    contentAlignment = Alignment.Center,
+                ) { Text("📎", fontSize = 20.sp) }
+                Spacer(Modifier.width(8.dp))
+                Box(modifier = Modifier.weight(1f)) { MsgField("Сообщение", draft) { draft = it; Messenger.sendTyping(contact.id) } }
+            }
             Spacer(Modifier.width(8.dp))
-            Box(modifier = Modifier.weight(1f)) { MsgField("Сообщение", draft) { draft = it; Messenger.sendTyping(contact.id) } }
-            Spacer(Modifier.width(8.dp))
-            Box(
-                modifier = Modifier.size(46.dp).clip(CircleShape).background(VpnkaColors.Accent)
-                    .clickable {
-                        val t = draft.trim()
-                        if (t.isNotBlank()) {
-                            draft = ""
-                            scope.launch { if (Messenger.send(contact.id, t)) onSent() }
-                        }
-                    },
-                contentAlignment = Alignment.Center,
-            ) { Text("➤", fontSize = 20.sp, color = Color.White) }
+            if (draft.trim().isBlank()) {
+                // Hold to record, release to send.
+                Box(
+                    modifier = Modifier.size(46.dp).clip(CircleShape)
+                        .background(if (recording) VpnkaColors.Warning else VpnkaColors.Accent)
+                        .pointerInput(micGranted) {
+                            detectTapGestures(
+                                onPress = {
+                                    if (!micGranted) {
+                                        micLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                                        return@detectTapGestures
+                                    }
+                                    val started = MessengerVoice.startRecording(context)
+                                    if (started) recording = true
+                                    tryAwaitRelease()
+                                    if (started) {
+                                        recording = false
+                                        val res = MessengerVoice.stopRecording()
+                                        if (res != null) {
+                                            val (bytes, dur) = res
+                                            scope.launch(Dispatchers.IO) {
+                                                sendPct = 0
+                                                val ok = Messenger.sendVoice(contact.id, bytes, dur) { p -> sendPct = p }
+                                                sendPct = if (ok) null else -1
+                                                if (ok) onSent()
+                                            }
+                                        }
+                                    }
+                                },
+                            )
+                        },
+                    contentAlignment = Alignment.Center,
+                ) { Text("🎤", fontSize = 20.sp, color = Color.White) }
+            } else {
+                Box(
+                    modifier = Modifier.size(46.dp).clip(CircleShape).background(VpnkaColors.Accent)
+                        .clickable {
+                            val t = draft.trim()
+                            if (t.isNotBlank()) {
+                                draft = ""
+                                scope.launch { if (Messenger.send(contact.id, t)) onSent() }
+                            }
+                        },
+                    contentAlignment = Alignment.Center,
+                ) { Text("➤", fontSize = 20.sp, color = Color.White) }
+            }
         }
     }
 }
+
+private fun fmtVoice(sec: Int): String = "%d:%02d".format(sec / 60, sec % 60)
 
 /** Short, human-readable fingerprint of a contact's public key (first 8
  *  bytes of its SHA-256, hex). Two people compare it to be sure no one
