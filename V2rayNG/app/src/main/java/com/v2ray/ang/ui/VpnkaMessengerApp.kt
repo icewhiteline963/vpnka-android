@@ -19,12 +19,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -66,6 +69,7 @@ import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 // ---- Modern chat look: colourful avatars + timestamps ----
 
@@ -517,6 +521,34 @@ private fun ChatScreen(
         }
     }
 
+    var compressing by remember { mutableStateOf(false) }
+    var showAttach by remember { mutableStateOf(false) }
+    var playVideo by remember { mutableStateOf<String?>(null) }
+    val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) scope.launch {
+            compressing = true
+            val maxH = if (Messenger.setting("media_min", true)) 480 else 720
+            val file = MediaCompress.compressVideo(context, uri, maxH)
+            compressing = false
+            if (file == null) {
+                android.widget.Toast.makeText(context, "Не удалось обработать видео", android.widget.Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            val bytes = withContext(Dispatchers.IO) { runCatching { file.readBytes() }.getOrNull() }
+            val dur = withContext(Dispatchers.IO) { videoDurationSec(file.absolutePath) }
+            file.delete()
+            if (bytes == null) return@launch
+            if (bytes.size > 12 * 1024 * 1024) {
+                android.widget.Toast.makeText(context, "Видео слишком большое — снимите короче", android.widget.Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            sendPct = 0
+            val ok = Messenger.sendVideo(contact.id, bytes, dur) { p -> sendPct = p }
+            sendPct = if (ok) null else -1
+            if (ok) onSent()
+        }
+    }
+
     var recording by remember { mutableStateOf(false) }
     var micGranted by remember {
         mutableStateOf(
@@ -613,6 +645,25 @@ private fun ChatScreen(
                                         color = if (m.mine) Color.White else VpnkaColors.TextStrong,
                                     )
                                 }
+                            } else if (m.k == "video") {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .clickable(enabled = m.img.isNotEmpty()) { playVideo = m.img }
+                                        .padding(vertical = 2.dp),
+                                ) {
+                                    Box(
+                                        modifier = Modifier.size(56.dp, 40.dp).clip(RoundedCornerShape(8.dp))
+                                            .background(Color(0xFF1F2937)),
+                                        contentAlignment = Alignment.Center,
+                                    ) { Text("▶", fontSize = 20.sp, color = Color.White) }
+                                    Spacer(Modifier.width(10.dp))
+                                    Text(
+                                        "🎬  Видео" + if (m.dur > 0) "  ·  ${fmtVoice(m.dur)}" else "",
+                                        fontFamily = VpnkaFonts.manrope600, fontSize = 15.sp,
+                                        color = if (m.mine) Color.White else VpnkaColors.TextStrong,
+                                    )
+                                }
                             } else {
                                 Text(m.text, fontFamily = VpnkaFonts.manrope600, fontSize = 15.sp,
                                     color = if (m.mine) Color.White else VpnkaColors.TextStrong)
@@ -635,8 +686,24 @@ private fun ChatScreen(
                     }
                 }
             }
-            // Photo-send status: uploading a photo is dozens of small requests
-            // over the shaped RU leg, so show progress rather than a frozen UI.
+            if (compressing) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                        horizontalArrangement = Arrangement.End,
+                    ) {
+                        Box(
+                            modifier = Modifier.clip(RoundedCornerShape(16.dp))
+                                .background(VpnkaColors.Green.copy(alpha = 0.85f))
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                        ) {
+                            Text("🎬 Сжатие видео…", fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp, color = Color.White)
+                        }
+                    }
+                }
+            }
+            // Send status: uploading media is dozens of small requests over the
+            // shaped RU leg, so show progress rather than a frozen UI.
             sendPct?.let { p ->
                 item {
                     Row(
@@ -649,7 +716,7 @@ private fun ChatScreen(
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                         ) {
                             Text(
-                                if (p < 0) "⚠️ Не удалось отправить фото" else "📷 Отправка… $p%",
+                                if (p < 0) "⚠️ Не удалось отправить" else "⬆ Отправка… $p%",
                                 fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp, color = Color.White,
                             )
                         }
@@ -670,12 +737,18 @@ private fun ChatScreen(
                     modifier = Modifier.weight(1f),
                 )
             } else {
-                Box(
-                    modifier = Modifier.size(44.dp).clip(CircleShape)
-                        .background(VpnkaColors.CardSettings)
-                        .clickable { picker.launch("image/*") },
-                    contentAlignment = Alignment.Center,
-                ) { Text("📎", fontSize = 20.sp) }
+                Box {
+                    Box(
+                        modifier = Modifier.size(44.dp).clip(CircleShape)
+                            .background(VpnkaColors.CardSettings)
+                            .clickable { showAttach = true },
+                        contentAlignment = Alignment.Center,
+                    ) { Text("📎", fontSize = 20.sp) }
+                    DropdownMenu(expanded = showAttach, onDismissRequest = { showAttach = false }) {
+                        DropdownMenuItem(text = { Text("📷 Фото") }, onClick = { showAttach = false; picker.launch("image/*") })
+                        DropdownMenuItem(text = { Text("🎬 Видео") }, onClick = { showAttach = false; videoPicker.launch("video/*") })
+                    }
+                }
                 Spacer(Modifier.width(8.dp))
                 Box(modifier = Modifier.weight(1f)) { MsgField("Сообщение", draft) { draft = it; Messenger.sendTyping(contact.id) } }
             }
@@ -728,7 +801,53 @@ private fun ChatScreen(
             }
         }
     }
+
+    playVideo?.let { b64 ->
+        VideoPlayDialog(b64) { playVideo = null }
+    }
 }
+
+@androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
+@Composable
+private fun VideoPlayDialog(base64: String, onClose: () -> Unit) {
+    val context = LocalContext.current
+    val file = remember(base64) {
+        java.io.File(context.cacheDir, "play_vid_${System.currentTimeMillis()}.mp4").apply {
+            runCatching { writeBytes(android.util.Base64.decode(base64, android.util.Base64.NO_WRAP)) }
+        }
+    }
+    val player = remember {
+        androidx.media3.exoplayer.ExoPlayer.Builder(context).build().apply {
+            setMediaItem(androidx.media3.common.MediaItem.fromUri(android.net.Uri.fromFile(file)))
+            prepare(); playWhenReady = true
+        }
+    }
+    DisposableEffect(Unit) { onDispose { player.release(); file.delete() } }
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onClose,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize().background(Color.Black).clickable { onClose() },
+            contentAlignment = Alignment.Center,
+        ) {
+            androidx.compose.ui.viewinterop.AndroidView(
+                factory = { ctx ->
+                    androidx.media3.ui.PlayerView(ctx).apply { this.player = player; useController = true }
+                },
+                modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
+            )
+        }
+    }
+}
+
+private fun videoDurationSec(path: String): Int = try {
+    val r = android.media.MediaMetadataRetriever()
+    r.setDataSource(path)
+    val ms = r.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+    r.release()
+    (ms / 1000).toInt()
+} catch (e: Exception) { 0 }
 
 private fun fmtVoice(sec: Int): String = "%d:%02d".format(sec / 60, sec % 60)
 
@@ -780,6 +899,14 @@ private fun MyProfileScreen(handle: String, onBack: () -> Unit) {
             MyProfileToggle("Уведомлять о новых сообщениях", "notify")
             MyProfileToggle("Отправлять «печатает…»", "typing")
             MyProfileToggle("Отправлять отметку о прочтении", "read")
+        }
+        ProfileCard("🖼 Медиа") {
+            MyProfileToggle("Сжимать медиа до минимума", "media_min")
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Фото и видео отправляются в компактном качестве, чтобы быстро доходили. Выключите — будет отправляться повыше (480p → 720p для видео).",
+                fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp, color = VpnkaColors.TextMuted,
+            )
         }
         Spacer(Modifier.height(24.dp))
     }

@@ -581,6 +581,30 @@ object Messenger {
         true
     }
 
+    /** Send a video message (already-compressed mp4 bytes). Same blob pipeline. */
+    suspend fun sendVideo(
+        contactId: Long, mp4: ByteArray, durSec: Int, onProgress: (Int) -> Unit = {},
+    ): Boolean = withContext(Dispatchers.IO) {
+        val c = contact(contactId) ?: return@withContext false
+        val u = java.util.UUID.randomUUID().toString()
+        val k = ByteArray(32).also { SecureRandom().nextBytes(it) }
+        val mediaId = uploadMedia(contactId, aesGcm(k, mp4), onProgress) ?: return@withContext false
+        val keyB = Base64.encodeToString(k, b64f)
+        val ct = try {
+            seal(gson.toJson(MsgPayload(u = u, k = "video", media = mediaId, key = keyB, mime = "video/mp4", dur = durSec)), c.pubKey)
+        } catch (e: Exception) { return@withContext false }
+        val mid = postMessage(contactId, ct) ?: return@withContext false
+        appendMessage(contactId, Msg(id = mid, mine = true, text = "", ts = System.currentTimeMillis(), u = u, k = "video", img = Base64.encodeToString(mp4, b64f), dur = durSec))
+        val myId = myClientId()
+        if (myId > 0) {
+            try {
+                val self = gson.toJson(MsgPayload(u = u, k = "video", media = mediaId, key = keyB, mime = "video/mp4", dur = durSec, peer = contactId, self = true, mid = mid))
+                postMessage(myId, seal(self, myPublicKey()))
+            } catch (e: Exception) { /* best-effort sync */ }
+        }
+        true
+    }
+
     private fun parsePayload(raw: String): MsgPayload = try {
         val o = gson.fromJson(raw, MsgPayload::class.java)
         if (o != null && o.k.isNotEmpty()) o else MsgPayload(k = "text", t = raw)
@@ -674,6 +698,13 @@ object Messenger {
                         } catch (e: Exception) { "" } else ""
                         added = appendMessage(chat, Msg(id = id, mine = mine, text = "", ts = System.currentTimeMillis(), u = o.u, k = "voice", img = audio, dur = o.dur))
                         preview = "🎤 Голосовое"
+                    } else if (o.k == "video" && o.media > 0 && o.key.isNotEmpty()) {
+                        val blob = downloadMedia(o.media)
+                        val vid = if (blob != null) try {
+                            Base64.encodeToString(aesGcmDec(Base64.decode(o.key, b64f), blob), b64f)
+                        } catch (e: Exception) { "" } else ""
+                        added = appendMessage(chat, Msg(id = id, mine = mine, text = "", ts = System.currentTimeMillis(), u = o.u, k = "video", img = vid, dur = o.dur))
+                        preview = "🎬 Видео"
                     } else {
                         added = appendMessage(chat, Msg(id = id, mine = mine, text = o.t, ts = System.currentTimeMillis(), u = o.u))
                         preview = o.t
