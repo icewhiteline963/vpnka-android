@@ -182,18 +182,17 @@ object YouTubeService {
     }
 
     /** Saves a subtitle track (text) to Downloads THROUGH the VPN proxy. Off main. */
-    fun downloadSubtitle(context: Context, sub: SubtitleOption, title: String): String {
+    fun downloadSubtitle(context: Context, sub: SubtitleOption, title: String): android.net.Uri {
         ensureInit()
         val safe = title.replace(Regex("[^\\p{L}\\p{N} ._-]"), "_").trim().take(80).ifBlank { "video" }
         val fileName = "$safe.${sub.ext}"
         val tmp = File(context.cacheDir, "yt_sub_${System.currentTimeMillis()}.${sub.ext}")
         try {
             downloadTo(proxiedClient(), sub.url, tmp)
-            saveFileToDownloads(context, fileName, "text/plain", tmp)
+            return saveFileToDownloads(context, fileName, "text/plain", tmp)
         } finally {
             tmp.delete()
         }
-        return fileName
     }
 
     /** Best audio-only track as a single-file download (native m4a/AAC — no
@@ -214,7 +213,12 @@ object YouTubeService {
     /** Saves the chosen quality to public Downloads THROUGH the VPN proxy. For
      *  adaptive options the video-only + audio are downloaded to cache and
      *  remuxed (no re-encode) into one mp4. Blocking — off main. */
-    fun download(context: Context, option: DownloadOption, title: String): String {
+    fun download(
+        context: Context,
+        option: DownloadOption,
+        title: String,
+        onProgress: (done: Long, total: Long, speedBps: Long) -> Unit = { _, _, _ -> },
+    ): android.net.Uri {
         ensureInit()
         val safe = title.replace(Regex("[^\\p{L}\\p{N} ._-]"), "_").trim().take(80).ifBlank { "video" }
         val fileName = "$safe.${option.ext}"
@@ -225,14 +229,14 @@ object YouTubeService {
         val ts = System.currentTimeMillis()
         val tmpV = File(context.cacheDir, "yt_v_$ts.mp4")
         try {
-            downloadTo(client, option.videoUrl, tmpV)
-            if (option.audioUrl == null) {
+            downloadTo(client, option.videoUrl, tmpV, onProgress)
+            return if (option.audioUrl == null) {
                 saveFileToDownloads(context, fileName, option.mime, tmpV)
             } else {
                 val tmpA = File(context.cacheDir, "yt_a_$ts.m4a")
                 val tmpOut = File(context.cacheDir, "yt_out_$ts.mp4")
                 try {
-                    downloadTo(client, option.audioUrl, tmpA)
+                    downloadTo(client, option.audioUrl, tmpA, onProgress)
                     remux(tmpV, tmpA, tmpOut)
                     saveFileToDownloads(context, fileName, "video/mp4", tmpOut)
                 } finally {
@@ -242,19 +246,44 @@ object YouTubeService {
         } finally {
             tmpV.delete()
         }
-        return fileName
     }
 
-    private fun downloadTo(client: OkHttpClient, url: String, dest: File) {
+    private fun downloadTo(
+        client: OkHttpClient,
+        url: String,
+        dest: File,
+        onProgress: (done: Long, total: Long, speedBps: Long) -> Unit = { _, _, _ -> },
+    ) {
         val req = okhttp3.Request.Builder().url(url).header("User-Agent", USER_AGENT_DESKTOP).build()
         client.newCall(req).execute().use { resp ->
             if (!resp.isSuccessful) throw IOException("HTTP ${resp.code}")
             val body = resp.body ?: throw IOException("empty body")
-            dest.outputStream().use { out -> body.byteStream().copyTo(out) }
+            val total = body.contentLength()
+            dest.outputStream().use { out ->
+                val input = body.byteStream()
+                val buf = ByteArray(64 * 1024)
+                var done = 0L
+                var windowStart = System.currentTimeMillis()
+                var windowBytes = 0L
+                var speed = 0L
+                while (true) {
+                    val n = input.read(buf)
+                    if (n < 0) break
+                    out.write(buf, 0, n)
+                    done += n; windowBytes += n
+                    val now = System.currentTimeMillis()
+                    if (now - windowStart >= 400) {
+                        speed = windowBytes * 1000 / (now - windowStart)
+                        windowStart = now; windowBytes = 0
+                        onProgress(done, total, speed)
+                    }
+                }
+                onProgress(done, if (total > 0) total else done, speed)
+            }
         }
     }
 
-    private fun saveFileToDownloads(context: Context, fileName: String, mime: String, file: File) {
+    private fun saveFileToDownloads(context: Context, fileName: String, mime: String, file: File): android.net.Uri {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val values = ContentValues().apply {
                 put(MediaStore.Downloads.DISPLAY_NAME, fileName)
@@ -269,10 +298,13 @@ object YouTubeService {
             values.clear()
             values.put(MediaStore.Downloads.IS_PENDING, 0)
             resolver.update(uri, values, null, null)
+            return uri
         } else {
             val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
             if (!dir.exists()) dir.mkdirs()
-            File(dir, fileName).outputStream().use { out -> file.inputStream().use { it.copyTo(out) } }
+            val out = File(dir, fileName)
+            out.outputStream().use { o -> file.inputStream().use { it.copyTo(o) } }
+            return android.net.Uri.fromFile(out)
         }
     }
 

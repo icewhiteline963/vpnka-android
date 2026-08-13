@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -148,18 +149,8 @@ fun YouTubeApp() {
         ) action() else { pendingAction = action; permLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE) }
     }
     fun downloadPlaylist(pl: YouTubePlaylists.Playlist) = withStorage {
-        scope.launch {
-            var ok = 0
-            for ((i, v) in pl.videos.withIndex()) {
-                Toast.makeText(context, "Скачивание ${i + 1}/${pl.videos.size}…", Toast.LENGTH_SHORT).show()
-                val opt = withContext(Dispatchers.IO) { runCatching { YouTubeService.videoStreams(v.url).firstOrNull() }.getOrNull() }
-                if (opt != null) {
-                    val r = withContext(Dispatchers.IO) { runCatching { YouTubeService.download(context, opt, v.title) } }
-                    if (r.isSuccess) ok++
-                }
-            }
-            Toast.makeText(context, "Скачано $ok из ${pl.videos.size}", Toast.LENGTH_LONG).show()
-        }
+        pl.videos.forEach { v -> YouTubeDownloads.enqueueVideoByUrl(context, v.url, v.title) }
+        Toast.makeText(context, "В загрузках: ${pl.videos.size}", Toast.LENGTH_SHORT).show()
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -171,6 +162,8 @@ fun YouTubeApp() {
                 YtTabChip("Поиск", tab == 0) { tab = 0 }
                 Spacer(Modifier.width(8.dp))
                 YtTabChip("Плейлисты", tab == 1) { tab = 1; openPl = null; plTick++ }
+                Spacer(Modifier.width(8.dp))
+                YtTabChip("Загрузки", tab == 2) { tab = 2 }
             }
 
             if (tab == 0) {
@@ -235,7 +228,7 @@ fun YouTubeApp() {
                         }
                     }
                 }
-            } else {
+            } else if (tab == 1) {
                 val pls = remember(plTick) { YouTubePlaylists.all() }
                 val current = openPl?.let { id -> pls.firstOrNull { it.id == id } }
                 if (current == null) {
@@ -314,6 +307,27 @@ fun YouTubeApp() {
                                 )
                             }
                         }
+                    }
+                }
+            } else {
+                // tab == 2: downloads
+                val dls = YouTubeDownloads.entries
+                if (dls.isEmpty()) {
+                    CenterBox {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("⬇", fontSize = 44.sp, color = VpnkaColors.TextMuted)
+                            Spacer(Modifier.height(10.dp))
+                            Text("Загрузок пока нет", fontFamily = VpnkaFonts.nunito800,
+                                fontSize = 17.sp, color = VpnkaColors.TextStrong)
+                            Spacer(Modifier.height(6.dp))
+                            Text("Скачанные видео появятся здесь и в системной папке «Загрузки».",
+                                fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp, color = VpnkaColors.TextMuted,
+                                textAlign = TextAlign.Center)
+                        }
+                    }
+                } else {
+                    LazyColumn(modifier = Modifier.fillMaxSize().padding(top = 6.dp)) {
+                        items(dls, key = { it.id }) { e -> DownloadRow(e) }
                     }
                 }
             }
@@ -658,22 +672,14 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
 
     fun runDownload(opt: YouTubeService.DownloadOption) {
         qualities = null
-        Toast.makeText(context, "Скачивание ${opt.label}…", Toast.LENGTH_SHORT).show()
-        scope.launch {
-            val r = withContext(Dispatchers.IO) { runCatching { YouTubeService.download(context, opt, pb.title) } }
-            r.onSuccess { Toast.makeText(context, "Сохранено в «Загрузки»: $it", Toast.LENGTH_LONG).show() }
-                .onFailure { Toast.makeText(context, "Не удалось скачать: ${it.message}", Toast.LENGTH_LONG).show() }
-        }
+        YouTubeDownloads.enqueueVideo(context, opt, pb.title)
+        Toast.makeText(context, "Добавлено в загрузки", Toast.LENGTH_SHORT).show()
     }
 
     fun runSubtitle(sub: YouTubeService.SubtitleOption) {
         subs = null
-        Toast.makeText(context, "Скачивание субтитров…", Toast.LENGTH_SHORT).show()
-        scope.launch {
-            val r = withContext(Dispatchers.IO) { runCatching { YouTubeService.downloadSubtitle(context, sub, pb.title) } }
-            r.onSuccess { Toast.makeText(context, "Сохранено в «Загрузки»: $it", Toast.LENGTH_LONG).show() }
-                .onFailure { Toast.makeText(context, "Не удалось: ${it.message}", Toast.LENGTH_LONG).show() }
-        }
+        YouTubeDownloads.enqueueSubtitle(context, sub, pb.title)
+        Toast.makeText(context, "Добавлено в загрузки", Toast.LENGTH_SHORT).show()
     }
 
     fun openQualities() {
@@ -849,4 +855,98 @@ private fun fmtDuration(sec: Long): String {
     val m = (sec % 3600) / 60
     val s = sec % 60
     return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
+}
+
+@Composable
+private fun DownloadRow(e: YouTubeDownloads.Entry) {
+    val ctx = LocalContext.current
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
+        Text(e.label, fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp, color = VpnkaColors.TextStrong,
+            maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.height(6.dp))
+        when (e.state) {
+            YouTubeDownloads.State.RUNNING -> {
+                if (e.total > 0) {
+                    val frac = (e.done.toFloat() / e.total).coerceIn(0f, 1f)
+                    LinearProgressIndicator(progress = { frac }, modifier = Modifier.fillMaxWidth(),
+                        color = VpnkaColors.Accent)
+                } else {
+                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = VpnkaColors.Accent)
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    buildString {
+                        append(fmtBytes(e.done))
+                        if (e.total > 0) append(" / ${fmtBytes(e.total)}")
+                        if (e.speed > 0) append("  ·  ${fmtBytes(e.speed)}/с")
+                    },
+                    fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp, color = VpnkaColors.TextMuted,
+                )
+            }
+            YouTubeDownloads.State.DONE -> {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("✓ Готово", fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp,
+                        color = VpnkaColors.Green, modifier = Modifier.weight(1f))
+                    DlAction("Открыть") { openDownload(ctx, e) }
+                    Spacer(Modifier.width(6.dp))
+                    DlAction("Поделиться") { shareDownload(ctx, e) }
+                    Spacer(Modifier.width(6.dp))
+                    DlAction("🗑") { YouTubeDownloads.deleteFile(ctx, e) }
+                }
+            }
+            YouTubeDownloads.State.FAILED -> {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Ошибка: ${e.error ?: ""}", fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp,
+                        color = VpnkaColors.Warning, modifier = Modifier.weight(1f),
+                        maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    DlAction("🗑") { YouTubeDownloads.removeFromList(e) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DlAction(label: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(VpnkaColors.CardServer)
+            .clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 7.dp),
+    ) {
+        Text(label, fontFamily = VpnkaFonts.nunito800, fontSize = 12.sp, color = VpnkaColors.TextStrong)
+    }
+}
+
+private fun openDownload(ctx: android.content.Context, e: YouTubeDownloads.Entry) {
+    val uri = e.uri ?: return
+    runCatching {
+        val i = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, e.mime)
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        ctx.startActivity(i)
+    }.onFailure { Toast.makeText(ctx, "Нет приложения для открытия", Toast.LENGTH_SHORT).show() }
+}
+
+private fun shareDownload(ctx: android.content.Context, e: YouTubeDownloads.Entry) {
+    val uri = e.uri ?: return
+    runCatching {
+        val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            type = e.mime
+            putExtra(android.content.Intent.EXTRA_STREAM, uri)
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        ctx.startActivity(
+            android.content.Intent.createChooser(send, "Поделиться")
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }.onFailure { Toast.makeText(ctx, "Не удалось поделиться", Toast.LENGTH_SHORT).show() }
+}
+
+private fun fmtBytes(b: Long): String {
+    if (b < 1024) return "$b B"
+    val kb = b / 1024.0
+    if (kb < 1024) return "%.0f КБ".format(kb)
+    val mb = kb / 1024.0
+    if (mb < 1024) return "%.1f МБ".format(mb)
+    return "%.2f ГБ".format(mb / 1024.0)
 }
