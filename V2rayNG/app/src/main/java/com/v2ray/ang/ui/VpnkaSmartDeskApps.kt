@@ -102,7 +102,7 @@ fun VpnkaSmartDeskAppScreen(
             // so the bottom controls are never hidden behind it.
             .imePadding(),
     ) {
-        SmartDeskAppBar(appId = appId, title = appLabel, glyph = appGlyph, online = online)
+        SmartDeskAppBar(appId = appId, glyph = appGlyph, online = online, onBack = onBack)
         // Sync on open (through the VPN) and after every edit; syncTick keys
         // each app's list so it re-reads once the server's view is merged in.
         val scope = rememberCoroutineScope()
@@ -183,25 +183,30 @@ private fun SmartDeskBottomBar(onBack: () -> Unit, onExit: () -> Unit) {
 @Composable
 private fun SmartDeskAppBar(
     appId: String,
-    title: String,
     glyph: String,
     online: Boolean,
+    onBack: () -> Unit,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // Back to the desktop — top-left, no title (the icon speaks for itself).
+        Text(
+            "‹", fontSize = 27.sp, color = VpnkaColors.TextStrong,
+            modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onBack)
+                .padding(horizontal = 10.dp, vertical = 2.dp),
+        )
+        Spacer(Modifier.width(6.dp))
         Box(
             modifier = Modifier
-                .size(38.dp)
-                .clip(RoundedCornerShape(13.dp))
+                .size(34.dp)
+                .clip(RoundedCornerShape(11.dp))
                 .background(androidx.compose.ui.graphics.Brush.linearGradient(appTint(appId))),
             contentAlignment = Alignment.Center,
-        ) { Text(text = glyph, fontSize = 20.sp) }
-        Spacer(Modifier.width(12.dp))
-        Text(text = title, fontFamily = VpnkaFonts.nunito800, fontSize = 18.sp, color = VpnkaColors.TextStrong)
+        ) { Text(text = glyph, fontSize = 18.sp) }
         Spacer(Modifier.weight(1f))
         Box(
             modifier = Modifier
@@ -659,7 +664,7 @@ private fun HelpApp() {
     ) {
         Text("🛡️", fontSize = 40.sp)
         Spacer(Modifier.height(8.dp))
-        Text("SmartDesk", fontFamily = VpnkaFonts.nunito900, fontSize = 26.sp, color = VpnkaColors.TextStrong)
+        Text("VPNka облако", fontFamily = VpnkaFonts.nunito900, fontSize = 26.sp, color = VpnkaColors.TextStrong)
         Spacer(Modifier.height(4.dp))
         Text(
             "Скрытый рабочий стол для тех, кому важна приватность. О нём знаете только вы — снаружи это обычное VPN-приложение.",
@@ -1003,7 +1008,7 @@ private fun BrowserApp() {
     var activeId by remember { mutableIntStateOf(0) }
     val active = tabs.firstOrNull { it.id == activeId } ?: tabs.first()
     var editing by remember { mutableStateOf(false) }
-    var omni by remember { mutableStateOf("") }
+    var omni by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue("")) }
     var showTabs by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
     var adblock by remember { mutableStateOf(AdBlocker.enabled) }
@@ -1038,12 +1043,12 @@ private fun BrowserApp() {
                     singleLine = true,
                     leadingIcon = { Text("🔒", fontSize = 12.sp) },
                     trailingIcon = {
-                        if (omni.isNotEmpty()) Text("✕", fontSize = 16.sp, color = VpnkaColors.TextMuted,
-                            modifier = Modifier.clickable { omni = "" }.padding(horizontal = 10.dp, vertical = 4.dp))
+                        if (omni.text.isNotEmpty()) Text("✕", fontSize = 16.sp, color = VpnkaColors.TextMuted,
+                            modifier = Modifier.clickable { omni = androidx.compose.ui.text.input.TextFieldValue("") }.padding(horizontal = 10.dp, vertical = 4.dp))
                     },
                     textStyle = LocalTextStyle.current.copy(color = VpnkaColors.TextStrong, fontSize = 15.sp),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-                    keyboardActions = KeyboardActions(onGo = { active.go(omni); editing = false }),
+                    keyboardActions = KeyboardActions(onGo = { active.go(omni.text); editing = false }),
                     shape = RoundedCornerShape(22.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = VpnkaColors.TextStrong, unfocusedTextColor = VpnkaColors.TextStrong,
@@ -1058,7 +1063,15 @@ private fun BrowserApp() {
                 Row(
                     modifier = Modifier.weight(1f).clip(RoundedCornerShape(22.dp))
                         .background(VpnkaColors.CardServer)
-                        .clickable { omni = active.url.value; editing = true }
+                        .clickable {
+                            val u = active.url.value
+                            // Select the whole URL so the first keystroke replaces it.
+                            omni = androidx.compose.ui.text.input.TextFieldValue(
+                                text = u,
+                                selection = androidx.compose.ui.text.TextRange(0, u.length),
+                            )
+                            editing = true
+                        }
                         .padding(horizontal = 14.dp, vertical = 9.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {

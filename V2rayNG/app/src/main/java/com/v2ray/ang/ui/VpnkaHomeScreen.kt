@@ -414,7 +414,7 @@ fun VpnkaSettingsScreen(
                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
             )
             NotifyToggleRow(
-                title = "Скрыть SmartDesk",
+                title = "Скрыть VPNka облако",
                 subtitle = "Раздел исчезнет из меню. Чтобы показать снова — потапайте 5 раз в правый нижний угол экрана.",
                 checked = smartDeskHidden,
                 enabled = true,

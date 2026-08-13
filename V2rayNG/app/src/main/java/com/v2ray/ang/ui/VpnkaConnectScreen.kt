@@ -406,7 +406,7 @@ private fun VpnkaSmartDeskRow(online: Boolean, onClick: () -> Unit) {
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "SmartDesk",
+                text = "VPNka облако",
                 fontFamily = VpnkaFonts.nunito800,
                 fontWeight = VpnkaWeight.Extra,
                 fontSize = 15.sp,

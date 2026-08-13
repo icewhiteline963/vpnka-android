@@ -103,7 +103,7 @@ val SMARTDESK_CATALOG = listOf(
     DeskApp("contacts", "Контакты", "👤", "Ваши контакты: звонки, почта, поиск"),
     DeskApp("browser", "Браузер", "🌐", "Веб-браузер — весь трафик через VPN"),
     DeskApp("youtube", "YouTube", "▶️", "YouTube без рекламы, через VPN"),
-    DeskApp("help", "Помощь", "🛡️", "Как устроена приватность SmartDesk"),
+    DeskApp("help", "Помощь", "🛡️", "Как устроена приватность VPNka облака"),
 )
 
 private val CATALOG_BY_ID = SMARTDESK_CATALOG.associateBy { it.id }
@@ -224,6 +224,7 @@ fun VpnkaSmartDeskScreen(
     online: Boolean,
     onBack: () -> Unit,
     onToggleVpn: () -> Unit = {},
+    setBackHandler: ((() -> Boolean)?) -> Unit = {},
 ) {
     // Which app is open, or null on the desktop itself.
     var openApp by remember { mutableStateOf<DeskApp?>(null) }
@@ -254,16 +255,22 @@ fun VpnkaSmartDeskScreen(
         mutableStateOf(MmkvManager.decodeSettingsString("vpnka_smartdesk_wallpaper") ?: "warm")
     }
 
-    // System back steps WITHIN SmartDesk (overlay → open app → desktop) and only
-    // leaves to the vpnka home from the bare desktop — one step, never a jump.
-    BackHandler {
-        when {
-            showShade -> showShade = false
-            showControl -> showControl = false
-            showSettings -> showSettings = false
-            openApp != null -> { openApp = null; deskTick++ }
-            else -> onBack()
+    // The activity intercepts the system back before Compose's BackHandler, so
+    // a BackHandler here never fires. Instead we hand the activity an
+    // internal-back callback it consults first: pop overlays / the open app and
+    // report handled, or report «not handled» from the bare desktop so the
+    // activity then closes SmartDesk. One step, never a jump.
+    DisposableEffect(Unit) {
+        setBackHandler {
+            when {
+                showShade -> { showShade = false; true }
+                showControl -> { showControl = false; true }
+                showSettings -> { showSettings = false; true }
+                openApp != null -> { openApp = null; deskTick++; true }
+                else -> false
+            }
         }
+        onDispose { setBackHandler(null) }
     }
 
     // Desktop text colour adapts to the wallpaper so labels read on any of them.

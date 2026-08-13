@@ -332,9 +332,9 @@ class MainActivity : HelperBaseComponentActivity() {
      * registrations so the two can never disagree about what is on top.
      */
     private fun closeTopVpnkaScreen(): Boolean = logBack(when {
-        // SmartDesk owns its own internal back (desktop ← app screen); the
-        // system back closes the whole surface back to the vpnka home.
-        showSmartDesk -> { showSmartDesk = false; true }
+        // SmartDesk steps back internally first (overlay/app → desktop); only
+        // from the bare desktop does back close the whole surface.
+        showSmartDesk -> { if (smartDeskBack?.invoke() != true) showSmartDesk = false; true }
         openedTicket != null -> { openedTicket = null; true }
         showTickets -> { showTickets = false; true }
         showSupport -> { showSupport = false; true }
@@ -398,6 +398,9 @@ class MainActivity : HelperBaseComponentActivity() {
     private var smartDeskOnline by mutableStateOf(false)
     // Privacy toggle: hide the SmartDesk entry; a 5-tap corner gesture reveals it.
     private var smartDeskHidden by mutableStateOf(MmkvManager.decodeSettingsBool("vpnka_smartdesk_hidden"))
+    // SmartDesk's internal back (pop overlay/app → desktop). Returns true if it
+    // handled the press; back closes the whole surface only when it returns false.
+    private var smartDeskBack: (() -> Boolean)? = null
     // Bumped when the zero-knowledge vault is unlocked, to re-evaluate the gate.
     private var vaultTick by mutableStateOf(0)
     // Set right before a profile refresh that follows claiming/buying a plan,
@@ -1152,6 +1155,7 @@ class MainActivity : HelperBaseComponentActivity() {
                     online = smartDeskOnline && uiState.isRunning,
                     onBack = { showSmartDesk = false },
                     onToggleVpn = { handleFabAction() },
+                    setBackHandler = { smartDeskBack = it },
                 )
             }
             return
