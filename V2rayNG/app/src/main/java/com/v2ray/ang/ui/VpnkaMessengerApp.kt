@@ -920,7 +920,8 @@ private fun MyProfileScreen(handle: String, onBack: () -> Unit) {
             Text(keyFingerprint(myKey), fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.Accent)
             Spacer(Modifier.height(8.dp))
             Text(
-                "Переписка шифруется прямо на вашем устройстве. Сервер видит только зашифрованные пакеты — ни сообщений, ни ключей у него нет.",
+                "Это ВАШ отпечаток. Продиктуйте его собеседнику — он сверит с тем, что видит у вас в вашем профиле. " +
+                    "Переписка шифруется прямо на устройстве: сервер видит только зашифрованные пакеты, ни сообщений, ни ключей у него нет.",
                 fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp, color = VpnkaColors.TextMuted,
             )
         }
@@ -988,12 +989,14 @@ private fun ContactProfileScreen(contact: Messenger.Contact, onBack: () -> Unit)
                 modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
                     .background(VpnkaColors.CardServer).padding(16.dp),
             ) {
-                Text("🔒 Ключ шифрования", fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp, color = VpnkaColors.TextStrong)
+                Text("🔒 Ключ шифрования собеседника", fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp, color = VpnkaColors.TextStrong)
                 Spacer(Modifier.height(8.dp))
                 Text(keyFingerprint(contact.pubKey), fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.Accent)
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Если этот код совпадает у вас и у собеседника — переписку никто не подменил.",
+                    "Это отпечаток ключа собеседника — у вас и у него он РАЗНЫЙ, так и должно быть. " +
+                        "Чтобы проверить, что переписку никто не подменил, попросите собеседника открыть у себя «Мой профиль» " +
+                        "и продиктовать свой отпечаток. Он должен совпасть с кодом выше.",
                     fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp, color = VpnkaColors.TextMuted,
                 )
             }
