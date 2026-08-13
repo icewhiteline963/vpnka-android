@@ -1730,9 +1730,28 @@ class MainActivity : HelperBaseComponentActivity() {
 
     private fun openTelegramLink() {
         lifecycleScope.launch {
-            val url = VpnkaAccount.telegramLinkUrl()
-            if (url != null) Utils.openUri(this@MainActivity, url)
+            val url = VpnkaAccount.telegramLinkUrl() ?: return@launch
+            openTelegramUrl(url)
         }
+    }
+
+    /** Open a t.me/... https link IN the Telegram app (tg://resolve), falling
+     *  back to the browser only when Telegram isn't installed — otherwise the
+     *  login code lands in a browser tab instead of the bot chat. */
+    private fun openTelegramUrl(httpsUrl: String) {
+        val uri = runCatching { android.net.Uri.parse(httpsUrl) }.getOrNull()
+        val domain = uri?.lastPathSegment
+        if (domain != null) {
+            val start = uri.getQueryParameter("start") ?: uri.getQueryParameter("startapp")
+            val tg = "tg://resolve?domain=$domain" + if (!start.isNullOrEmpty()) "&start=$start" else ""
+            try {
+                startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(tg)))
+                return
+            } catch (e: android.content.ActivityNotFoundException) {
+                // Telegram not installed — fall through to the browser link.
+            }
+        }
+        Utils.openUri(this, httpsUrl)
     }
 
     /**

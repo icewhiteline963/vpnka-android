@@ -103,10 +103,23 @@ fun VpnkaVaultGate(onUnlocked: () -> Unit, onBack: () -> Unit) {
 
                 "showRecovery" -> {
                     Head("Ключ восстановления", "Сохраните его. Если забудете пароль — только этот ключ вернёт доступ к данным. Мы его не храним.")
+                    val clip = androidx.compose.ui.platform.LocalClipboardManager.current
+                    val ctx = androidx.compose.ui.platform.LocalContext.current
+                    fun copyKey() {
+                        clip.setText(androidx.compose.ui.text.AnnotatedString(shownRecovery))
+                        android.widget.Toast.makeText(ctx, "Ключ скопирован", android.widget.Toast.LENGTH_SHORT).show()
+                    }
                     Box(modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                        .background(Color.White.copy(alpha = 0.85f)).padding(16.dp)) {
+                        .background(Color.White.copy(alpha = 0.85f)).clickable { copyKey() }.padding(16.dp)) {
                         Text(shownRecovery, fontFamily = VpnkaFonts.nunito800, fontSize = 18.sp, color = VpnkaColors.TextStrong)
                     }
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "📋  Копировать ключ",
+                        fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp, color = VpnkaColors.Accent,
+                        modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { copyKey() }
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                    )
                     Spacer(Modifier.height(12.dp))
                     Primary("Я сохранил, продолжить", false) { onUnlocked() }
                 }
