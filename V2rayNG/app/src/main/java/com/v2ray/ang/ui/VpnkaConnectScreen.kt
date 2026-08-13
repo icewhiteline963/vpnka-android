@@ -1307,7 +1307,7 @@ fun VpnkaServersScreen(
 
         Spacer(Modifier.height(12.dp))
         VpnkaPrimaryButton(
-            text = if (isLoading) "Обновляем…" else "Обновить список серверов",
+            text = if (isLoading) "Обновляем…" else "Обновить подписку и серверы",
             enabled = !isLoading,
             onClick = onRefresh,
         )

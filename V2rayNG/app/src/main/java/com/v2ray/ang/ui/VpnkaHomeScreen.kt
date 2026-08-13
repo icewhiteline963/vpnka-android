@@ -266,7 +266,7 @@ fun VpnkaHomeScreen(
         // stale list is exactly what a user stares at when the server set
         // changed on our side.
         TextButton(onClick = onRefreshSubscription, enabled = !isLoading) {
-            Text(if (isLoading) "Обновляем…" else "Обновить список серверов")
+            Text(if (isLoading) "Обновляем…" else "Обновить подписку и серверы")
         }
 
         if (expanded && servers.isNotEmpty()) {
