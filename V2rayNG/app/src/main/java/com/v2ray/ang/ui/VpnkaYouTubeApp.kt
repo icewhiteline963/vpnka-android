@@ -73,6 +73,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.media3.ui.PlayerView
 import com.v2ray.ang.handler.YouTubeService
 import com.v2ray.ang.handler.YouTubeFavorites
+import com.v2ray.ang.handler.YouTubePlaylists
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.foundation.shape.CircleShape
 import com.v2ray.ang.handler.SettingsManager
 import kotlinx.coroutines.Dispatchers
@@ -124,15 +127,50 @@ fun YouTubeApp() {
         }
     }
 
-    var tab by remember { mutableStateOf(0) } // 0 = поиск, 1 = избранное
-    var favTick by remember { mutableStateOf(0) }
+    var tab by remember { mutableStateOf(0) } // 0 = поиск, 1 = плейлисты
+    var plTick by remember { mutableStateOf(0) }
+    var openPl by remember { mutableStateOf<String?>(null) }
+    var addTo by remember { mutableStateOf<YouTubePlaylists.Item?>(null) }
+    var newPlDialog by remember { mutableStateOf(false) }
+    var renamePl by remember { mutableStateOf<YouTubePlaylists.Playlist?>(null) }
+    val context = LocalContext.current
+
+    // Storage permission for a playlist «Скачать всё» on pre-Android-10.
+    var pendingAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val a = pendingAction; pendingAction = null
+        if (granted) a?.invoke()
+    }
+    fun withStorage(action: () -> Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) ==
+            PackageManager.PERMISSION_GRANTED
+        ) action() else { pendingAction = action; permLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE) }
+    }
+    fun downloadPlaylist(pl: YouTubePlaylists.Playlist) = withStorage {
+        scope.launch {
+            var ok = 0
+            for ((i, v) in pl.videos.withIndex()) {
+                Toast.makeText(context, "Скачивание ${i + 1}/${pl.videos.size}…", Toast.LENGTH_SHORT).show()
+                val opt = withContext(Dispatchers.IO) { runCatching { YouTubeService.videoStreams(v.url).firstOrNull() }.getOrNull() }
+                if (opt != null) {
+                    val r = withContext(Dispatchers.IO) { runCatching { YouTubeService.download(context, opt, v.title) } }
+                    if (r.isSuccess) ok++
+                }
+            }
+            Toast.makeText(context, "Скачано $ok из ${pl.videos.size}", Toast.LENGTH_LONG).show()
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp)) {
+            var searchSort by remember { mutableStateOf(YtSort.DEFAULT) }
+            var plSort by remember { mutableStateOf(YtSort.DEFAULT) }
+
             Row(modifier = Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 YtTabChip("Поиск", tab == 0) { tab = 0 }
                 Spacer(Modifier.width(8.dp))
-                YtTabChip("★ Избранное", tab == 1) { tab = 1; favTick++ }
+                YtTabChip("Плейлисты", tab == 1) { tab = 1; openPl = null; plTick++ }
             }
 
             if (tab == 0) {
@@ -166,6 +204,12 @@ fun YouTubeApp() {
                     ) { Text("Найти", fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp, color = Color.White) }
                 }
 
+                if (results.isNotEmpty()) {
+                    Row(modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
+                        YtSortChip(searchSort, searchSortOptions) { searchSort = it }
+                    }
+                }
+
                 when {
                     loading -> CenterBox { CircularProgressIndicator(color = VpnkaColors.Accent) }
                     error != null && results.isEmpty() -> CenterBox {
@@ -185,32 +229,90 @@ fun YouTubeApp() {
                         }
                     }
                     else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(results) { v -> VideoRow(v, onClick = { open(v.url) }) }
+                        items(sortVideos(results, searchSort)) { v ->
+                            VideoRow(v, onClick = { open(v.url) },
+                                onAdd = { addTo = YouTubePlaylists.Item(it.url, it.title, it.uploader, it.durationSec) })
+                        }
                     }
                 }
             } else {
-                val favs = remember(favTick) { YouTubeFavorites.all() }
-                if (favs.isEmpty()) {
-                    CenterBox {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("★", fontSize = 44.sp, color = VpnkaColors.TextMuted)
+                val pls = remember(plTick) { YouTubePlaylists.all() }
+                val current = openPl?.let { id -> pls.firstOrNull { it.id == id } }
+                if (current == null) {
+                    LazyColumn(modifier = Modifier.fillMaxSize().padding(top = 8.dp)) {
+                        item {
+                            Box(
+                                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                                    .background(VpnkaColors.Accent).clickable { newPlDialog = true }.padding(14.dp),
+                            ) { Text("＋ Новый плейлист", fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp, color = Color.White) }
                             Spacer(Modifier.height(10.dp))
-                            Text("Здесь пусто", fontFamily = VpnkaFonts.nunito800,
-                                fontSize = 17.sp, color = VpnkaColors.TextStrong)
-                            Spacer(Modifier.height(6.dp))
-                            Text("Нажмите ★ на видео, чтобы сохранить ссылку.",
-                                fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp, color = VpnkaColors.TextMuted,
-                                textAlign = TextAlign.Center)
+                        }
+                        items(pls, key = { it.id }) { pl ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                                    .clickable { openPl = pl.id }.padding(vertical = 12.dp, horizontal = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(if (pl.id == YouTubePlaylists.FAV_ID) "★" else "🗂", fontSize = 20.sp)
+                                Spacer(Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(pl.name, fontFamily = VpnkaFonts.nunito800, fontSize = 15.sp,
+                                        color = VpnkaColors.TextStrong, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text("${pl.videos.size} видео", fontFamily = VpnkaFonts.manrope600,
+                                        fontSize = 12.sp, color = VpnkaColors.TextMuted)
+                                }
+                                Text("›", fontSize = 20.sp, color = VpnkaColors.TextMuted)
+                            }
                         }
                     }
                 } else {
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(favs) { f ->
-                            VideoRow(
-                                YouTubeService.Video(f.url, f.title, f.uploader, f.durationSec, null),
-                                onClick = { open(f.url) },
-                                onFavChanged = { favTick++ },
-                            )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("‹", fontSize = 24.sp, color = VpnkaColors.TextStrong,
+                            modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { openPl = null }
+                                .padding(horizontal = 6.dp, vertical = 2.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(current.name, fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp,
+                            color = VpnkaColors.TextStrong, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f))
+                        var plMenu by remember { mutableStateOf(false) }
+                        Box {
+                            Text("⋮", fontSize = 22.sp, color = VpnkaColors.TextStrong,
+                                modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable { plMenu = true }
+                                    .padding(horizontal = 8.dp, vertical = 2.dp))
+                            DropdownMenu(expanded = plMenu, onDismissRequest = { plMenu = false }) {
+                                DropdownMenuItem(text = { Text("⬇ Скачать всё") }, enabled = current.videos.isNotEmpty(),
+                                    onClick = { plMenu = false; downloadPlaylist(current) })
+                                if (current.id != YouTubePlaylists.FAV_ID) {
+                                    DropdownMenuItem(text = { Text("✎ Переименовать") }, onClick = { plMenu = false; renamePl = current })
+                                    DropdownMenuItem(text = { Text("🗑 Удалить плейлист") },
+                                        onClick = { plMenu = false; YouTubePlaylists.delete(current.id); openPl = null; plTick++ })
+                                }
+                            }
+                        }
+                    }
+                    if (current.videos.isNotEmpty()) {
+                        Row(modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
+                            YtSortChip(plSort, playlistSortOptions) { plSort = it }
+                        }
+                    }
+                    if (current.videos.isEmpty()) {
+                        CenterBox {
+                            Text("Пусто. Добавьте видео кнопкой «＋» на карточке видео.",
+                                color = VpnkaColors.TextMuted, fontFamily = VpnkaFonts.manrope600, textAlign = TextAlign.Center)
+                        }
+                    } else {
+                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                            items(sortItems(current.videos, plSort), key = { it.url }) { itv ->
+                                VideoRow(
+                                    YouTubeService.Video(itv.url, itv.title, itv.uploader, itv.durationSec, null),
+                                    onClick = { open(itv.url) },
+                                    onAdd = { addTo = YouTubePlaylists.Item(itv.url, itv.title, itv.uploader, itv.durationSec) },
+                                    onRemove = { YouTubePlaylists.remove(current.id, itv.url); plTick++ },
+                                )
+                            }
                         }
                     }
                 }
@@ -229,12 +331,169 @@ fun YouTubeApp() {
                 }
             }
         }
+
+        addTo?.let { item ->
+            AddToPlaylistDialog(item) { addTo = null; plTick++ }
+        }
+
+        if (newPlDialog) {
+            var name by remember { mutableStateOf("") }
+            AlertDialog(
+                onDismissRequest = { newPlDialog = false },
+                confirmButton = {
+                    TextButton(onClick = {
+                        if (name.isNotBlank()) { YouTubePlaylists.create(name); plTick++ }
+                        newPlDialog = false
+                    }) { Text("Создать") }
+                },
+                dismissButton = { TextButton(onClick = { newPlDialog = false }) { Text("Отмена") } },
+                title = { Text("Новый плейлист", fontFamily = VpnkaFonts.nunito800, color = VpnkaColors.TextStrong) },
+                text = {
+                    OutlinedTextField(
+                        value = name, onValueChange = { name = it }, singleLine = true,
+                        placeholder = { Text("Название", color = VpnkaColors.TextMuted) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = VpnkaColors.TextStrong, unfocusedTextColor = VpnkaColors.TextStrong,
+                            cursorColor = VpnkaColors.Accent),
+                    )
+                },
+                containerColor = VpnkaColors.BgOffCentre,
+            )
+        }
+
+        renamePl?.let { pl ->
+            var name by remember(pl.id) { mutableStateOf(pl.name) }
+            AlertDialog(
+                onDismissRequest = { renamePl = null },
+                confirmButton = {
+                    TextButton(onClick = {
+                        if (name.isNotBlank()) { YouTubePlaylists.rename(pl.id, name); plTick++ }
+                        renamePl = null
+                    }) { Text("Сохранить") }
+                },
+                dismissButton = { TextButton(onClick = { renamePl = null }) { Text("Отмена") } },
+                title = { Text("Переименовать", fontFamily = VpnkaFonts.nunito800, color = VpnkaColors.TextStrong) },
+                text = {
+                    OutlinedTextField(
+                        value = name, onValueChange = { name = it }, singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = VpnkaColors.TextStrong, unfocusedTextColor = VpnkaColors.TextStrong,
+                            cursorColor = VpnkaColors.Accent),
+                    )
+                },
+                containerColor = VpnkaColors.BgOffCentre,
+            )
+        }
     }
 }
 
 @Composable
 private fun CenterBox(content: @Composable () -> Unit) {
     Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) { content() }
+}
+
+private enum class YtSort(val label: String) {
+    DEFAULT("Без сортировки"),
+    DUR_DESC("Дольше сначала"),
+    DUR_ASC("Короче сначала"),
+    ADDED_NEW("Сначала новые"),
+    ADDED_OLD("Сначала старые"),
+}
+private val searchSortOptions = listOf(YtSort.DEFAULT, YtSort.DUR_DESC, YtSort.DUR_ASC)
+private val playlistSortOptions =
+    listOf(YtSort.DEFAULT, YtSort.DUR_DESC, YtSort.DUR_ASC, YtSort.ADDED_NEW, YtSort.ADDED_OLD)
+
+private fun sortVideos(list: List<YouTubeService.Video>, s: YtSort): List<YouTubeService.Video> = when (s) {
+    YtSort.DUR_DESC -> list.sortedByDescending { it.durationSec }
+    YtSort.DUR_ASC -> list.sortedBy { it.durationSec }
+    else -> list
+}
+private fun sortItems(list: List<YouTubePlaylists.Item>, s: YtSort): List<YouTubePlaylists.Item> = when (s) {
+    YtSort.DUR_DESC -> list.sortedByDescending { it.durationSec }
+    YtSort.DUR_ASC -> list.sortedBy { it.durationSec }
+    YtSort.ADDED_NEW -> list.sortedByDescending { it.addedAt }
+    YtSort.ADDED_OLD -> list.sortedBy { it.addedAt }
+    else -> list
+}
+
+@Composable
+private fun YtSortChip(current: YtSort, options: List<YtSort>, onPick: (YtSort) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        Box(
+            modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(VpnkaColors.CardServer)
+                .clickable { open = true }.padding(horizontal = 12.dp, vertical = 8.dp),
+        ) {
+            Text("⇅  ${current.label}", fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp, color = VpnkaColors.TextStrong)
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            options.forEach { o ->
+                DropdownMenuItem(text = { Text(o.label) }, onClick = { open = false; onPick(o) })
+            }
+        }
+    }
+}
+
+@Composable
+private fun AddToPlaylistDialog(item: YouTubePlaylists.Item, onClose: () -> Unit) {
+    val ctx = LocalContext.current
+    var creating by remember { mutableStateOf(false) }
+    var newName by remember { mutableStateOf("") }
+    val lists = remember { YouTubePlaylists.all() }
+    AlertDialog(
+        onDismissRequest = onClose,
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onClose) { Text("Закрыть") } },
+        title = { Text("Добавить в плейлист", fontFamily = VpnkaFonts.nunito800, color = VpnkaColors.TextStrong) },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                lists.forEach { pl ->
+                    Box(
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                            .clickable {
+                                YouTubePlaylists.add(pl.id, item)
+                                Toast.makeText(ctx, "Добавлено: ${pl.name}", Toast.LENGTH_SHORT).show()
+                                onClose()
+                            }.padding(vertical = 12.dp, horizontal = 6.dp),
+                    ) {
+                        Text("${pl.name}  ·  ${pl.videos.size}", color = VpnkaColors.TextStrong,
+                            fontFamily = VpnkaFonts.manrope600, fontSize = 15.sp)
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                if (creating) {
+                    OutlinedTextField(
+                        value = newName, onValueChange = { newName = it }, singleLine = true,
+                        placeholder = { Text("Название", color = VpnkaColors.TextMuted) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = VpnkaColors.TextStrong, unfocusedTextColor = VpnkaColors.TextStrong,
+                            cursorColor = VpnkaColors.Accent),
+                    )
+                    Box(
+                        modifier = Modifier.padding(top = 8.dp).clip(RoundedCornerShape(10.dp))
+                            .background(VpnkaColors.Accent)
+                            .clickable {
+                                if (newName.isNotBlank()) {
+                                    val id = YouTubePlaylists.create(newName)
+                                    YouTubePlaylists.add(id, item)
+                                    Toast.makeText(ctx, "Создан плейлист", Toast.LENGTH_SHORT).show()
+                                    onClose()
+                                }
+                            }.padding(horizontal = 14.dp, vertical = 10.dp),
+                    ) { Text("Создать и добавить", color = Color.White, fontFamily = VpnkaFonts.nunito800, fontSize = 13.sp) }
+                } else {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
+                            .clickable { creating = true }.padding(vertical = 10.dp, horizontal = 6.dp),
+                    ) { Text("＋ Новый плейлист", color = VpnkaColors.Accent, fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp) }
+                }
+            }
+        },
+        containerColor = VpnkaColors.BgOffCentre,
+    )
 }
 
 @Composable
@@ -251,7 +510,13 @@ private fun YtTabChip(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun VideoRow(v: YouTubeService.Video, onClick: () -> Unit, onFavChanged: (() -> Unit)? = null) {
+private fun VideoRow(
+    v: YouTubeService.Video,
+    onClick: () -> Unit,
+    onFavChanged: (() -> Unit)? = null,
+    onAdd: ((YouTubeService.Video) -> Unit)? = null,
+    onRemove: (() -> Unit)? = null,
+) {
     var fav by remember(v.url) { mutableStateOf(YouTubeFavorites.isFav(v.url)) }
     Row(
         modifier = Modifier.fillMaxWidth()
@@ -281,6 +546,10 @@ private fun VideoRow(v: YouTubeService.Video, onClick: () -> Unit, onFavChanged:
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
         }
+        if (onAdd != null) {
+            Text("＋", fontSize = 22.sp, color = VpnkaColors.TextStrong,
+                modifier = Modifier.clip(CircleShape).clickable { onAdd(v) }.padding(8.dp))
+        }
         Text(
             if (fav) "★" else "☆",
             fontSize = 22.sp,
@@ -292,6 +561,10 @@ private fun VideoRow(v: YouTubeService.Video, onClick: () -> Unit, onFavChanged:
                 onFavChanged?.invoke()
             }.padding(8.dp),
         )
+        if (onRemove != null) {
+            Text("🗑", fontSize = 18.sp, color = VpnkaColors.TextMuted,
+                modifier = Modifier.clip(CircleShape).clickable { onRemove() }.padding(8.dp))
+        }
     }
 }
 
@@ -334,6 +607,7 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
     // Held while we wait for a storage-permission grant on pre-Android-10.
     var pendingAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     var fav by remember(pb.pageUrl) { mutableStateOf(YouTubeFavorites.isFav(pb.pageUrl)) }
+    var addToPlayer by remember { mutableStateOf<YouTubePlaylists.Item?>(null) }
 
     // One PlayerView, re-parented between the inline slot and the fullscreen
     // Dialog so playback survives the switch (same trick as the browser WebView).
@@ -488,6 +762,10 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                 Spacer(Modifier.width(8.dp))
                 YtActionChip("📝  Субтитры", enabled = !busy) { openSubs() }
                 Spacer(Modifier.width(8.dp))
+                YtActionChip("＋  Плейлист", enabled = true) {
+                    addToPlayer = YouTubePlaylists.Item(pb.pageUrl, pb.title)
+                }
+                Spacer(Modifier.width(8.dp))
                 YtActionChip(if (fav) "★" else "☆", enabled = true) {
                     fav = YouTubeFavorites.toggle(YouTubeFavorites.Fav(pb.pageUrl, pb.title, "", 0L))
                     Toast.makeText(context, if (fav) "Добавлено в избранное" else "Убрано из избранного", Toast.LENGTH_SHORT).show()
@@ -546,6 +824,10 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
             },
             containerColor = VpnkaColors.BgOffCentre,
         )
+    }
+
+    addToPlayer?.let { item ->
+        AddToPlaylistDialog(item) { addToPlayer = null }
     }
 }
 

@@ -1,49 +1,29 @@
 package com.v2ray.ang.handler
 
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
-
 /**
- * Saved YouTube links ("Избранное"), kept in the app's encrypted MMKV settings.
- * Local-only: these are just public video URLs, not synced to the server.
+ * Thin wrapper over the reserved «Избранное» playlist so the ★ button keeps
+ * working. All state lives in [YouTubePlaylists].
  */
 object YouTubeFavorites {
-    private const val KEY = "vpnka_youtube_favorites"
-    private val gson = Gson()
-
     data class Fav(val url: String, val title: String, val uploader: String, val durationSec: Long)
 
-    private fun load(): MutableList<Fav> {
-        val raw = MmkvManager.decodeSettingsString(KEY) ?: return mutableListOf()
-        return try {
-            gson.fromJson<MutableList<Fav>>(raw, object : TypeToken<MutableList<Fav>>() {}.type)
-                ?: mutableListOf()
-        } catch (e: Exception) {
-            mutableListOf()
-        }
-    }
+    fun all(): List<Fav> =
+        YouTubePlaylists.get(YouTubePlaylists.FAV_ID)?.videos
+            ?.map { Fav(it.url, it.title, it.uploader, it.durationSec) }
+            ?: emptyList()
 
-    private fun store(list: List<Fav>) {
-        MmkvManager.encodeSettings(KEY, gson.toJson(list))
-    }
-
-    fun all(): List<Fav> = load()
-
-    fun isFav(url: String): Boolean = load().any { it.url == url }
+    fun isFav(url: String): Boolean = YouTubePlaylists.contains(YouTubePlaylists.FAV_ID, url)
 
     /** Adds if absent, removes if present. Returns the new favourited state. */
-    fun toggle(f: Fav): Boolean {
-        val list = load()
-        val idx = list.indexOfFirst { it.url == f.url }
-        return if (idx >= 0) {
-            list.removeAt(idx); store(list); false
+    fun toggle(f: Fav): Boolean =
+        if (isFav(f.url)) {
+            YouTubePlaylists.remove(YouTubePlaylists.FAV_ID, f.url); false
         } else {
-            list.add(0, f); store(list); true
+            YouTubePlaylists.add(
+                YouTubePlaylists.FAV_ID,
+                YouTubePlaylists.Item(f.url, f.title, f.uploader, f.durationSec),
+            ); true
         }
-    }
 
-    fun remove(url: String) {
-        val list = load()
-        if (list.removeAll { it.url == url }) store(list)
-    }
+    fun remove(url: String) = YouTubePlaylists.remove(YouTubePlaylists.FAV_ID, url)
 }
