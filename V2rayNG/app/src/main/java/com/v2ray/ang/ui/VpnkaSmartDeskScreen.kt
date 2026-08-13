@@ -37,6 +37,11 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import com.v2ray.ang.handler.Messenger
 import com.v2ray.ang.handler.SmartDeskSync
+import com.v2ray.ang.handler.SmartDeskStore
+import androidx.compose.ui.window.Popup
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.DisposableEffect
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -217,6 +222,7 @@ private fun saveOrder(order: List<Pair<DeskApp, Int>>) {
 fun VpnkaSmartDeskScreen(
     online: Boolean,
     onBack: () -> Unit,
+    onToggleVpn: () -> Unit = {},
 ) {
     // Which app is open, or null on the desktop itself.
     var openApp by remember { mutableStateOf<DeskApp?>(null) }
@@ -279,17 +285,21 @@ fun VpnkaSmartDeskScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Spacer(Modifier.weight(1f))
+            SmartDeskCloudButton(online = online, ink = ink)
+            Spacer(Modifier.width(8.dp))
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .clip(CircleShape)
                     .background(ink.copy(alpha = 0.16f))
+                    // Tap to toggle the VPN — offline → connect, online → disconnect.
+                    .clickable { onToggleVpn() }
                     .padding(horizontal = 11.dp, vertical = 6.dp),
             ) {
                 Box(Modifier.size(8.dp).clip(CircleShape).background(if (online) VpnkaColors.Green else VpnkaColors.Warning))
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    text = if (online) "На связи" else "Автономно",
+                    text = if (online) "На связи" else "Подключить",
                     fontFamily = VpnkaFonts.manrope700, fontSize = 12.sp, color = ink,
                 )
             }
@@ -502,6 +512,76 @@ fun VpnkaSmartDeskScreen(
         // drawn topmost so it also covers open apps, the shade and control
         // centre.
         SmartDeskStatusScrim()
+    }
+}
+
+@Composable
+/**
+ * Cloud/sync status as a tap-for-tooltip button. When everything is uploaded it
+ * reassures the user that nothing is kept on the device — the local copy is
+ * wiped after each sync and lives only in the encrypted cloud. Tapping also
+ * forces a sync if anything is still pending.
+ */
+@Composable
+private fun SmartDeskCloudButton(online: Boolean, ink: Color) {
+    val scope = rememberCoroutineScope()
+    var syncing by remember { mutableStateOf(false) }
+    var tick by remember { mutableIntStateOf(0) }
+    var showTip by remember { mutableStateOf(false) }
+    val pending = remember(tick, syncing, showTip) { SmartDeskStore.pending().size }
+    val glyph = when {
+        syncing -> "↻"
+        pending == 0 && online -> "☁"
+        else -> "↑"
+    }
+    Box {
+        Box(
+            modifier = Modifier
+                .clip(CircleShape)
+                .background(ink.copy(alpha = 0.16f))
+                .clickable {
+                    showTip = true
+                    if (online && !syncing && pending > 0) {
+                        syncing = true
+                        scope.launch { SmartDeskSync.sync(); syncing = false; tick++ }
+                    }
+                }
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            contentAlignment = Alignment.Center,
+        ) { Text(glyph, fontSize = 13.sp, color = ink) }
+
+        if (showTip) {
+            Popup(
+                alignment = Alignment.TopEnd,
+                onDismissRequest = { showTip = false },
+                offset = IntOffset(0, 92),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .widthIn(max = 250.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(VpnkaColors.BgOffCentre)
+                        .padding(14.dp),
+                ) {
+                    val title = when {
+                        syncing -> "Синхронизация…"
+                        !online -> "Нет связи"
+                        pending == 0 -> "☁ Данные в облаке"
+                        else -> "↑ Ожидает отправки: $pending"
+                    }
+                    Text(title, fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp, color = VpnkaColors.TextStrong)
+                    Spacer(Modifier.height(5.dp))
+                    val sub = when {
+                        syncing -> "Отправляем зашифрованные данные на сервер."
+                        !online -> "Данные сохранятся локально и уйдут в облако при подключении."
+                        pending == 0 -> "🔒 На устройстве данные не хранятся — после синхронизации локальная копия стёрта, всё лежит только в зашифрованном облаке."
+                        else -> "Нажмите, чтобы отправить в облако. После синхронизации локальная копия будет стёрта."
+                    }
+                    Text(sub, fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp,
+                        color = VpnkaColors.TextMuted, lineHeight = 17.sp)
+                }
+            }
+        }
     }
 }
 

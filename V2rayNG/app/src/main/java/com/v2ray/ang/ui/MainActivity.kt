@@ -1136,8 +1136,12 @@ class MainActivity : HelperBaseComponentActivity() {
                 )
             } else {
                 VpnkaSmartDeskScreen(
-                    online = smartDeskOnline,
+                    // «На связи» must reflect the live tunnel: SmartDesk apps all
+                    // egress through the VPN, so with the VPN off they're offline
+                    // regardless of the cached feature-reachability ping.
+                    online = smartDeskOnline && uiState.isRunning,
                     onBack = { showSmartDesk = false },
+                    onToggleVpn = { handleFabAction() },
                 )
             }
             return
