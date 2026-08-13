@@ -31,8 +31,9 @@
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- Voice messages in the SmartDesk messenger. -->
+    <!-- Voice messages + WebRTC voice calls in the SmartDesk messenger. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <!-- Saving downloaded YouTube videos to public Downloads on pre-Android-10.
          On 10+ MediaStore handles it without any permission. -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"

@@ -62,6 +62,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.v2ray.ang.handler.CallManager
 import com.v2ray.ang.handler.Channels
 import com.v2ray.ang.handler.Messenger
 import java.text.SimpleDateFormat
@@ -114,6 +115,7 @@ fun VpnkaMessengerApp() {
     // WebSocket rides alongside for instant wake + "typing"; polling stays as
     // the fallback so a dropped socket never loses messages.
     LaunchedEffect(Unit) {
+        CallManager.attach()  // route incoming call signaling into the engine
         Messenger.refreshMyId()
         handle = Messenger.register("${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
         myChannels = Channels.mine()
@@ -156,6 +158,14 @@ fun VpnkaMessengerApp() {
     }
 
     val contacts = remember(tick) { Messenger.contacts() }
+
+    // A voice call takes over the whole screen (over the contact list or any
+    // chat). The polling/WS effects above stay mounted, so signaling keeps
+    // flowing while the call UI is shown.
+    if (CallManager.phase != CallManager.Phase.IDLE) {
+        CallScreen()
+        return
+    }
 
     // Hide the SmartDesk host bar while a nested screen (chat, channel, profile)
     // is open — those have their own header; only the contact list keeps the bar.
@@ -509,6 +519,10 @@ private fun ChatScreen(
     }
 
     val context = LocalContext.current
+    // Mic permission gate for placing a call from the 📞 header button.
+    val callMicLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted -> if (granted) CallManager.startCall(context, contact.id, contact.name) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) scope.launch(Dispatchers.IO) {
             try {
@@ -584,6 +598,21 @@ private fun ChatScreen(
                     Text("печатает…", fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp, color = VpnkaColors.Accent)
                 }
             }
+            Spacer(Modifier.weight(1f))
+            Box(
+                modifier = Modifier.size(40.dp).clip(CircleShape)
+                    .background(VpnkaColors.CardSettings)
+                    .clickable {
+                        if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO)
+                            == android.content.pm.PackageManager.PERMISSION_GRANTED
+                        ) {
+                            CallManager.startCall(context, contact.id, contact.name)
+                        } else {
+                            callMicLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                        }
+                    },
+                contentAlignment = Alignment.Center,
+            ) { Text("📞", fontSize = 18.sp) }
         }
         LazyColumn(state = listState, modifier = Modifier.fillMaxSize().weight(1f).padding(horizontal = 12.dp)) {
             // Outgoing messages all carry id=0 and can share a millisecond, so
@@ -1005,4 +1034,87 @@ private fun MsgField(label: String, value: String, onChange: (String) -> Unit) {
         ),
         modifier = Modifier.fillMaxWidth(),
     )
+}
+
+/**
+ * Full-screen call UI. Reads [CallManager] state directly and drives it back
+ * (accept / decline / mute / speaker / hangup). Shown by the messenger root
+ * whenever a call is not IDLE.
+ */
+@Composable
+private fun CallScreen() {
+    val context = LocalContext.current
+    val phase = CallManager.phase
+    val name = CallManager.peerName.ifBlank { "Собеседник" }
+
+    // Live call duration once connected.
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(phase, CallManager.connectedAt) {
+        while (phase == CallManager.Phase.ACTIVE) { now = System.currentTimeMillis(); delay(1000) }
+    }
+    val status = when (phase) {
+        CallManager.Phase.OUTGOING -> "Звоним…"
+        CallManager.Phase.INCOMING -> "Входящий звонок"
+        CallManager.Phase.ACTIVE ->
+            if (CallManager.connectedAt > 0) fmtVoice(((now - CallManager.connectedAt) / 1000).toInt().coerceAtLeast(0)) else "Соединение…"
+        CallManager.Phase.ENDED -> "Звонок завершён"
+        CallManager.Phase.IDLE -> ""
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize().background(VpnkaColors.CardServer),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Spacer(Modifier.height(72.dp))
+        MsgAvatar(name, size = 120)
+        Spacer(Modifier.height(18.dp))
+        Text(name, fontFamily = VpnkaFonts.nunito800, fontSize = 24.sp, color = VpnkaColors.TextStrong)
+        Spacer(Modifier.height(8.dp))
+        Text("🔒 $status", fontFamily = VpnkaFonts.manrope600, fontSize = 15.sp, color = VpnkaColors.TextMuted)
+        Spacer(Modifier.weight(1f))
+
+        if (phase == CallManager.Phase.ACTIVE) {
+            Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
+                CallToggle(if (CallManager.muted) "🔇" else "🎙", if (CallManager.muted) "Вкл. звук" else "Выкл. звук") { CallManager.toggleMute() }
+                CallToggle(if (CallManager.speaker) "🔊" else "📢", "Динамик") { CallManager.toggleSpeaker() }
+            }
+            Spacer(Modifier.height(28.dp))
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 56.dp),
+            horizontalArrangement = if (phase == CallManager.Phase.INCOMING) Arrangement.SpaceEvenly else Arrangement.Center,
+        ) {
+            if (phase == CallManager.Phase.INCOMING) {
+                CallButton("✕", VpnkaColors.Warning, "Отклонить") { CallManager.decline() }
+                CallButton("📞", VpnkaColors.Green, "Принять") { CallManager.accept(context) }
+            } else if (phase != CallManager.Phase.ENDED) {
+                CallButton("✕", VpnkaColors.Warning, "Завершить") { CallManager.hangup() }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CallButton(glyph: String, color: Color, label: String, onClick: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            modifier = Modifier.size(72.dp).clip(CircleShape).background(color).clickable(onClick = onClick),
+            contentAlignment = Alignment.Center,
+        ) { Text(glyph, fontSize = 30.sp, color = Color.White) }
+        Spacer(Modifier.height(8.dp))
+        Text(label, fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp, color = VpnkaColors.TextMuted)
+    }
+}
+
+@Composable
+private fun CallToggle(glyph: String, label: String, onClick: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            modifier = Modifier.size(60.dp).clip(CircleShape).background(VpnkaColors.CardSettings).clickable(onClick = onClick),
+            contentAlignment = Alignment.Center,
+        ) { Text(glyph, fontSize = 24.sp) }
+        Spacer(Modifier.height(6.dp))
+        Text(label, fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp, color = VpnkaColors.TextMuted)
+    }
 }

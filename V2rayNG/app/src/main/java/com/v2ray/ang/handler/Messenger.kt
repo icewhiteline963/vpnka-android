@@ -404,6 +404,12 @@ object Messenger {
                         when (f.t) {
                             "wake" -> wsCallback?.invoke("wake", 0L)
                             "typing" -> wsCallback?.invoke("typing", f.from)
+                            "call" -> {
+                                // Blindly-relayed call signaling; the blob is
+                                // sealed to us. Decrypt and hand to the engine.
+                                val plain = open(f.data) ?: return
+                                onCallSignal?.invoke(f.from, plain)
+                            }
                         }
                     } catch (e: Exception) { /* ignore malformed frame */ }
                 }
@@ -432,7 +438,41 @@ object Messenger {
         webSocket?.send(gson.toJson(WsTyping(to = to)))
     }
 
-    private data class WsFrame(val t: String = "", val from: Long = 0)
+    // --- voice-call signaling (WebRTC): sealed frames over the same socket ---
+
+    /** The engine's incoming-signal sink: (fromClientId, plaintextJson). */
+    @Volatile var onCallSignal: ((Long, String) -> Unit)? = null
+
+    /** Seal a call-signaling payload to the peer and push it over the socket. */
+    fun sendCallSignal(to: Long, payloadJson: String): Boolean {
+        val c = contact(to) ?: return false
+        val sealed = try { seal(payloadJson, c.pubKey) } catch (e: Exception) { return false }
+        val ws = webSocket ?: return false
+        return ws.send(gson.toJson(WsCall(to = to, data = sealed)))
+    }
+
+    data class IceServer(
+        val urls: List<String> = emptyList(),
+        val username: String? = null,
+        val credential: String? = null,
+    )
+
+    /** ICE servers (STUN, and TURN when the backend mints credentials). */
+    suspend fun fetchIceServers(): List<IceServer> = withContext(Dispatchers.IO) {
+        val req = authed("/app/messenger/ice")?.get()?.build() ?: return@withContext emptyList()
+        try {
+            http().newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@withContext emptyList()
+                gson.fromJson(resp.body?.string().orEmpty(), IceResp::class.java)
+                    ?.iceServers ?: emptyList()
+            }
+        } catch (e: Exception) { emptyList() }
+    }
+
+    private data class IceResp(val iceServers: List<IceServer> = emptyList())
+    private data class WsCall(val t: String = "call", val to: Long, val data: String)
+
+    private data class WsFrame(val t: String = "", val from: Long = 0, val data: String = "")
     private data class WsTyping(val t: String = "typing", val to: Long)
 
     // The E2E plaintext is a JSON payload: uuid + kind + text (+ peer/mid on a
