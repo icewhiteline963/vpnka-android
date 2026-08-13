@@ -8,6 +8,7 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import com.v2ray.ang.handler.MmkvManager
+import com.v2ray.ang.handler.PasswordStore
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.focus.FocusRequester
@@ -826,12 +827,25 @@ private object AdBlocker {
 
 /** One browser tab: a live WebView plus the reactive state the chrome reads. */
 @SuppressLint("SetJavaScriptEnabled")
-private class BrowserTab(context: Context, val id: Int, startUrl: String) {
+private class BrowserTab(
+    context: Context,
+    val id: Int,
+    startUrl: String,
+    onOfferSave: (host: String, user: String, pass: String) -> Unit,
+) {
     val url = mutableStateOf(startUrl)
     val title = mutableStateOf("")
     val progress = mutableStateOf(0)
     val canBack = mutableStateOf(false)
     val canFwd = mutableStateOf(false)
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    /** The host we actually trust is the tab's current URL — NOT anything the
+     *  page's JS passes us. This is what stops a site reading other sites' creds. */
+    private fun currentHost(): String? = try {
+        android.net.Uri.parse(url.value).host
+    } catch (e: Exception) { null }
+
     val webView: WebView = WebView(context).apply {
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = true
@@ -839,12 +853,23 @@ private class BrowserTab(context: Context, val id: Int, startUrl: String) {
         settings.loadWithOverviewMode = true
         settings.builtInZoomControls = true
         settings.displayZoomControls = false
+        addJavascriptInterface(object {
+            @android.webkit.JavascriptInterface
+            fun getCredentials(): String? = currentHost()?.let { PasswordStore.credentialsJson(it) }
+
+            @android.webkit.JavascriptInterface
+            fun promptSave(user: String, pass: String) {
+                val host = currentHost() ?: return
+                mainHandler.post { onOfferSave(host, user, pass) }
+            }
+        }, "VpnkaPwd")
         webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView?, u: String?, favicon: android.graphics.Bitmap?) {
                 u?.let { this@BrowserTab.url.value = it }; this@BrowserTab.canBack.value = canGoBack(); this@BrowserTab.canFwd.value = canGoForward()
             }
             override fun onPageFinished(view: WebView?, u: String?) {
                 u?.let { this@BrowserTab.url.value = it }; this@BrowserTab.canBack.value = canGoBack(); this@BrowserTab.canFwd.value = canGoForward()
+                view?.evaluateJavascript(PWD_JS, null)
             }
             override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
                 val u = request?.url?.toString()
@@ -859,6 +884,34 @@ private class BrowserTab(context: Context, val id: Int, startUrl: String) {
     }
     fun go(input: String) = webView.loadUrl(normalizeUrl(input))
 }
+
+/** Injected after each page load: autofills a saved login and, on form submit,
+ *  hands the entered username/password back to the app to offer saving. Reads
+ *  only the top document's inputs; the app supplies the trusted origin. */
+private const val PWD_JS = """
+(function(){
+ try{
+  var raw=null; try{ raw=VpnkaPwd.getCredentials(); }catch(e){}
+  if(raw){ try{ var c=JSON.parse(raw);
+    var pw=document.querySelector('input[type=password]');
+    if(pw){ pw.value=c.p;
+      var ins=document.querySelectorAll('input'); var uf=null;
+      for(var i=0;i<ins.length;i++){ if(ins[i]===pw) break; var t=(ins[i].type||'text').toLowerCase(); if(t=='text'||t=='email'||t=='tel') uf=ins[i]; }
+      if(uf&&c.u) uf.value=c.u;
+    }
+  }catch(e){} }
+  if(!window.__vpnkaPwdHook){ window.__vpnkaPwdHook=true;
+   document.addEventListener('submit', function(ev){
+    try{ var f=ev.target; var pw=f&&f.querySelector?f.querySelector('input[type=password]'):null; if(!pw||!pw.value) return;
+      var ins=f.querySelectorAll('input'); var u='';
+      for(var i=0;i<ins.length;i++){ if(ins[i]===pw) break; var t=(ins[i].type||'text').toLowerCase(); if(t=='text'||t=='email'||t=='tel') u=ins[i].value; }
+      VpnkaPwd.promptSave(u, pw.value);
+    }catch(e){}
+   }, true);
+  }
+ }catch(e){}
+})();
+"""
 
 /** Bare domain («example.com») for the omnibox. */
 private fun domainOf(url: String): String = try {
@@ -937,8 +990,15 @@ private fun BrowserApp() {
         }
     }
 
+    // Password manager: a page offer to save creds, and the manager sheet.
+    var pendingSave by remember { mutableStateOf<Triple<String, String, String>?>(null) }
+    var showPwds by remember { mutableStateOf(false) }
+    val onOfferSave = remember {
+        { host: String, user: String, pass: String -> pendingSave = Triple(host, user, pass) }
+    }
+
     val home = "https://duckduckgo.com/"
-    val tabs = remember { mutableStateListOf(BrowserTab(context, 0, home)) }
+    val tabs = remember { mutableStateListOf(BrowserTab(context, 0, home, onOfferSave)) }
     var nextId by remember { mutableIntStateOf(1) }
     var activeId by remember { mutableIntStateOf(0) }
     val active = tabs.firstOrNull { it.id == activeId } ?: tabs.first()
@@ -948,10 +1008,10 @@ private fun BrowserApp() {
     var menuOpen by remember { mutableStateOf(false) }
     var adblock by remember { mutableStateOf(AdBlocker.enabled) }
 
-    fun openTab(u: String) { tabs.add(BrowserTab(context, nextId, u)); activeId = nextId; nextId++; showTabs = false }
+    fun openTab(u: String) { tabs.add(BrowserTab(context, nextId, u, onOfferSave)); activeId = nextId; nextId++; showTabs = false }
     fun closeTab(t: BrowserTab) {
         val i = tabs.indexOf(t); tabs.remove(t)
-        if (tabs.isEmpty()) { tabs.add(BrowserTab(context, nextId, home)); activeId = nextId; nextId++ }
+        if (tabs.isEmpty()) { tabs.add(BrowserTab(context, nextId, home, onOfferSave)); activeId = nextId; nextId++ }
         else if (activeId == t.id) activeId = tabs[i.coerceAtMost(tabs.lastIndex)].id
         // Halt the closed tab so it stops running JS/media/network in the bg.
         runCatching { t.webView.loadUrl("about:blank"); t.webView.onPause() }
@@ -1031,6 +1091,7 @@ private fun BrowserApp() {
                         text = { Text(if (adblock) "🛡 Блокировка рекламы: вкл" else "🛡 Блокировка рекламы: выкл") },
                         onClick = { menuOpen = false; AdBlocker.enabled = !adblock; adblock = !adblock; active.webView.reload() },
                     )
+                    DropdownMenuItem(text = { Text("🔑 Пароли") }, onClick = { menuOpen = false; showPwds = true })
                 }
             }
         }
@@ -1079,6 +1140,73 @@ private fun BrowserApp() {
                             }
                             Text("✕", fontSize = 16.sp, color = VpnkaColors.TextMuted,
                                 modifier = Modifier.clickable { closeTab(t) }.padding(start = 8.dp))
+                        }
+                    }
+                }
+            },
+            containerColor = VpnkaColors.BgOffCentre,
+        )
+    }
+
+    // Offer to remember a login captured from a form submit.
+    pendingSave?.let { offer ->
+        val (host, user, pass) = offer
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { pendingSave = null },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    PasswordStore.save(host, user, pass); pendingSave = null
+                }) { Text("Сохранить") }
+            },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { pendingSave = null }) { Text("Не сейчас") } },
+            title = { Text("Сохранить пароль?", fontFamily = VpnkaFonts.nunito800, color = VpnkaColors.TextStrong) },
+            text = {
+                val who = if (user.isNotBlank()) "$host ($user)" else host
+                Text(
+                    "Запомнить логин для $who? Пароль хранится в зашифрованном виде на устройстве.",
+                    fontFamily = VpnkaFonts.manrope600, color = VpnkaColors.TextMuted,
+                )
+            },
+            containerColor = VpnkaColors.BgOffCentre,
+        )
+    }
+
+    // Saved-password manager.
+    if (showPwds) {
+        var creds by remember { mutableStateOf(PasswordStore.all()) }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showPwds = false },
+            confirmButton = {},
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { showPwds = false }) { Text("Закрыть") } },
+            title = { Text("Сохранённые пароли", fontFamily = VpnkaFonts.nunito800, color = VpnkaColors.TextStrong) },
+            text = {
+                if (creds.isEmpty()) {
+                    Text(
+                        "Пока ничего не сохранено. При входе на сайт мы предложим запомнить пароль и подставим его в следующий раз.",
+                        fontFamily = VpnkaFonts.manrope600, color = VpnkaColors.TextMuted,
+                    )
+                } else {
+                    LazyColumn {
+                        items(creds, key = { it.host }) { c ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(c.host, fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp,
+                                        color = VpnkaColors.TextStrong, maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                    if (c.username.isNotBlank())
+                                        Text(c.username, fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp,
+                                            color = VpnkaColors.TextMuted, maxLines = 1,
+                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                }
+                                Text("Удалить", fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp,
+                                    color = VpnkaColors.Warning,
+                                    modifier = Modifier.clip(RoundedCornerShape(8.dp))
+                                        .clickable { PasswordStore.remove(c.host); creds = PasswordStore.all() }
+                                        .padding(horizontal = 8.dp, vertical = 4.dp))
+                            }
                         }
                     }
                 }

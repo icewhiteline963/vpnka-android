@@ -68,6 +68,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.ui.PlayerView
 import com.v2ray.ang.handler.YouTubeService
+import com.v2ray.ang.handler.YouTubeFavorites
+import androidx.compose.foundation.shape.CircleShape
 import com.v2ray.ang.handler.SettingsManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -108,68 +110,105 @@ fun YouTubeApp() {
         }
     }
 
-    fun open(video: YouTubeService.Video) {
+    fun open(videoUrl: String) {
         scope.launch {
             resolving = true; error = null
-            val r = withContext(Dispatchers.IO) { runCatching { YouTubeService.resolve(video.url) } }
+            val r = withContext(Dispatchers.IO) { runCatching { YouTubeService.resolve(videoUrl) } }
             r.onSuccess { playing = it }
                 .onFailure { error = "Видео недоступно: ${it.message ?: it.javaClass.simpleName}" }
             resolving = false
         }
     }
 
+    var tab by remember { mutableStateOf(0) } // 0 = поиск, 1 = избранное
+    var favTick by remember { mutableStateOf(0) }
+
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    singleLine = true,
-                    placeholder = { Text("Поиск на YouTube", color = VpnkaColors.TextMuted) },
-                    leadingIcon = { Text("🔎", fontSize = 13.sp) },
-                    textStyle = androidx.compose.material3.LocalTextStyle.current.copy(color = VpnkaColors.TextStrong),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = { runSearch() }),
-                    shape = RoundedCornerShape(22.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = VpnkaColors.TextStrong, unfocusedTextColor = VpnkaColors.TextStrong,
-                        cursorColor = VpnkaColors.Accent, focusedBorderColor = VpnkaColors.Accent,
-                        unfocusedBorderColor = VpnkaColors.CardServer,
-                    ),
-                    modifier = Modifier.weight(1f),
-                )
+            Row(modifier = Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                YtTabChip("Поиск", tab == 0) { tab = 0 }
                 Spacer(Modifier.width(8.dp))
-                Box(
-                    modifier = Modifier.clip(RoundedCornerShape(18.dp))
-                        .background(VpnkaColors.Accent)
-                        .clickable { runSearch() }
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                ) { Text("Найти", fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp, color = Color.White) }
+                YtTabChip("★ Избранное", tab == 1) { tab = 1; favTick++ }
             }
 
-            when {
-                loading -> CenterBox { CircularProgressIndicator(color = VpnkaColors.Accent) }
-                error != null && results.isEmpty() -> CenterBox {
-                    Text(error!!, color = VpnkaColors.TextMuted, fontFamily = VpnkaFonts.manrope600,
-                        textAlign = TextAlign.Center)
+            if (tab == 0) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        singleLine = true,
+                        placeholder = { Text("Поиск на YouTube", color = VpnkaColors.TextMuted) },
+                        leadingIcon = { Text("🔎", fontSize = 13.sp) },
+                        textStyle = androidx.compose.material3.LocalTextStyle.current.copy(color = VpnkaColors.TextStrong),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = { runSearch() }),
+                        shape = RoundedCornerShape(22.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = VpnkaColors.TextStrong, unfocusedTextColor = VpnkaColors.TextStrong,
+                            cursorColor = VpnkaColors.Accent, focusedBorderColor = VpnkaColors.Accent,
+                            unfocusedBorderColor = VpnkaColors.CardServer,
+                        ),
+                        modifier = Modifier.weight(1f),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier.clip(RoundedCornerShape(18.dp))
+                            .background(VpnkaColors.Accent)
+                            .clickable { runSearch() }
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                    ) { Text("Найти", fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp, color = Color.White) }
                 }
-                results.isEmpty() -> CenterBox {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("▶️", fontSize = 44.sp)
-                        Spacer(Modifier.height(10.dp))
-                        Text("Найдите видео на YouTube", fontFamily = VpnkaFonts.nunito800,
-                            fontSize = 17.sp, color = VpnkaColors.TextStrong)
-                        Spacer(Modifier.height(6.dp))
-                        Text("Без рекламы и аккаунта Google. Всё — через VPN.",
-                            fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp, color = VpnkaColors.TextMuted,
+
+                when {
+                    loading -> CenterBox { CircularProgressIndicator(color = VpnkaColors.Accent) }
+                    error != null && results.isEmpty() -> CenterBox {
+                        Text(error!!, color = VpnkaColors.TextMuted, fontFamily = VpnkaFonts.manrope600,
                             textAlign = TextAlign.Center)
                     }
+                    results.isEmpty() -> CenterBox {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("▶️", fontSize = 44.sp)
+                            Spacer(Modifier.height(10.dp))
+                            Text("Найдите видео на YouTube", fontFamily = VpnkaFonts.nunito800,
+                                fontSize = 17.sp, color = VpnkaColors.TextStrong)
+                            Spacer(Modifier.height(6.dp))
+                            Text("Без рекламы и аккаунта Google. Всё — через VPN.",
+                                fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp, color = VpnkaColors.TextMuted,
+                                textAlign = TextAlign.Center)
+                        }
+                    }
+                    else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        items(results) { v -> VideoRow(v, onClick = { open(v.url) }) }
+                    }
                 }
-                else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(results) { v -> VideoRow(v, onClick = { open(v) }) }
+            } else {
+                val favs = remember(favTick) { YouTubeFavorites.all() }
+                if (favs.isEmpty()) {
+                    CenterBox {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("★", fontSize = 44.sp, color = VpnkaColors.TextMuted)
+                            Spacer(Modifier.height(10.dp))
+                            Text("Здесь пусто", fontFamily = VpnkaFonts.nunito800,
+                                fontSize = 17.sp, color = VpnkaColors.TextStrong)
+                            Spacer(Modifier.height(6.dp))
+                            Text("Нажмите ★ на видео, чтобы сохранить ссылку.",
+                                fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp, color = VpnkaColors.TextMuted,
+                                textAlign = TextAlign.Center)
+                        }
+                    }
+                } else {
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        items(favs) { f ->
+                            VideoRow(
+                                YouTubeService.Video(f.url, f.title, f.uploader, f.durationSec, null),
+                                onClick = { open(f.url) },
+                                onFavChanged = { favTick++ },
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -195,7 +234,21 @@ private fun CenterBox(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun VideoRow(v: YouTubeService.Video, onClick: () -> Unit) {
+private fun YtTabChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier.clip(RoundedCornerShape(16.dp))
+            .background(if (selected) VpnkaColors.Accent else VpnkaColors.CardServer)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 9.dp),
+    ) {
+        Text(label, fontFamily = VpnkaFonts.nunito800, fontSize = 13.sp,
+            color = if (selected) Color.White else VpnkaColors.TextStrong)
+    }
+}
+
+@Composable
+private fun VideoRow(v: YouTubeService.Video, onClick: () -> Unit, onFavChanged: (() -> Unit)? = null) {
+    var fav by remember(v.url) { mutableStateOf(YouTubeFavorites.isFav(v.url)) }
     Row(
         modifier = Modifier.fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
@@ -224,6 +277,17 @@ private fun VideoRow(v: YouTubeService.Video, onClick: () -> Unit) {
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
         }
+        Text(
+            if (fav) "★" else "☆",
+            fontSize = 22.sp,
+            color = if (fav) VpnkaColors.Accent else VpnkaColors.TextMuted,
+            modifier = Modifier.clip(CircleShape).clickable {
+                fav = YouTubeFavorites.toggle(
+                    YouTubeFavorites.Fav(v.url, v.title, v.uploader, v.durationSec)
+                )
+                onFavChanged?.invoke()
+            }.padding(8.dp),
+        )
     }
 }
 
@@ -257,6 +321,7 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
     var loadingQ by remember { mutableStateOf(false) }
     // Held while we wait for a storage-permission grant on pre-Android-10.
     var pendingDownload by remember { mutableStateOf<YouTubeService.DownloadOption?>(null) }
+    var fav by remember(pb.pageUrl) { mutableStateOf(YouTubeFavorites.isFav(pb.pageUrl)) }
 
     // One PlayerView, re-parented between the inline slot and the fullscreen
     // Dialog so playback survives the switch (same trick as the browser WebView).
@@ -359,27 +424,51 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                 fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.TextStrong,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
             )
-            Box(
-                modifier = Modifier.padding(horizontal = 14.dp)
-                    .clip(RoundedCornerShape(18.dp))
-                    .background(VpnkaColors.CardServer)
-                    .clickable(enabled = !loadingQ) {
-                        loadingQ = true
-                        scope.launch {
-                            val r = withContext(Dispatchers.IO) { runCatching { YouTubeService.videoStreams(pb.pageUrl) } }
-                            loadingQ = false
-                            r.onSuccess {
-                                if (it.isEmpty()) Toast.makeText(context, "Нет форматов для скачивания", Toast.LENGTH_SHORT).show()
-                                else qualities = it
-                            }.onFailure { Toast.makeText(context, "Не удалось: ${it.message}", Toast.LENGTH_SHORT).show() }
-                        }
-                    }
-                    .padding(horizontal = 18.dp, vertical = 11.dp),
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    if (loadingQ) "Загрузка форматов…" else "⬇  Скачать видео",
-                    fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp, color = VpnkaColors.TextStrong,
-                )
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(VpnkaColors.CardServer)
+                        .clickable(enabled = !loadingQ) {
+                            loadingQ = true
+                            scope.launch {
+                                val r = withContext(Dispatchers.IO) { runCatching { YouTubeService.videoStreams(pb.pageUrl) } }
+                                loadingQ = false
+                                r.onSuccess {
+                                    if (it.isEmpty()) Toast.makeText(context, "Нет форматов для скачивания", Toast.LENGTH_SHORT).show()
+                                    else qualities = it
+                                }.onFailure { Toast.makeText(context, "Не удалось: ${it.message}", Toast.LENGTH_SHORT).show() }
+                            }
+                        }
+                        .padding(horizontal = 18.dp, vertical = 11.dp),
+                ) {
+                    Text(
+                        if (loadingQ) "Загрузка форматов…" else "⬇  Скачать видео",
+                        fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp, color = VpnkaColors.TextStrong,
+                    )
+                }
+                Spacer(Modifier.width(10.dp))
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(VpnkaColors.CardServer)
+                        .clickable {
+                            fav = YouTubeFavorites.toggle(
+                                YouTubeFavorites.Fav(pb.pageUrl, pb.title, "", 0L)
+                            )
+                            Toast.makeText(context, if (fav) "Добавлено в избранное" else "Убрано из избранного", Toast.LENGTH_SHORT).show()
+                        }
+                        .padding(horizontal = 16.dp, vertical = 11.dp),
+                ) {
+                    Text(
+                        if (fav) "★" else "☆",
+                        fontSize = 18.sp,
+                        color = if (fav) VpnkaColors.Accent else VpnkaColors.TextStrong,
+                    )
+                }
             }
         }
     }
