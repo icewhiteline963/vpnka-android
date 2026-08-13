@@ -66,6 +66,10 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.exoplayer.source.MergingMediaSource
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.media3.ui.PlayerView
 import com.v2ray.ang.handler.YouTubeService
 import com.v2ray.ang.handler.YouTubeFavorites
@@ -307,7 +311,14 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
             .proxy(Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", port)))
             .build()
         val dsf = OkHttpDataSource.Factory(ok)
-        val src = ProgressiveMediaSource.Factory(dsf).createMediaSource(MediaItem.fromUri(pb.streamUrl))
+        val video = ProgressiveMediaSource.Factory(dsf).createMediaSource(MediaItem.fromUri(pb.streamUrl))
+        // Adaptive: video-only track + separate audio, merged for HD playback.
+        val src = if (pb.audioUrl != null) {
+            val audio = ProgressiveMediaSource.Factory(dsf).createMediaSource(MediaItem.fromUri(pb.audioUrl))
+            MergingMediaSource(video, audio)
+        } else {
+            video
+        }
         ExoPlayer.Builder(context).build().apply {
             setMediaSource(src)
             prepare()
@@ -318,9 +329,10 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
 
     var fullscreen by remember { mutableStateOf(false) }
     var qualities by remember { mutableStateOf<List<YouTubeService.DownloadOption>?>(null) }
-    var loadingQ by remember { mutableStateOf(false) }
+    var subs by remember { mutableStateOf<List<YouTubeService.SubtitleOption>?>(null) }
+    var busy by remember { mutableStateOf(false) }
     // Held while we wait for a storage-permission grant on pre-Android-10.
-    var pendingDownload by remember { mutableStateOf<YouTubeService.DownloadOption?>(null) }
+    var pendingAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     var fav by remember(pb.pageUrl) { mutableStateOf(YouTubeFavorites.isFav(pb.pageUrl)) }
 
     // One PlayerView, re-parented between the inline slot and the fullscreen
@@ -349,6 +361,27 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
         onDispose { activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
     }
 
+    val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val a = pendingAction
+        pendingAction = null
+        if (granted && a != null) a()
+        else if (!granted) Toast.makeText(context, "Без доступа к хранилищу скачивание невозможно", Toast.LENGTH_LONG).show()
+    }
+
+    // Runs a save action, requesting storage permission first on pre-Android-10.
+    fun withStorage(action: () -> Unit) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            action()
+        } else {
+            pendingAction = action
+            qualities = null; subs = null
+            permLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        }
+    }
+
     fun runDownload(opt: YouTubeService.DownloadOption) {
         qualities = null
         Toast.makeText(context, "Скачивание ${opt.label}…", Toast.LENGTH_SHORT).show()
@@ -359,24 +392,43 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
         }
     }
 
-    val permLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        val opt = pendingDownload
-        pendingDownload = null
-        if (granted && opt != null) runDownload(opt)
-        else if (!granted) Toast.makeText(context, "Без доступа к хранилищу скачивание невозможно", Toast.LENGTH_LONG).show()
+    fun runSubtitle(sub: YouTubeService.SubtitleOption) {
+        subs = null
+        Toast.makeText(context, "Скачивание субтитров…", Toast.LENGTH_SHORT).show()
+        scope.launch {
+            val r = withContext(Dispatchers.IO) { runCatching { YouTubeService.downloadSubtitle(context, sub, pb.title) } }
+            r.onSuccess { Toast.makeText(context, "Сохранено в «Загрузки»: $it", Toast.LENGTH_LONG).show() }
+                .onFailure { Toast.makeText(context, "Не удалось: ${it.message}", Toast.LENGTH_LONG).show() }
+        }
     }
 
-    fun onPickQuality(opt: YouTubeService.DownloadOption) {
-        // API 29+ writes via MediaStore without any permission.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
-            ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) ==
-            PackageManager.PERMISSION_GRANTED
-        ) {
-            runDownload(opt)
-        } else {
-            pendingDownload = opt
-            qualities = null
-            permLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+    fun openQualities() {
+        busy = true
+        scope.launch {
+            val r = withContext(Dispatchers.IO) { runCatching { YouTubeService.videoStreams(pb.pageUrl) } }
+            busy = false
+            r.onSuccess { if (it.isEmpty()) Toast.makeText(context, "Нет форматов", Toast.LENGTH_SHORT).show() else qualities = it }
+                .onFailure { Toast.makeText(context, "Не удалось: ${it.message}", Toast.LENGTH_SHORT).show() }
+        }
+    }
+
+    fun downloadAudio() {
+        busy = true
+        scope.launch {
+            val r = withContext(Dispatchers.IO) { runCatching { YouTubeService.audioDownload(pb.pageUrl) } }
+            busy = false
+            r.onSuccess { if (it == null) Toast.makeText(context, "Нет аудио", Toast.LENGTH_SHORT).show() else withStorage { runDownload(it) } }
+                .onFailure { Toast.makeText(context, "Не удалось: ${it.message}", Toast.LENGTH_SHORT).show() }
+        }
+    }
+
+    fun openSubs() {
+        busy = true
+        scope.launch {
+            val r = withContext(Dispatchers.IO) { runCatching { YouTubeService.subtitles(pb.pageUrl) } }
+            busy = false
+            r.onSuccess { if (it.isEmpty()) Toast.makeText(context, "Субтитров нет", Toast.LENGTH_SHORT).show() else subs = it }
+                .onFailure { Toast.makeText(context, "Не удалось: ${it.message}", Toast.LENGTH_SHORT).show() }
         }
     }
 
@@ -425,49 +477,20 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
             )
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
+                modifier = Modifier.fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 14.dp, vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(VpnkaColors.CardServer)
-                        .clickable(enabled = !loadingQ) {
-                            loadingQ = true
-                            scope.launch {
-                                val r = withContext(Dispatchers.IO) { runCatching { YouTubeService.videoStreams(pb.pageUrl) } }
-                                loadingQ = false
-                                r.onSuccess {
-                                    if (it.isEmpty()) Toast.makeText(context, "Нет форматов для скачивания", Toast.LENGTH_SHORT).show()
-                                    else qualities = it
-                                }.onFailure { Toast.makeText(context, "Не удалось: ${it.message}", Toast.LENGTH_SHORT).show() }
-                            }
-                        }
-                        .padding(horizontal = 18.dp, vertical = 11.dp),
-                ) {
-                    Text(
-                        if (loadingQ) "Загрузка форматов…" else "⬇  Скачать видео",
-                        fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp, color = VpnkaColors.TextStrong,
-                    )
-                }
-                Spacer(Modifier.width(10.dp))
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(VpnkaColors.CardServer)
-                        .clickable {
-                            fav = YouTubeFavorites.toggle(
-                                YouTubeFavorites.Fav(pb.pageUrl, pb.title, "", 0L)
-                            )
-                            Toast.makeText(context, if (fav) "Добавлено в избранное" else "Убрано из избранного", Toast.LENGTH_SHORT).show()
-                        }
-                        .padding(horizontal = 16.dp, vertical = 11.dp),
-                ) {
-                    Text(
-                        if (fav) "★" else "☆",
-                        fontSize = 18.sp,
-                        color = if (fav) VpnkaColors.Accent else VpnkaColors.TextStrong,
-                    )
+                YtActionChip(if (busy) "…" else "⬇  Видео", enabled = !busy) { openQualities() }
+                Spacer(Modifier.width(8.dp))
+                YtActionChip("🎵  Аудио", enabled = !busy) { downloadAudio() }
+                Spacer(Modifier.width(8.dp))
+                YtActionChip("📝  Субтитры", enabled = !busy) { openSubs() }
+                Spacer(Modifier.width(8.dp))
+                YtActionChip(if (fav) "★" else "☆", enabled = true) {
+                    fav = YouTubeFavorites.toggle(YouTubeFavorites.Fav(pb.pageUrl, pb.title, "", 0L))
+                    Toast.makeText(context, if (fav) "Добавлено в избранное" else "Убрано из избранного", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -481,12 +504,12 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
             dismissButton = { TextButton(onClick = { qualities = null }) { Text("Отмена") } },
             title = { Text("Выберите качество", fontFamily = VpnkaFonts.nunito800, color = VpnkaColors.TextStrong) },
             text = {
-                Column {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                     opts.forEach { opt ->
                         Box(
                             modifier = Modifier.fillMaxWidth()
                                 .clip(RoundedCornerShape(10.dp))
-                                .clickable { onPickQuality(opt) }
+                                .clickable { withStorage { runDownload(opt) } }
                                 .padding(vertical = 12.dp, horizontal = 6.dp),
                         ) {
                             Text("${opt.label}  ·  ${opt.ext.uppercase()}",
@@ -497,6 +520,45 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
             },
             containerColor = VpnkaColors.BgOffCentre,
         )
+    }
+
+    val subOpts = subs
+    if (subOpts != null && subOpts.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { subs = null },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { subs = null }) { Text("Отмена") } },
+            title = { Text("Язык субтитров", fontFamily = VpnkaFonts.nunito800, color = VpnkaColors.TextStrong) },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    subOpts.forEach { s ->
+                        Box(
+                            modifier = Modifier.fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable { withStorage { runSubtitle(s) } }
+                                .padding(vertical = 12.dp, horizontal = 6.dp),
+                        ) {
+                            Text("${s.label}  ·  ${s.ext.uppercase()}",
+                                color = VpnkaColors.TextStrong, fontFamily = VpnkaFonts.manrope600, fontSize = 15.sp)
+                        }
+                    }
+                }
+            },
+            containerColor = VpnkaColors.BgOffCentre,
+        )
+    }
+}
+
+@Composable
+private fun YtActionChip(label: String, enabled: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(18.dp))
+            .background(VpnkaColors.CardServer)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 11.dp),
+    ) {
+        Text(label, fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp, color = VpnkaColors.TextStrong)
     }
 }
 
