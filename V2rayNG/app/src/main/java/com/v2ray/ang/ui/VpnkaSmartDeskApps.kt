@@ -80,6 +80,12 @@ import kotlinx.coroutines.launch
  * to the vpnka home both live in the bottom bar (split 50/50), so the top edge
  * stays clear of controls.
  */
+/** Lets a SmartDesk app hide the host app bar (back + icon) while a nested
+ *  screen is open — set true on entering a chat/nested menu, false on leaving. */
+object SmartDeskChrome {
+    var barHidden by mutableStateOf(false)
+}
+
 @Composable
 fun VpnkaSmartDeskAppScreen(
     appId: String,
@@ -102,7 +108,14 @@ fun VpnkaSmartDeskAppScreen(
             // so the bottom controls are never hidden behind it.
             .imePadding(),
     ) {
-        SmartDeskAppBar(appId = appId, glyph = appGlyph, online = online, onBack = onBack)
+        // The host app bar (back + icon) shows only on an app's main screen. An
+        // app hides it while a nested screen is open (e.g. a chat) via
+        // SmartDeskChrome, so its own header isn't stacked under ours. Reset on
+        // every app open so a fresh app always starts with the bar shown.
+        LaunchedEffect(appId) { SmartDeskChrome.barHidden = false }
+        if (!SmartDeskChrome.barHidden) {
+            SmartDeskAppBar(appId = appId, glyph = appGlyph, online = online, onBack = onBack)
+        }
         // Sync on open (through the VPN) and after every edit; syncTick keys
         // each app's list so it re-reads once the server's view is merged in.
         val scope = rememberCoroutineScope()

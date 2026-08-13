@@ -128,7 +128,7 @@ fun VpnkaMessengerApp() {
             delay(2500)
         }
     }
-    DisposableEffect(Unit) { onDispose { Messenger.disconnectWs() } }
+    DisposableEffect(Unit) { onDispose { Messenger.disconnectWs(); SmartDeskChrome.barHidden = false } }
     LaunchedEffect(tick) { myChannels = Channels.mine() }
 
     // Opened from a message notification: jump into that chat. The contact may
@@ -149,6 +149,11 @@ fun VpnkaMessengerApp() {
     }
 
     val contacts = remember(tick) { Messenger.contacts() }
+
+    // Hide the SmartDesk host bar while a nested screen (chat, channel, profile)
+    // is open — those have their own header; only the contact list keeps the bar.
+    val nested = showMyProfile || openChannel != null || openId != null
+    DisposableEffect(nested) { SmartDeskChrome.barHidden = nested; onDispose {} }
 
     if (showMyProfile) {
         MyProfileScreen(handle = handle, onBack = { showMyProfile = false })
