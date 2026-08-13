@@ -18,6 +18,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
@@ -394,6 +396,8 @@ class MainActivity : HelperBaseComponentActivity() {
     // SmartDesk full-screen surface + the reachability state behind its dot.
     private var showSmartDesk by mutableStateOf(false)
     private var smartDeskOnline by mutableStateOf(false)
+    // Privacy toggle: hide the SmartDesk entry; a 5-tap corner gesture reveals it.
+    private var smartDeskHidden by mutableStateOf(MmkvManager.decodeSettingsBool("vpnka_smartdesk_hidden"))
     // Bumped when the zero-knowledge vault is unlocked, to re-evaluate the gate.
     private var vaultTick by mutableStateOf(0)
     // Set right before a profile refresh that follows claiming/buying a plan,
@@ -740,6 +744,12 @@ class MainActivity : HelperBaseComponentActivity() {
                 },
                 onCheckUpdate = { navigateTo("check_update") },
                 onNotificationSettings = { showNotificationSettings = true },
+                smartDeskEligible = subInfo?.smartDeskEnabled == true,
+                smartDeskHidden = smartDeskHidden,
+                onSmartDeskHiddenChange = { hidden ->
+                    smartDeskHidden = hidden
+                    MmkvManager.encodeSettings("vpnka_smartdesk_hidden", hidden)
+                },
                 onBack = { showSettings = false },
             )
             return
@@ -1188,6 +1198,7 @@ class MainActivity : HelperBaseComponentActivity() {
             val activePlan = subInfo?.subscriptions.orEmpty()
                 .firstOrNull { it.groupToken != null && it.groupToken == activeToken }
 
+            Box(modifier = Modifier.fillMaxSize()) {
             VpnkaConnectScreen(
                 isRunning = uiState.isRunning,
                 isLoading = uiState.isLoading,
@@ -1243,8 +1254,11 @@ class MainActivity : HelperBaseComponentActivity() {
                 // button does the real check, download and install, and it
                 // already handles the install permission and FileProvider.
                 onPerAppProxy = { navigateTo("per_app_proxy") },
-                smartDeskEnabled = subInfo?.smartDeskEnabled == true,
-                smartDeskOnline = smartDeskOnline,
+                // Hidden by the privacy toggle → the button disappears; the
+                // 5-tap corner gesture below is the only way back in.
+                smartDeskEnabled = subInfo?.smartDeskEnabled == true && !smartDeskHidden,
+                // Green dot only while the tunnel is actually up.
+                smartDeskOnline = smartDeskOnline && uiState.isRunning,
                 onSmartDesk = { showSmartDesk = true },
                 // The plan that runs out first is the one worth warning
                 // about; a longer one behind it does not make the gap
@@ -1267,6 +1281,15 @@ class MainActivity : HelperBaseComponentActivity() {
                     )
                 },
             )
+                // Hidden SmartDesk: 5 quick taps in the bottom-right corner
+                // reveal it. Active only while the entry is hidden.
+                if (subInfo?.smartDeskEnabled == true && smartDeskHidden) {
+                    SmartDeskCornerReveal(
+                        modifier = Modifier.align(Alignment.BottomEnd),
+                        onReveal = { showSmartDesk = true },
+                    )
+                }
+            }
             return
         }
 
@@ -2867,6 +2890,25 @@ fun DrawerMenuItem(
             color = MaterialTheme.colorScheme.onSurface
         )
     }
+}
+
+/** Invisible bottom-corner target: 5 quick taps reveal a hidden SmartDesk. */
+@Composable
+private fun SmartDeskCornerReveal(modifier: Modifier = Modifier, onReveal: () -> Unit) {
+    var taps by remember { mutableStateOf(0) }
+    var lastAt by remember { mutableStateOf(0L) }
+    Box(
+        modifier = modifier
+            .size(72.dp)
+            .pointerInput(Unit) {
+                detectTapGestures {
+                    val now = System.currentTimeMillis()
+                    taps = if (now - lastAt < 900L) taps + 1 else 1
+                    lastAt = now
+                    if (taps >= 5) { taps = 0; onReveal() }
+                }
+            },
+    )
 }
 
 private fun getProtocolDescription(profile: ProfileItem): String {

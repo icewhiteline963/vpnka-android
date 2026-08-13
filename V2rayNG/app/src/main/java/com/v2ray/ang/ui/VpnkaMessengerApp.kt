@@ -25,6 +25,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -197,8 +199,41 @@ fun VpnkaMessengerApp() {
             }
         }
         // Search people and channels.
-        Box(modifier = Modifier.padding(horizontal = 12.dp)) {
-            MsgField("Поиск людей и каналов", query) { query = it }
+        var showSearchTip by remember { mutableStateOf(false) }
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(modifier = Modifier.weight(1f)) { MsgField("Поиск людей и каналов", query) { query = it } }
+            Spacer(Modifier.width(6.dp))
+            Box {
+                Text(
+                    "?",
+                    fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.Accent,
+                    modifier = Modifier.clip(CircleShape).background(VpnkaColors.CardServer)
+                        .clickable { showSearchTip = true }.padding(horizontal = 12.dp, vertical = 10.dp),
+                )
+                if (showSearchTip) {
+                    Popup(
+                        alignment = Alignment.TopEnd,
+                        onDismissRequest = { showSearchTip = false },
+                        offset = IntOffset(0, 100),
+                    ) {
+                        Box(
+                            modifier = Modifier.widthIn(max = 250.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(VpnkaColors.BgOffCentre)
+                                .padding(14.dp),
+                        ) {
+                            Text(
+                                "Если у человека установлена VPNka, найдите его по нику из Telegram — без символа @. Также ищет по каналам.",
+                                fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp,
+                                color = VpnkaColors.TextStrong, lineHeight = 17.sp,
+                            )
+                        }
+                    }
+                }
+            }
         }
         Spacer(Modifier.height(4.dp))
 

@@ -38,6 +38,7 @@ import androidx.compose.material3.Text
 import com.v2ray.ang.handler.Messenger
 import com.v2ray.ang.handler.SmartDeskSync
 import com.v2ray.ang.handler.SmartDeskStore
+import androidx.activity.compose.BackHandler
 import androidx.compose.ui.window.Popup
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.rememberCoroutineScope
@@ -251,6 +252,18 @@ fun VpnkaSmartDeskScreen(
     var showControl by remember { mutableStateOf(false) }   // swipe top-right down
     var wallpaper by remember {
         mutableStateOf(MmkvManager.decodeSettingsString("vpnka_smartdesk_wallpaper") ?: "warm")
+    }
+
+    // System back steps WITHIN SmartDesk (overlay → open app → desktop) and only
+    // leaves to the vpnka home from the bare desktop — one step, never a jump.
+    BackHandler {
+        when {
+            showShade -> showShade = false
+            showControl -> showControl = false
+            showSettings -> showSettings = false
+            openApp != null -> { openApp = null; deskTick++ }
+            else -> onBack()
+        }
     }
 
     // Desktop text colour adapts to the wallpaper so labels read on any of them.
@@ -515,7 +528,6 @@ fun VpnkaSmartDeskScreen(
     }
 }
 
-@Composable
 /**
  * Cloud/sync status as a tap-for-tooltip button. When everything is uploaded it
  * reassures the user that nothing is kept on the device — the local copy is

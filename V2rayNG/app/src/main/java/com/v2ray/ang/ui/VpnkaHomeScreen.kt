@@ -355,6 +355,9 @@ fun VpnkaSettingsScreen(
     onFixNotifications: () -> Unit,
     onNotificationSettings: () -> Unit,
     onCheckUpdate: () -> Unit,
+    smartDeskEligible: Boolean = false,
+    smartDeskHidden: Boolean = false,
+    onSmartDeskHiddenChange: (Boolean) -> Unit = {},
     onBack: () -> Unit,
 ) {
     VpnkaPage(title = "Настройки", onBack = onBack) {
@@ -399,6 +402,25 @@ fun VpnkaSettingsScreen(
             subtitle = "Скачать и установить свежую версию",
             onClick = onCheckUpdate,
         )
+
+        if (smartDeskEligible) {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = "Безопасность",
+                fontSize = 13.sp,
+                fontFamily = VpnkaFonts.manrope600,
+                fontWeight = VpnkaWeight.Semi,
+                color = VpnkaColors.TextMuted,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+            )
+            NotifyToggleRow(
+                title = "Скрыть SmartDesk",
+                subtitle = "Раздел исчезнет из меню. Чтобы показать снова — потапайте 5 раз в правый нижний угол экрана.",
+                checked = smartDeskHidden,
+                enabled = true,
+                onCheckedChange = onSmartDeskHiddenChange,
+            )
+        }
 
         Spacer(Modifier.weight(1f))
         }
