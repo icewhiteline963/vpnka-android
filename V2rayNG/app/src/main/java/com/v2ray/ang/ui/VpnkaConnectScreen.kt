@@ -45,11 +45,14 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -404,11 +407,18 @@ fun VpnkaConnectScreen(
  */
 @Composable
 private fun VpnkaActiveExit() {
-    val exit by produceState<VpnkaExit.Exit?>(initialValue = null) {
-        while (true) {
-            val e = VpnkaExit.current()
-            if (e != null && e.onVpn) value = e
-            delay(6_000)
+    // Poll only while the screen is actually in front. repeatOnLifecycle
+    // cancels the loop at ON_STOP and restarts it at ON_RESUME, so a
+    // backgrounded app doesn't keep hitting get.vpnka.io every few seconds.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var exit by remember { mutableStateOf<VpnkaExit.Exit?>(null) }
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (true) {
+                val e = VpnkaExit.current()
+                if (e != null && e.onVpn) exit = e  // keep last good on a miss
+                delay(10_000)
+            }
         }
     }
     val e = exit
