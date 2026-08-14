@@ -628,14 +628,18 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
     // keyed on the current stream URL, so choosing a quality rebuilds it.
     var pbState by remember(pb.pageUrl) { mutableStateOf(pb) }
     val player = remember(pbState.streamUrl, pbState.audioUrl) {
+        // Locals: pbState is a delegated property, so its fields can't be
+        // smart-cast to non-null after a `!= null` check.
+        val streamUrl = pbState.streamUrl
+        val audioUrl = pbState.audioUrl
         val ok = OkHttpClient.Builder()
             .proxy(Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", port)))
             .build()
         val dsf = OkHttpDataSource.Factory(ok)
-        val video = ProgressiveMediaSource.Factory(dsf).createMediaSource(MediaItem.fromUri(pbState.streamUrl))
+        val video = ProgressiveMediaSource.Factory(dsf).createMediaSource(MediaItem.fromUri(streamUrl))
         // Adaptive: video-only track + separate audio, merged for HD playback.
-        val src = if (pbState.audioUrl != null) {
-            val audio = ProgressiveMediaSource.Factory(dsf).createMediaSource(MediaItem.fromUri(pbState.audioUrl))
+        val src = if (audioUrl != null) {
+            val audio = ProgressiveMediaSource.Factory(dsf).createMediaSource(MediaItem.fromUri(audioUrl))
             MergingMediaSource(video, audio)
         } else {
             video
