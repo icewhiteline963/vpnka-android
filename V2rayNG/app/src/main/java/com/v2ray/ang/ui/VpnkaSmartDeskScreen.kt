@@ -114,11 +114,12 @@ val SMARTDESK_CATALOG = listOf(
     DeskApp("contacts", "Контакты", "👤", "Ваши контакты: звонки, почта, поиск"),
     DeskApp("browser", "Браузер", "🌐", "Веб-браузер — весь трафик через VPN"),
     DeskApp("youtube", "YouTube", "▶️", "YouTube без рекламы, через VPN"),
+    DeskApp("notes", "Заметки", "📝", "Заметки с форматированием и списки покупок"),
     DeskApp("help", "Помощь", "🛡️", "Как устроена приватность VPNka облака"),
 )
 
 private val CATALOG_BY_ID = SMARTDESK_CATALOG.associateBy { it.id }
-private val DEFAULT_INSTALLED = listOf("store", "messages", "help", "calendar", "contacts", "browser", "youtube")
+private val DEFAULT_INSTALLED = listOf("store", "messages", "help", "calendar", "contacts", "browser", "youtube", "notes")
 
 // ---- «Android 17» look: gradient wallpapers + colourful squircle app tiles ----
 
@@ -154,6 +155,7 @@ fun appTint(id: String): List<Color> = when (id) {
     "contacts" -> listOf(Color(0xFF60A5FA), Color(0xFF2563EB))
     "browser" -> listOf(Color(0xFF22D3EE), Color(0xFF0891B2))
     "youtube" -> listOf(Color(0xFFFF6B6B), Color(0xFFCC0000))
+    "notes" -> listOf(Color(0xFFFCD34D), Color(0xFFF59E0B))
     "help" -> listOf(Color(0xFF818CF8), Color(0xFF4F46E5))
     "settings" -> listOf(Color(0xFF94A3B8), Color(0xFF475569))
     else -> listOf(Color(0xFFC4B5FD), Color(0xFF7C3AED))
@@ -162,6 +164,7 @@ fun appTint(id: String): List<Color> = when (id) {
 /** Ids installed on the desktop; «store» is forced in so it can never vanish. */
 private const val KEY_HELP_SEEDED = "vpnka_smartdesk_help_seeded"
 private const val KEY_YOUTUBE_SEEDED = "vpnka_smartdesk_youtube_seeded"
+private const val KEY_NOTES_SEEDED = "vpnka_smartdesk_notes_seeded"
 
 fun installedIds(): List<String> {
     val stored = MmkvManager.decodeSettingsString(KEY_INSTALLED)
@@ -172,6 +175,7 @@ fun installedIds(): List<String> {
     if (stored == null) {
         MmkvManager.encodeSettings(KEY_HELP_SEEDED, "1")
         MmkvManager.encodeSettings(KEY_YOUTUBE_SEEDED, "1")
+        MmkvManager.encodeSettings(KEY_NOTES_SEEDED, "1")
     }
     var seeded = false
     // One-time seeds: existing installs (a stored list without a newly-shipped
@@ -186,6 +190,11 @@ fun installedIds(): List<String> {
     if (stored != null && MmkvManager.decodeSettingsString(KEY_YOUTUBE_SEEDED) == null) {
         if ("youtube" !in ids) ids = ids + "youtube"
         MmkvManager.encodeSettings(KEY_YOUTUBE_SEEDED, "1")
+        seeded = true
+    }
+    if (stored != null && MmkvManager.decodeSettingsString(KEY_NOTES_SEEDED) == null) {
+        if ("notes" !in ids) ids = ids + "notes"
+        MmkvManager.encodeSettings(KEY_NOTES_SEEDED, "1")
         seeded = true
     }
     if (seeded) {

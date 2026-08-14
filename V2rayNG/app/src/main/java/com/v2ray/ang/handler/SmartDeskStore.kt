@@ -25,6 +25,7 @@ object SmartDeskStore {
     private const val KEY_CALENDAR = "calendar"
     private const val KEY_CONTACTS = "contacts"
     private const val KEY_MAIL = "mail"
+    private const val KEY_NOTES = "notes"
 
     private val gson = Gson()
 
@@ -60,6 +61,23 @@ object SmartDeskStore {
         override val updatedAt: Long = 0L,
     ) : DeskItem
 
+    /** An inline text-style run (bold/italic/underline/strike) over [start, end). */
+    data class NoteSpan(val start: Int = 0, val end: Int = 0, val style: String = "")
+
+    /** One line of a checklist / shopping list. */
+    data class CheckItem(val text: String = "", val done: Boolean = false)
+
+    /** A note: rich text ("text") or a checklist ("list"). */
+    data class Note(
+        override val id: String,
+        val title: String = "",
+        val kind: String = "text",             // "text" | "list"
+        val body: String = "",                 // text notes: raw characters
+        val spans: List<NoteSpan> = emptyList(),  // text notes: style runs
+        val items: List<CheckItem> = emptyList(), // list notes: checklist rows
+        override val updatedAt: Long = 0L,
+    ) : DeskItem
+
     private fun cryptKey(): String {
         MmkvManager.decodeSettingsString(KEY_CRYPT)?.let { if (it.isNotBlank()) return it }
         val bytes = ByteArray(16).also { SecureRandom().nextBytes(it) }
@@ -86,6 +104,11 @@ object SmartDeskStore {
     fun contacts(): List<Contact> = readList(KEY_CONTACTS)
     fun saveContact(c: Contact) { upsert(KEY_CONTACTS, c); queue("contact", c.id, c.updatedAt, false, gson.toJson(c)) }
     fun deleteContact(id: String) { delete<Contact>(KEY_CONTACTS, id); queue("contact", id, nowMs(), true, "{}") }
+
+    // --- Notes ---
+    fun notes(): List<Note> = readList(KEY_NOTES)
+    fun saveNote(n: Note) { upsert(KEY_NOTES, n); queue("note", n.id, n.updatedAt, false, gson.toJson(n)) }
+    fun deleteNote(id: String) { delete<Note>(KEY_NOTES, id); queue("note", id, nowMs(), true, "{}") }
 
     // --- Mail ---
     fun mail(): List<MailMessage> = readList(KEY_MAIL)
@@ -154,6 +177,8 @@ object SmartDeskStore {
                 else parse<Contact>(payloadJson)?.let { upsert(KEY_CONTACTS, it) }
             "mail" -> if (deleted) delete<MailMessage>(KEY_MAIL, id)
                 else parse<MailMessage>(payloadJson)?.let { upsert(KEY_MAIL, it) }
+            "note" -> if (deleted) delete<Note>(KEY_NOTES, id)
+                else parse<Note>(payloadJson)?.let { upsert(KEY_NOTES, it) }
         }
     }
 

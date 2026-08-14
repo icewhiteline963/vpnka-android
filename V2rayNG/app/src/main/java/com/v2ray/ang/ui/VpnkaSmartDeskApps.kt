@@ -145,6 +145,7 @@ fun VpnkaSmartDeskAppScreen(
                 "contacts" -> ContactsApp(syncTick, onChanged)
                 "browser" -> BrowserApp()
                 "youtube" -> YouTubeApp()
+                "notes" -> VpnkaNotesApp(syncTick, onChanged)
                 "messages" -> VpnkaMessengerApp()
                 "store" -> VpnkaStoreApp()
                 "help" -> HelpApp()
