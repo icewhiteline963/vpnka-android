@@ -47,6 +47,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -70,7 +71,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.v2ray.ang.handler.VpnkaAccount
+import com.v2ray.ang.handler.VpnkaExit
 import com.v2ray.ang.R
+import kotlinx.coroutines.delay
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -288,6 +291,12 @@ fun VpnkaConnectScreen(
                     fontSize = 34.sp,
                     color = VpnkaColors.TextStrong,
                 )
+                // Which node «Авто» is actually on right now — the server card
+                // shows «🌍 Авто», not the node the balancer picked this second.
+                if (isRunning) {
+                    Spacer(Modifier.height(10.dp))
+                    VpnkaActiveExit()
+                }
             }
 
             // The nav bar's height is added to this block's own bottom
@@ -380,6 +389,60 @@ fun VpnkaConnectScreen(
                 }
             }
         }
+    }
+}
+
+/**
+ * The exit «Авто» is on right now, polled live while connected.
+ *
+ * «Авто» picks the fastest node per connection inside the xray core, so the
+ * selected-server card («🌍 Авто») can't name it. This asks the server: a
+ * /whoami that rides the tunnel (through xray's local proxy — the app is
+ * outside its own VPN) reports the node it exited from. `value` is only
+ * overwritten on a good read, so one missed poll keeps the last known flag
+ * on screen instead of blinking to «определяем…».
+ */
+@Composable
+private fun VpnkaActiveExit() {
+    val exit by produceState<VpnkaExit.Exit?>(initialValue = null) {
+        while (true) {
+            val e = VpnkaExit.current()
+            if (e != null && e.onVpn) value = e
+            delay(6_000)
+        }
+    }
+    val e = exit
+    val label: String? =
+        if (e != null && e.onVpn && !e.flag.isNullOrBlank())
+            "${e.flag}  ${e.name ?: e.code ?: ""}".trim()
+        else null
+    val known = label != null
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(999.dp))
+            .background(
+                if (known) VpnkaColors.Green.copy(alpha = 0.15f)
+                else VpnkaColors.CardSpeed
+            )
+            .padding(horizontal = 14.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "СЕЙЧАС ЧЕРЕЗ",
+            fontFamily = VpnkaFonts.manrope700,
+            fontWeight = VpnkaWeight.Bold,
+            fontSize = 10.sp,
+            letterSpacing = 1.sp,
+            color = VpnkaColors.TextFaint,
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = label ?: "определяем сервер…",
+            fontFamily = VpnkaFonts.nunito800,
+            fontWeight = VpnkaWeight.Extra,
+            fontSize = 13.sp,
+            color = if (known) VpnkaColors.Green else VpnkaColors.TextMuted,
+        )
     }
 }
 
