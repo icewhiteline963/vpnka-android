@@ -226,6 +226,9 @@ class MainActivity : HelperBaseComponentActivity() {
         const val EXTRA_OPEN = "vpnka_open"
         const val OPEN_SUPPORT = "support"
         const val OPEN_MESSENGER = "messenger"
+        /** A home-screen shortcut: `EXTRA_OPEN = "desk:<appId>"` opens SmartDesk
+         *  straight on that app (see «Добавить на рабочий стол»). */
+        const val OPEN_DESK_PREFIX = "desk:"
         /** Intent extra: chat (peer client id) to open in the messenger. */
         const val EXTRA_CHAT = "vpnka_chat"
     }
@@ -235,6 +238,15 @@ class MainActivity : HelperBaseComponentActivity() {
         setIntent(intent)
         if (intent.getStringExtra(EXTRA_OPEN) == OPEN_SUPPORT) showSupport = true
         if (intent.getStringExtra(EXTRA_OPEN) == OPEN_MESSENGER) openMessengerFromIntent(intent)
+        openDeskFromIntent(intent)
+    }
+
+    /** A home-screen app shortcut was tapped: open SmartDesk on that app. */
+    private fun openDeskFromIntent(intent: Intent) {
+        val open = intent.getStringExtra(EXTRA_OPEN) ?: return
+        if (!open.startsWith(OPEN_DESK_PREFIX)) return
+        com.v2ray.ang.ui.SmartDeskChrome.pendingAppId = open.removePrefix(OPEN_DESK_PREFIX)
+        showSmartDesk = true
     }
 
     /** A messenger notification was tapped: open SmartDesk on that chat. */
@@ -270,6 +282,7 @@ class MainActivity : HelperBaseComponentActivity() {
         // an app that was already running.
         if (intent?.getStringExtra(EXTRA_OPEN) == OPEN_SUPPORT) showSupport = true
         if (intent?.getStringExtra(EXTRA_OPEN) == OPEN_MESSENGER) intent?.let { openMessengerFromIntent(it) }
+        intent?.let { openDeskFromIntent(it) }
 
         onBackPressedDispatcher.addCallback(this) {
             if (!closeTopVpnkaScreen()) {

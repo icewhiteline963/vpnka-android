@@ -84,6 +84,18 @@ import kotlinx.coroutines.launch
  *  screen is open — set true on entering a chat/nested menu, false on leaving. */
 object SmartDeskChrome {
     var barHidden by mutableStateOf(false)
+
+    // A home-screen shortcut (see VpnkaSmartDeskScreen "Добавить на рабочий
+    // стол") deep-links here via MainActivity with the target app id; the
+    // desktop consumes it on launch and opens that app.
+    @Volatile
+    var pendingAppId: String? = null
+
+    fun consumePendingApp(): String? {
+        val a = pendingAppId
+        pendingAppId = null
+        return a
+    }
 }
 
 @Composable

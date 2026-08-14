@@ -62,7 +62,18 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import android.content.Context
+import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.RectF
+import android.widget.Toast
+import androidx.core.content.pm.ShortcutInfoCompat
+import androidx.core.content.pm.ShortcutManagerCompat
+import androidx.core.graphics.drawable.IconCompat
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -226,6 +237,7 @@ fun VpnkaSmartDeskScreen(
     onToggleVpn: () -> Unit = {},
     setBackHandler: ((() -> Boolean)?) -> Unit = {},
 ) {
+    val context = LocalContext.current
     // Which app is open, or null on the desktop itself.
     var openApp by remember { mutableStateOf<DeskApp?>(null) }
     // Bumped whenever we return to the desktop, so the icon grid re-reads the
@@ -244,6 +256,9 @@ fun VpnkaSmartDeskScreen(
         if (Messenger.peekPendingChat() != 0L) {
             CATALOG_BY_ID["messages"]?.let { openApp = it }
         }
+        // A home-screen shortcut («Добавить на рабочий стол») deep-linked us to
+        // a specific app — open it straight away.
+        SmartDeskChrome.consumePendingApp()?.let { id -> CATALOG_BY_ID[id]?.let { openApp = it } }
     }
 
     val order = remember(deskTick) { mutableStateListOf<Pair<DeskApp, Int>>().apply { addAll(loadOrder()) } }
@@ -445,6 +460,10 @@ fun VpnkaSmartDeskScreen(
                         DropdownMenuItem(
                             text = { Text("Открыть") },
                             onClick = { contextFor = null; openApp = app },
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Добавить на рабочий стол") },
+                            onClick = { contextFor = null; pinAppToHome(context, app) },
                         )
                         DropdownMenuItem(
                             text = { Text("Настройки рабочего стола") },
@@ -830,4 +849,39 @@ private fun MsgrToggle(label: String, key: String) {
             color = VpnkaColors.TextStrong, modifier = Modifier.weight(1f))
         Switch(checked = on, onCheckedChange = { on = it; Messenger.setSetting(key, it) })
     }
+}
+
+/**
+ * Pin a SmartDesk app to the Android home screen. The shortcut deep-links into
+ * MainActivity with EXTRA_OPEN = "desk:<id>", which opens SmartDesk straight on
+ * that app (e.g. YouTube). Icon = the app's emoji glyph on the brand tile.
+ */
+private fun pinAppToHome(context: Context, app: DeskApp) {
+    if (!ShortcutManagerCompat.isRequestPinShortcutSupported(context)) {
+        Toast.makeText(context, "Лаунчер не поддерживает ярлыки на столе", Toast.LENGTH_SHORT).show()
+        return
+    }
+    val intent = Intent(context, MainActivity::class.java).apply {
+        action = Intent.ACTION_VIEW
+        putExtra(MainActivity.EXTRA_OPEN, MainActivity.OPEN_DESK_PREFIX + app.id)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+    }
+    val info = ShortcutInfoCompat.Builder(context, "desk_${app.id}")
+        .setShortLabel(app.label)
+        .setIcon(IconCompat.createWithBitmap(deskGlyphBitmap(app.glyph)))
+        .setIntent(intent)
+        .build()
+    ShortcutManagerCompat.requestPinShortcut(context, info, null)
+}
+
+private fun deskGlyphBitmap(glyph: String): Bitmap {
+    val size = 192
+    val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+    val c = Canvas(bmp)
+    val bg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFE8850C.toInt() }
+    c.drawRoundRect(RectF(0f, 0f, size.toFloat(), size.toFloat()), 42f, 42f, bg)
+    val tp = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 108f; textAlign = Paint.Align.CENTER }
+    val baseline = size / 2f - (tp.descent() + tp.ascent()) / 2f
+    c.drawText(glyph, size / 2f, baseline, tp)
+    return bmp
 }

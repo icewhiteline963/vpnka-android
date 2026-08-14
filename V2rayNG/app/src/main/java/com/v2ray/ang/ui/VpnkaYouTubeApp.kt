@@ -26,6 +26,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -106,8 +107,8 @@ fun YouTubeApp() {
         return
     }
 
-    fun runSearch() {
-        val q = query.trim()
+    fun runSearchFor(q0: String) {
+        val q = q0.trim()
         if (q.isEmpty()) return
         scope.launch {
             loading = true; error = null
@@ -116,6 +117,14 @@ fun YouTubeApp() {
                 .onFailure { error = "Не удалось загрузить: ${it.message ?: it.javaClass.simpleName}. Включён ли VPN?" }
             loading = false
         }
+    }
+    fun runSearch() = runSearchFor(query)
+
+    // Home feed: open on an "electronic music" search so the first screen is a
+    // living wall of videos, not an empty box. Only on a cold open (no query,
+    // no results yet) — a manual search or a preset won't be overwritten.
+    LaunchedEffect(Unit) {
+        if (query.isBlank() && results.isEmpty()) runSearchFor("electronic music")
     }
 
     fun open(videoUrl: String) {
@@ -195,6 +204,16 @@ fun YouTubeApp() {
                             .clickable { runSearch() }
                             .padding(horizontal = 16.dp, vertical = 12.dp),
                     ) { Text("Найти", fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp, color = Color.White) }
+                }
+
+                // Quick category presets — one tap runs a curated search.
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    YtPresetChip("🎵 Музыка") { query = "музыка"; runSearch() }
+                    YtPresetChip("📰 Новости") { query = "новости"; runSearch() }
+                    YtPresetChip("💻 Технологии") { query = "технологии"; runSearch() }
                 }
 
                 if (results.isNotEmpty()) {
@@ -511,6 +530,18 @@ private fun AddToPlaylistDialog(item: YouTubePlaylists.Item, onClose: () -> Unit
 }
 
 @Composable
+private fun YtPresetChip(label: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier.clip(RoundedCornerShape(16.dp))
+            .background(VpnkaColors.CardServer)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+    ) {
+        Text(label, fontFamily = VpnkaFonts.nunito800, fontSize = 13.sp, color = VpnkaColors.TextStrong)
+    }
+}
+
+@Composable
 private fun YtTabChip(label: String, selected: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier.clip(RoundedCornerShape(16.dp))
@@ -593,15 +624,18 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
     val activity = context as? Activity
     val scope = rememberCoroutineScope()
     val port = remember { SettingsManager.getHttpPort() }
-    val player = remember(pb.streamUrl) {
+    // Mutable so the quality picker can swap the stream in place; the player is
+    // keyed on the current stream URL, so choosing a quality rebuilds it.
+    var pbState by remember(pb.pageUrl) { mutableStateOf(pb) }
+    val player = remember(pbState.streamUrl, pbState.audioUrl) {
         val ok = OkHttpClient.Builder()
             .proxy(Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", port)))
             .build()
         val dsf = OkHttpDataSource.Factory(ok)
-        val video = ProgressiveMediaSource.Factory(dsf).createMediaSource(MediaItem.fromUri(pb.streamUrl))
+        val video = ProgressiveMediaSource.Factory(dsf).createMediaSource(MediaItem.fromUri(pbState.streamUrl))
         // Adaptive: video-only track + separate audio, merged for HD playback.
-        val src = if (pb.audioUrl != null) {
-            val audio = ProgressiveMediaSource.Factory(dsf).createMediaSource(MediaItem.fromUri(pb.audioUrl))
+        val src = if (pbState.audioUrl != null) {
+            val audio = ProgressiveMediaSource.Factory(dsf).createMediaSource(MediaItem.fromUri(pbState.audioUrl))
             MergingMediaSource(video, audio)
         } else {
             video
@@ -613,6 +647,7 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
         }
     }
     DisposableEffect(player) { onDispose { player.release() } }
+    var playQual by remember { mutableStateOf<List<YouTubeService.DownloadOption>?>(null) }
 
     var fullscreen by remember { mutableStateOf(false) }
     var qualities by remember { mutableStateOf<List<YouTubeService.DownloadOption>?>(null) }
@@ -635,6 +670,19 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
     val attach: (Context) -> PlayerView = {
         (playerView.parent as? ViewGroup)?.removeView(playerView)
         playerView
+    }
+    // The PlayerView is a stable single instance; when a quality change rebuilds
+    // `player`, re-point the view at the new one (else it shows the released one).
+    LaunchedEffect(player) { playerView.player = player }
+
+    fun openPlayQuality() {
+        busy = true
+        scope.launch {
+            val r = withContext(Dispatchers.IO) { runCatching { YouTubeService.videoStreams(pb.pageUrl) } }
+            busy = false
+            r.onSuccess { if (it.isEmpty()) Toast.makeText(context, "Нет форматов", Toast.LENGTH_SHORT).show() else playQual = it }
+                .onFailure { Toast.makeText(context, "Не удалось: ${it.message}", Toast.LENGTH_SHORT).show() }
+        }
     }
 
     // Landscape while fullscreen; MainActivity declares configChanges so this
@@ -762,7 +810,9 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                     .padding(horizontal = 14.dp, vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                YtActionChip(if (busy) "…" else "⬇  Видео", enabled = !busy) { openQualities() }
+                YtActionChip(if (busy) "…" else "⚙  Качество", enabled = !busy) { openPlayQuality() }
+                Spacer(Modifier.width(8.dp))
+                YtActionChip("⬇  Видео", enabled = !busy) { openQualities() }
                 Spacer(Modifier.width(8.dp))
                 YtActionChip("🎵  Аудио", enabled = !busy) { downloadAudio() }
                 Spacer(Modifier.width(8.dp))
@@ -798,6 +848,35 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                         ) {
                             Text("${opt.label}  ·  ${opt.ext.uppercase()}",
                                 color = VpnkaColors.TextStrong, fontFamily = VpnkaFonts.manrope600, fontSize = 15.sp)
+                        }
+                    }
+                }
+            },
+            containerColor = VpnkaColors.BgOffCentre,
+        )
+    }
+
+    val pqOpts = playQual
+    if (pqOpts != null && pqOpts.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { playQual = null },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { playQual = null }) { Text("Отмена") } },
+            title = { Text("Качество воспроизведения", fontFamily = VpnkaFonts.nunito800, color = VpnkaColors.TextStrong) },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    pqOpts.forEach { opt ->
+                        Box(
+                            modifier = Modifier.fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .clickable {
+                                    // Swap the stream in place → the keyed player rebuilds at this quality.
+                                    pbState = YouTubeService.Playback(pb.title, opt.videoUrl, pb.pageUrl, opt.audioUrl)
+                                    playQual = null
+                                }
+                                .padding(vertical = 12.dp, horizontal = 6.dp),
+                        ) {
+                            Text(opt.label, color = VpnkaColors.TextStrong, fontFamily = VpnkaFonts.manrope600, fontSize = 15.sp)
                         }
                     }
                 }
