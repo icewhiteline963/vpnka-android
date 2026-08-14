@@ -101,19 +101,40 @@ object YouTubeService {
 
     /** Blocking — off main. Prefers adaptive (best video-only + best audio) for
      *  real quality; falls back to a muxed stream. */
+    // Playback resolution ceiling. Over the VPN tunnel to a foreign node a
+    // 1080p+/VP9/AV1 adaptive stream buffers forever (YouTube also throttles
+    // high-bitrate adaptive streams hardest), and non-H.264 codecs aren't HW-
+    // decoded on every device → "video won't play / loads forever". 720p H.264
+    // plays smoothly everywhere; the download path still offers full quality.
+    private const val PLAY_MAX_RES = 720
+
     fun resolve(videoUrl: String): Playback {
         ensureInit()
         val si = StreamInfo.getInfo(ServiceList.YouTube, videoUrl)
-        val bestVideoOnly = si.videoOnlyStreams
-            .filter { it.content.isNotBlank() }
-            .maxByOrNull { resRank(it.resolution) }
+        val videoOnly = si.videoOnlyStreams.filter { it.content.isNotBlank() }
+        // Prefer the highest H.264/mp4 track at/below the cap; then any track at
+        // /below the cap; then the smallest available (all were above the cap).
+        val bestVideoOnly =
+            videoOnly.filter {
+                resRank(it.resolution) in 1..PLAY_MAX_RES && isMp4(it.format?.suffix, it.format?.mimeType)
+            }.maxByOrNull { resRank(it.resolution) }
+                ?: videoOnly.filter { resRank(it.resolution) in 1..PLAY_MAX_RES }
+                    .maxByOrNull { resRank(it.resolution) }
+                ?: videoOnly.minByOrNull { resRank(it.resolution) }
+        // Pair with mp4/m4a audio when possible (keeps the container consistent
+        // for Media3); otherwise the loudest track.
         val bestAudio = si.audioStreams
-            .filter { it.content.isNotBlank() }
+            .filter { it.content.isNotBlank() && isMp4(it.format?.suffix, it.format?.mimeType) }
             .maxByOrNull { it.averageBitrate }
+            ?: si.audioStreams.filter { it.content.isNotBlank() }.maxByOrNull { it.averageBitrate }
         if (bestVideoOnly != null && bestAudio != null) {
             return Playback(si.name, bestVideoOnly.content, videoUrl, bestAudio.content)
         }
-        val muxed = si.videoStreams.firstOrNull { !it.isVideoOnly }
+        // Muxed fallback: prefer H.264 at/below the cap (muxed tops out ~720p).
+        val muxedStreams = si.videoStreams.filter { !it.isVideoOnly && it.content.isNotBlank() }
+        val muxed = muxedStreams.filter { resRank(it.resolution) in 1..PLAY_MAX_RES }
+            .maxByOrNull { resRank(it.resolution) }
+            ?: muxedStreams.minByOrNull { resRank(it.resolution) }
             ?: si.videoStreams.firstOrNull()
             ?: throw IllegalStateException("no playable stream")
         return Playback(si.name, muxed.content, videoUrl, null)
