@@ -360,11 +360,15 @@ fun VpnkaConnectScreen(
                     VpnkaExpiryBanner(daysLeft = expiryDaysLeft, onRenew = onRenew)
                 }
                 // Free month, right where the bot puts it: offered to anyone
-                // without an active paid plan. Tapping claims it in-app (same
-                // trial the bot issues) — no need to leave for Telegram.
+                // without an active paid plan. With a Telegram behind the
+                // account, tapping claims it in-app. Without one, the same
+                // card becomes the invitation to link — the month belongs to
+                // an identified account, while a bare install gets the
+                // 24-hour first-run trial and nothing more.
                 if (!paidSubscription && freeMonthEnabled) {
                     VpnkaFreeMonthCard(
                         claiming = claimingFreeMonth,
+                        telegramLinked = telegramLinked,
                         // Follows the tunnel like the connect button: green when
                         // the VPN is up, accent otherwise.
                         bgColor = accent,
@@ -1087,6 +1091,7 @@ private fun VpnkaPlanRow(
 @Composable
 private fun VpnkaFreeMonthCard(
     claiming: Boolean,
+    telegramLinked: Boolean,
     bgColor: androidx.compose.ui.graphics.Color,
     onClaim: () -> Unit,
 ) {
@@ -1101,7 +1106,11 @@ private fun VpnkaFreeMonthCard(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = if (claiming) "🎁 Оформляем…" else "🎁 Месяц бесплатно",
+                text = when {
+                    claiming -> "🎁 Оформляем…"
+                    telegramLinked -> "🎁 Месяц бесплатно"
+                    else -> "🔗 Подключить Telegram"
+                },
                 fontFamily = VpnkaFonts.nunito800,
                 fontWeight = VpnkaWeight.Extra,
                 fontSize = 16.sp,
@@ -1118,7 +1127,12 @@ private fun VpnkaFreeMonthCard(
         }
         Spacer(Modifier.height(3.dp))
         Text(
-            text = "30 дней бесплатно, без карты. Нажмите, чтобы получить.",
+            text = if (telegramLinked) {
+                "30 дней бесплатно, без карты. Нажмите, чтобы получить."
+            } else {
+                "Сейчас у вас пробные сутки. Привяжите Telegram — " +
+                    "и месяц бесплатно, без карты."
+            },
             fontFamily = VpnkaFonts.manrope600,
             fontWeight = VpnkaWeight.Semi,
             fontSize = 12.sp,

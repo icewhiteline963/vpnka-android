@@ -588,6 +588,8 @@ object VpnkaAccount {
     sealed class FreeMonthResult {
         data class Issued(val days: Int) : FreeMonthResult()
         data class Already(val days: Int?) : FreeMonthResult()
+        /** The account has no Telegram behind it — the month needs one. */
+        object TelegramRequired : FreeMonthResult()
         object Failed : FreeMonthResult()
     }
 
@@ -603,10 +605,20 @@ object VpnkaAccount {
             ?: return@withContext FreeMonthResult.Failed
         try {
             http().newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) return@use FreeMonthResult.Failed
-                val obj = JsonUtil.fromJsonSafe(
-                    resp.body?.string().orEmpty(), FreeMonthResponse::class.java
-                )
+                val body = resp.body?.string().orEmpty()
+                // 403 carries a reason worth acting on rather than a generic
+                // failure: the account simply has no Telegram yet.
+                if (!resp.isSuccessful) {
+                    val refused = JsonUtil.fromJsonSafe(
+                        body, FreeMonthResponse::class.java
+                    )
+                    return@use if (refused?.status == "telegram_required") {
+                        FreeMonthResult.TelegramRequired
+                    } else {
+                        FreeMonthResult.Failed
+                    }
+                }
+                val obj = JsonUtil.fromJsonSafe(body, FreeMonthResponse::class.java)
                 when (obj?.status) {
                     "issued" -> FreeMonthResult.Issued(obj.days ?: 30)
                     "already" -> FreeMonthResult.Already(obj.days)
