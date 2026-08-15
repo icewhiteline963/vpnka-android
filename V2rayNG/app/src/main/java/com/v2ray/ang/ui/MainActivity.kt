@@ -231,6 +231,8 @@ class MainActivity : HelperBaseComponentActivity() {
         const val OPEN_DESK_PREFIX = "desk:"
         /** Intent extra: chat (peer client id) to open in the messenger. */
         const val EXTRA_CHAT = "vpnka_chat"
+        /** Set once the review prompt has been raised, so it never repeats. */
+        const val KEY_REVIEW_PROMPTED = "vpnka_review_prompted"
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -401,6 +403,11 @@ class MainActivity : HelperBaseComponentActivity() {
     private var telegramLinkPending by mutableStateOf(false)
     private var openedTicket by mutableStateOf<VpnkaAccount.SupportTicket?>(null)
     private var showRecovery by mutableStateOf(false)
+    // The rating sheet, and the server's own words when it was raised by a
+    // `review_request` notice rather than by the home-screen row.
+    private var showReview by mutableStateOf(false)
+    private var reviewPrompt by mutableStateOf<String?>(null)
+    private var reviewSending by mutableStateOf(false)
     private var showServerPicker by mutableStateOf(false)
     private var showPlanPicker by mutableStateOf(false)
     private var showPlansList by mutableStateOf(false)
@@ -574,6 +581,56 @@ class MainActivity : HelperBaseComponentActivity() {
                 telegramLinkPending = false
                 openTelegramLink()
             }
+        }
+
+        // One-time "please rate us" prompt. The server queues a
+        // `review_request` notice (POST /admin/clients/app-notify); the app
+        // raises it once, on a launch, and never again.
+        //
+        // The "never again" is a local flag rather than the server's read
+        // marker on purpose: /app/notifications/read clears *every* unread
+        // notice, so using it here would silently swallow a support reply
+        // the person hasn't seen yet. The server keeps the notice unread;
+        // nothing else reads that kind, and a reinstall asking once more is
+        // a fair price for not eating support mail.
+        LaunchedEffect(Unit) {
+            if (MmkvManager.decodeSettingsBool(KEY_REVIEW_PROMPTED)) {
+                return@LaunchedEffect
+            }
+            if (MmkvManager.getAccountToken() == null) return@LaunchedEffect
+            val notice = runCatching { VpnkaAccount.fetchNotices() }
+                .getOrNull()
+                ?.firstOrNull { it.kind == "review_request" && !it.read }
+                ?: return@LaunchedEffect
+            MmkvManager.encodeSettings(KEY_REVIEW_PROMPTED, true)
+            reviewPrompt = notice.body
+            showReview = true
+        }
+
+        if (showReview) {
+            VpnkaReviewDialog(
+                prompt = reviewPrompt,
+                sending = reviewSending,
+                onDismiss = {
+                    showReview = false
+                    reviewSending = false
+                },
+                onSubmit = { stars, comment ->
+                    reviewSending = true
+                    lifecycleScope.launch {
+                        val ok = VpnkaAccount.submitReview(stars, comment)
+                        reviewSending = false
+                        if (ok) {
+                            showReview = false
+                            toast("Спасибо! Отзыв отправлен")
+                        } else {
+                            // Sheet stays open with the text intact — a
+                            // failed send must not eat what they wrote.
+                            toast("Не удалось отправить, попробуйте позже")
+                        }
+                    }
+                },
+            )
         }
 
         if (askVpnForTelegram) {
@@ -1296,6 +1353,10 @@ class MainActivity : HelperBaseComponentActivity() {
                     startActivity(
                         Intent(this@MainActivity, CheckUpdateActivity::class.java)
                     )
+                },
+                onLeaveReview = {
+                    reviewPrompt = null
+                    showReview = true
                 },
             )
                 // Hidden SmartDesk: 5 quick taps in the bottom-right corner
