@@ -155,6 +155,7 @@ fun VpnkaConnectScreen(
     activeDevicesUsed: Int?,
     activeDevicesLimit: Int?,
     telegramLinked: Boolean,
+    onLeaveReview: () -> Unit,
 ) {
     val accent by animateColorAsState(
         targetValue = if (isRunning) VpnkaColors.Green else VpnkaColors.Accent,
@@ -390,6 +391,7 @@ fun VpnkaConnectScreen(
                 if (smartDeskEnabled) {
                     VpnkaSmartDeskRow(online = smartDeskOnline, onClick = onSmartDesk)
                 }
+                VpnkaReviewRow(onClick = onLeaveReview)
             }
         }
     }
@@ -733,6 +735,46 @@ private fun VpnkaPerAppRow(onClick: () -> Unit) {
         }
         Spacer(Modifier.width(10.dp))
         Text(text = "›", fontSize = 18.sp, color = VpnkaColors.TextFaint)
+    }
+}
+
+/** Bottom-of-screen invitation to rate the service.
+ *
+ *  Deliberately the last row: it must never compete with connecting, but the
+ *  people who scroll to the end of the home screen are exactly the ones with
+ *  an opinion worth reading.
+ */
+@Composable
+private fun VpnkaReviewRow(onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(VpnkaColors.CardSpeed)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Оставить отзыв",
+                fontFamily = VpnkaFonts.nunito800,
+                fontWeight = VpnkaWeight.Extra,
+                fontSize = 15.sp,
+                color = VpnkaColors.TextStrong,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = "Расскажите, как работает ВПН — это помогает нам " +
+                    "чинить то, что мешает именно вам.",
+                fontFamily = VpnkaFonts.manrope600,
+                fontWeight = VpnkaWeight.Semi,
+                fontSize = 12.sp,
+                color = VpnkaColors.TextFaint,
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        Text(text = "★", fontSize = 18.sp, color = VpnkaColors.Accent)
     }
 }
 

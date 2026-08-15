@@ -473,6 +473,28 @@ object VpnkaAccount {
         }
     }
 
+    /** Send one service rating. `overall` is 1-5; comment optional.
+     *  Lands in the same `reviews` table the Telegram survey writes to.
+     *  Returns true on 2xx so the UI can keep the sheet open on failure. */
+    suspend fun submitReview(
+        overall: Int, comment: String,
+    ): Boolean = withContext(Dispatchers.IO) {
+        val payload = mutableMapOf<String, Any>("overall" to overall)
+        // Server treats a missing comment and an empty one alike, but not
+        // sending blank text keeps the admin grid free of empty rows.
+        if (comment.isNotBlank()) payload["comment"] = comment.trim()
+        val body = JsonUtil.toJson(payload)
+            .toRequestBody("application/json".toMediaType())
+        val req = authed("/app/review")?.post(body)?.build()
+            ?: return@withContext false
+        try {
+            http().newCall(req).execute().use { it.isSuccessful }
+        } catch (e: Exception) {
+            LogUtil.w(AppConfig.TAG, "review submit failed: ${e.message}")
+            false
+        }
+    }
+
     data class Device(
         @SerializedName("id") val id: Long = 0,
         @SerializedName("label") val label: String = "",
