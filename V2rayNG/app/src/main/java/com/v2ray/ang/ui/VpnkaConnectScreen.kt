@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
@@ -224,7 +225,11 @@ fun VpnkaConnectScreen(
             maxHeight * 0.42f
         } else {
             val chrome = with(density) { (topPx + bottomPx).toDp() }
-            (maxHeight - chrome).coerceAtLeast(buttonSize + 96.dp)
+            // The floor has to know about the «СЕЙЧАС ЧЕРЕЗ» pill: it appears
+            // only while connected, so a height measured on the disconnected
+            // screen left it nothing to sit in.
+            val floor = buttonSize + if (isRunning) 150.dp else 96.dp
+            (maxHeight - chrome).coerceAtLeast(floor)
         }
 
         Column(
@@ -274,7 +279,14 @@ fun VpnkaConnectScreen(
             // way they did when they shared one column.
             Column(
                 modifier = Modifier
-                    .height(middleHeight)
+                    // heightIn, not height: a fixed height does not clip in
+                    // Compose, it lets the extra content draw straight over
+                    // whatever comes next — which is how the pill ended up on
+                    // top of «ЗАГРУЖЕНО/ОТДАНО». As a minimum the block still
+                    // centres the button exactly where it was tuned to sit;
+                    // when content outgrows it the block grows and the page
+                    // (already scrollable) absorbs it.
+                    .heightIn(min = middleHeight)
                     .fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
@@ -300,6 +312,9 @@ fun VpnkaConnectScreen(
                 if (isRunning) {
                     Spacer(Modifier.height(10.dp))
                     VpnkaActiveExit()
+                    // Clearance from the traffic cards below — without it the
+                    // pill ends flush against them on a short screen.
+                    Spacer(Modifier.height(10.dp))
                 }
             }
 
