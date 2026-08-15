@@ -48,6 +48,14 @@ object Messenger {
     private const val KEY_CONTACTS = "contacts"
     private const val KEY_CURSOR = "cursor"
     private const val KEY_NOTIFY_CURSOR = "notify_cursor"
+    // A message we could not finish handling (undecryptable envelope, or
+    // media whose chunks did not all arrive). The read cursor is held just
+    // before it so the next poll asks for it again.
+    private const val KEY_STUCK_ID = "stuck_msg_id"
+    private const val KEY_STUCK_TRIES = "stuck_msg_tries"
+    // …but not forever: a genuinely broken message must not wall off every
+    // message behind it. After this many polls we step over it.
+    private const val MAX_MSG_RETRIES = 3L
     private const val BASE = "https://get.vpnka.io"
 
     private val gson = Gson()
@@ -701,9 +709,18 @@ object Messenger {
                 val out = gson.fromJson(resp.body?.string().orEmpty(), PollResp::class.java)
                     ?: return@withContext false
                 var changed = false
+                var firstFailedId = 0L
                 val me = myClientId()
                 for (m in out.messages) {
-                    val raw = open(m.ciphertext) ?: continue
+                    val raw = open(m.ciphertext)
+                    if (raw == null) {
+                        // Skipping it AND moving the cursor past it lost the
+                        // message for good — the server never offers it again.
+                        if (firstFailedId == 0L || m.id < firstFailedId) {
+                            firstFailedId = m.id
+                        }
+                        continue
+                    }
                     val o = parsePayload(raw)
                     // A message from ourselves is a sent-copy syncing history:
                     // file it into the peer's chat on the sent side. Otherwise
@@ -726,23 +743,45 @@ object Messenger {
                     val preview: String
                     if (o.k == "image" && o.media > 0 && o.key.isNotEmpty()) {
                         val blob = downloadMedia(o.media)
-                        val img = if (blob != null) try {
+                        if (blob == null) {
+                            // Chunked media crossing the Russian leg fails
+                            // often enough that a half-downloaded photo is
+                            // routine. Retry the whole message instead of
+                            // filing an empty picture nobody can recover.
+                            if (firstFailedId == 0L || m.id < firstFailedId) {
+                                firstFailedId = m.id
+                            }
+                            continue
+                        }
+                        val img = try {
                             Base64.encodeToString(aesGcmDec(Base64.decode(o.key, b64f), blob), b64f)
-                        } catch (e: Exception) { "" } else ""
+                        } catch (e: Exception) { "" }
                         added = appendMessage(chat, Msg(id = id, mine = mine, text = "", ts = System.currentTimeMillis(), u = o.u, k = "image", img = img))
                         preview = "📷 Фото"
                     } else if (o.k == "voice" && o.media > 0 && o.key.isNotEmpty()) {
                         val blob = downloadMedia(o.media)
-                        val audio = if (blob != null) try {
+                        if (blob == null) {
+                            if (firstFailedId == 0L || m.id < firstFailedId) {
+                                firstFailedId = m.id
+                            }
+                            continue
+                        }
+                        val audio = try {
                             Base64.encodeToString(aesGcmDec(Base64.decode(o.key, b64f), blob), b64f)
-                        } catch (e: Exception) { "" } else ""
+                        } catch (e: Exception) { "" }
                         added = appendMessage(chat, Msg(id = id, mine = mine, text = "", ts = System.currentTimeMillis(), u = o.u, k = "voice", img = audio, dur = o.dur))
                         preview = "🎤 Голосовое"
                     } else if (o.k == "video" && o.media > 0 && o.key.isNotEmpty()) {
                         val blob = downloadMedia(o.media)
-                        val vid = if (blob != null) try {
+                        if (blob == null) {
+                            if (firstFailedId == 0L || m.id < firstFailedId) {
+                                firstFailedId = m.id
+                            }
+                            continue
+                        }
+                        val vid = try {
                             Base64.encodeToString(aesGcmDec(Base64.decode(o.key, b64f), blob), b64f)
-                        } catch (e: Exception) { "" } else ""
+                        } catch (e: Exception) { "" }
                         added = appendMessage(chat, Msg(id = id, mine = mine, text = "", ts = System.currentTimeMillis(), u = o.u, k = "video", img = vid, dur = o.dur))
                         preview = "🎬 Видео"
                     } else {
@@ -756,7 +795,26 @@ object Messenger {
                     }
                     changed = true
                 }
-                store.encode(KEY_CURSOR, out.cursor)
+                // Hold the cursor before the first message we could not
+                // finish, so the next poll asks for it again — but count the
+                // attempts, or one permanently broken envelope would block
+                // every message behind it forever.
+                var cursorToWrite = out.cursor
+                if (firstFailedId > 0L) {
+                    val sameAsLast = store.decodeLong(KEY_STUCK_ID, 0L) == firstFailedId
+                    val tries = if (sameAsLast) store.decodeLong(KEY_STUCK_TRIES, 0L) + 1 else 1L
+                    store.encode(KEY_STUCK_ID, firstFailedId)
+                    store.encode(KEY_STUCK_TRIES, tries)
+                    if (tries < MAX_MSG_RETRIES) {
+                        cursorToWrite = firstFailedId - 1
+                    } else {
+                        LogUtil.w(AppConfig.TAG, "messenger: giving up on message $firstFailedId after $tries tries")
+                    }
+                } else if (store.decodeLong(KEY_STUCK_ID, 0L) != 0L) {
+                    store.encode(KEY_STUCK_ID, 0L)
+                    store.encode(KEY_STUCK_TRIES, 0L)
+                }
+                store.encode(KEY_CURSOR, cursorToWrite)
                 changed
             }
         } catch (e: Exception) { false }
