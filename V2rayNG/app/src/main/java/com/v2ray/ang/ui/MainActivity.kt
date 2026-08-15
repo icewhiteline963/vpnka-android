@@ -1292,26 +1292,43 @@ class MainActivity : HelperBaseComponentActivity() {
                 freeMonthEnabled = subInfo?.freeMonthEnabled == true,
                 claimingFreeMonth = claimingFreeMonth,
                 onClaimFreeMonth = {
-                    claimingFreeMonth = true
-                    lifecycleScope.launch {
-                        when (val r = VpnkaAccount.claimFreeMonth()) {
-                            is VpnkaAccount.FreeMonthResult.Issued -> {
-                                toast("Готово! Бесплатный месяц активирован")
-                                selectNewestOnSync = true
-                                subReload++
+                    // No Telegram behind the account → this card is the
+                    // invitation to link, not the claim. The month belongs to
+                    // an identified account: without one a reinstall would
+                    // repeat it forever, so a bare install keeps the 24-hour
+                    // first-run trial. The server refuses the claim in that
+                    // state anyway — this is what stops the person meeting
+                    // that refusal instead of an explanation.
+                    if (!vpnkaTelegramLinked) {
+                        openTelegramLinkGuarded()
+                    } else {
+                        claimingFreeMonth = true
+                        lifecycleScope.launch {
+                            when (val r = VpnkaAccount.claimFreeMonth()) {
+                                is VpnkaAccount.FreeMonthResult.Issued -> {
+                                    toast("Готово! Бесплатный месяц активирован")
+                                    selectNewestOnSync = true
+                                    subReload++
+                                }
+                                is VpnkaAccount.FreeMonthResult.Already -> {
+                                    val d = r.days
+                                    toast(
+                                        if (d != null)
+                                            "Месяц уже активен. Новый можно получить через $d дн."
+                                        else "Месяц уже активен"
+                                    )
+                                }
+                                is VpnkaAccount.FreeMonthResult.TelegramRequired -> {
+                                    // Only reachable if the link was lost
+                                    // between rendering the card and the tap.
+                                    toast("Сначала подключите Telegram")
+                                    openTelegramLinkGuarded()
+                                }
+                                is VpnkaAccount.FreeMonthResult.Failed ->
+                                    toast("Не удалось получить месяц, попробуйте позже")
                             }
-                            is VpnkaAccount.FreeMonthResult.Already -> {
-                                val d = r.days
-                                toast(
-                                    if (d != null)
-                                        "Месяц уже активен. Новый можно получить через $d дн."
-                                    else "Месяц уже активен"
-                                )
-                            }
-                            is VpnkaAccount.FreeMonthResult.Failed ->
-                                toast("Не удалось получить месяц, попробуйте позже")
+                            claimingFreeMonth = false
                         }
-                        claimingFreeMonth = false
                     }
                 },
                 onChangeSubscription = { showPlansList = true },
