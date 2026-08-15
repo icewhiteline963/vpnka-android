@@ -529,13 +529,15 @@ class MainActivity : HelperBaseComponentActivity() {
                     // on a newly-appeared subscription do nothing.
                     mainViewModel.setupGroupTab(forceRefresh = true)
                     if (switched != null) {
-                        if (selectNewestOnSync) {
-                            // Radio in the picker reads uiState.selectedGroupId
-                            // first, so MMKV alone isn't enough — tell the
-                            // viewmodel too, or the newly-bought plan wouldn't
-                            // show as active.
-                            mainViewModel.subscriptionIdChanged(switched)
-                        }
+                        // The picker reads uiState.selectedGroupId first, so
+                        // MMKV alone isn't enough — the viewmodel has to be
+                        // told. This holds for ANY switch, not only a plan
+                        // just bought: signing out forgets the active pick, so
+                        // the next sign-in has sync activate the longest-lived
+                        // plan — and while this line was gated on
+                        // `selectNewestOnSync`, the app came back with the
+                        // subscription stored but nothing selected on screen.
+                        mainViewModel.subscriptionIdChanged(switched)
                         // Same path a manual refresh takes, so the user sees
                         // the familiar spinner and toasts rather than servers
                         // appearing out of nowhere.
