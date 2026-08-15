@@ -943,6 +943,21 @@ class MainActivity : HelperBaseComponentActivity() {
                         // stale revoked flag first or register() refuses.
                         MmkvManager.setSessionRevoked(false)
                         VpnkaAccount.register()
+                        // …and give that fresh account the 24-hour trial,
+                        // exactly as a first launch would. Signing out wipes
+                        // every subscription including the trial, but the
+                        // only code that re-seeds it runs in
+                        // AngApplication.onCreate — which does not happen
+                        // again while the process lives. Without this the
+                        // person is left with no servers at all: the connect
+                        // button falls through to upstream's «выберите файл
+                        // конфигурации» until they force-quit the app. The
+                        // profile sync below cannot cover it either — it only
+                        // syncs when the account already has plans, and a
+                        // brand-new anonymous account has none.
+                        if (MmkvManager.ensureTrialSubscription()) {
+                            importConfigViaSub()
+                        }
                         signedIn = VpnkaAccount.isSignedIn()
                         subReload++
                         mainViewModel.setupGroupTab(forceRefresh = true)
