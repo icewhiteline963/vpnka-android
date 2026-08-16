@@ -93,13 +93,17 @@ private fun msgTime(ts: Long): String =
     if (ts <= 0L) "" else SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(ts))
 
 
+/** Bottom tabs, Telegram-style. Nested screens (a chat, a channel) hide the bar
+ *  and come back to whichever tab was open. */
+private enum class MsgTab { CHATS, CONTACTS, SETTINGS, PROFILE }
+
 /** «Сообщения» — an E2E messenger in the Telegram mould. */
 @Composable
 fun VpnkaMessengerApp() {
     var tick by remember { mutableIntStateOf(0) }
     var openId by remember { mutableStateOf<Long?>(null) }
     var handle by remember { mutableStateOf(Messenger.myHandle()) }
-    var showMyProfile by remember { mutableStateOf(false) }
+    var tab by remember { mutableStateOf(MsgTab.CHATS) }
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<Messenger.Found>>(emptyList()) }
     var channelResults by remember { mutableStateOf<List<Channels.Channel>>(emptyList()) }
@@ -167,15 +171,10 @@ fun VpnkaMessengerApp() {
         return
     }
 
-    // Hide the SmartDesk host bar while a nested screen (chat, channel, profile)
-    // is open — those have their own header; only the contact list keeps the bar.
-    val nested = showMyProfile || openChannel != null || openId != null
+    // Hide the SmartDesk host bar while a nested screen (chat, channel) is open —
+    // those have their own header; the tabbed main screen keeps the bar.
+    val nested = openChannel != null || openId != null
     DisposableEffect(nested) { SmartDeskChrome.barHidden = nested; onDispose {} }
-
-    if (showMyProfile) {
-        MyProfileScreen(handle = handle, onBack = { showMyProfile = false })
-        return
-    }
 
     openChannel?.let { ch ->
         ChannelScreen(channel = ch, onBack = { openChannel = null; tick++ })
@@ -192,150 +191,164 @@ fun VpnkaMessengerApp() {
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Current user's @handle up top.
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            // Tap your own name/avatar → your profile (nick, key, settings).
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.clip(RoundedCornerShape(14.dp))
-                    .clickable { showMyProfile = true }
-                    .padding(end = 8.dp, top = 2.dp, bottom = 2.dp),
-            ) {
-                MsgAvatar(if (handle.isBlank()) "?" else handle, size = 36)
-                Spacer(Modifier.width(10.dp))
-                Text(
-                    text = if (handle.isBlank()) "…" else "@$handle",
-                    fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.TextStrong,
+        Box(modifier = Modifier.weight(1f)) {
+            when (tab) {
+                MsgTab.CONTACTS -> ContactsTab(
+                    contacts = contacts,
+                    onOpen = { openId = it },
+                    onStartChat = { r -> Messenger.startChat(r); tick++; openId = r.id },
                 )
-            }
-            Spacer(Modifier.weight(1f))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.clip(CircleShape).background(VpnkaColors.Accent.copy(alpha = 0.14f))
-                    .clickable { showCreate = true }.padding(horizontal = 12.dp, vertical = 6.dp),
-            ) {
-                Text("＋ Канал", fontFamily = VpnkaFonts.nunito800, fontSize = 13.sp, color = VpnkaColors.Accent)
-            }
-        }
-        // Search people and channels.
-        var showSearchTip by remember { mutableStateOf(false) }
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(modifier = Modifier.weight(1f)) { MsgField("Поиск людей и каналов", query) { query = it } }
-            Spacer(Modifier.width(6.dp))
-            Box {
-                Text(
-                    "?",
-                    fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.Accent,
-                    modifier = Modifier.clip(CircleShape).background(VpnkaColors.CardServer)
-                        .clickable { showSearchTip = true }.padding(horizontal = 12.dp, vertical = 10.dp),
-                )
-                if (showSearchTip) {
-                    Popup(
-                        alignment = Alignment.TopEnd,
-                        onDismissRequest = { showSearchTip = false },
-                        offset = IntOffset(0, 100),
-                    ) {
-                        Box(
-                            modifier = Modifier.widthIn(max = 250.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(VpnkaColors.BgOffCentre)
-                                .padding(14.dp),
-                        ) {
-                            Text(
-                                "Если у человека установлена VPNka, найдите его по нику из Telegram — без символа @. Также ищет по каналам.",
-                                fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp,
-                                color = VpnkaColors.TextStrong, lineHeight = 17.sp,
-                            )
-                        }
-                    }
-                }
-            }
-        }
-        Spacer(Modifier.height(4.dp))
-
-        if (query.trim().length >= 2) {
-            // Search results: channels then people.
-            if (results.isEmpty() && channelResults.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-                    Text("Ничего не найдено", fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp, color = VpnkaColors.TextMuted)
-                }
-            } else {
-                LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
-                    if (channelResults.isNotEmpty()) {
-                        item { SectionLabel("Каналы") }
-                        items(channelResults, key = { "ch" + it.id }) { ch ->
-                            ResultRow(glyph = "📢", title = ch.title, sub = "@${ch.handle}") { openChannel = ch; query = "" }
-                        }
-                    }
-                    if (results.isNotEmpty()) {
-                        item { SectionLabel("Люди") }
-                        items(results, key = { it.id }) { r ->
-                            ResultRow(glyph = null, title = "@${r.handle}", sub = null) {
-                                Messenger.startChat(r); tick++; query = ""; openId = r.id
-                            }
-                        }
-                    }
-                }
-            }
-        } else if (contacts.isEmpty() && myChannels.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-                Text(
-                    "Чатов пока нет. Найдите человека по нику через поиск выше — переписка шифруется.",
-                    fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp, color = VpnkaColors.TextMuted,
-                )
-            }
-        } else {
-            // Chats + subscribed channels.
-            LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
-                if (myChannels.isNotEmpty()) {
-                    item { SectionLabel("Каналы") }
-                    items(myChannels, key = { "ch" + it.id }) { ch ->
-                        ResultRow(glyph = "📢", title = ch.title, sub = "@${ch.handle}") { openChannel = ch }
-                    }
-                    if (contacts.isNotEmpty()) item { SectionLabel("Чаты") }
-                }
-                items(contacts, key = { it.id }) { c ->
-                    val last = Messenger.messages(c.id).lastOrNull()
+                MsgTab.SETTINGS -> SettingsTab()
+                MsgTab.PROFILE -> ProfileTab(handle)
+                MsgTab.CHATS -> Column(modifier = Modifier.fillMaxSize()) {
+                    // Current user's @handle up top.
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                            .clip(RoundedCornerShape(18.dp)).background(VpnkaColors.CardServer)
-                            .clickable { openId = c.id }.padding(horizontal = 12.dp, vertical = 11.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        MsgAvatar(c.name, size = 50)
-                        Spacer(Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    c.name, fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp,
-                                    color = VpnkaColors.TextStrong, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                if (last != null) {
-                                    Text(msgTime(last.ts), fontFamily = VpnkaFonts.manrope600, fontSize = 11.sp, color = VpnkaColors.TextFaint)
+                        // Tap your own name/avatar → your profile (nick, key, settings).
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.clip(RoundedCornerShape(14.dp))
+                                .clickable { tab = MsgTab.PROFILE }
+                                .padding(end = 8.dp, top = 2.dp, bottom = 2.dp),
+                        ) {
+                            MsgAvatar(if (handle.isBlank()) "?" else handle, size = 36)
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                text = if (handle.isBlank()) "…" else "@$handle",
+                                fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.TextStrong,
+                            )
+                        }
+                        Spacer(Modifier.weight(1f))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.clip(CircleShape).background(VpnkaColors.Accent.copy(alpha = 0.14f))
+                                .clickable { showCreate = true }.padding(horizontal = 12.dp, vertical = 6.dp),
+                        ) {
+                            Text("＋ Канал", fontFamily = VpnkaFonts.nunito800, fontSize = 13.sp, color = VpnkaColors.Accent)
+                        }
+                    }
+                    // Search people and channels.
+                    var showSearchTip by remember { mutableStateOf(false) }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(modifier = Modifier.weight(1f)) { MsgField("Поиск людей и каналов", query) { query = it } }
+                        Spacer(Modifier.width(6.dp))
+                        Box {
+                            Text(
+                                "?",
+                                fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.Accent,
+                                modifier = Modifier.clip(CircleShape).background(VpnkaColors.CardServer)
+                                    .clickable { showSearchTip = true }.padding(horizontal = 12.dp, vertical = 10.dp),
+                            )
+                            if (showSearchTip) {
+                                Popup(
+                                    alignment = Alignment.TopEnd,
+                                    onDismissRequest = { showSearchTip = false },
+                                    offset = IntOffset(0, 100),
+                                ) {
+                                    Box(
+                                        modifier = Modifier.widthIn(max = 250.dp)
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(VpnkaColors.BgOffCentre)
+                                            .padding(14.dp),
+                                    ) {
+                                        Text(
+                                            "Если у человека установлена VPNka, найдите его по нику из Telegram — без символа @. Также ищет по каналам.",
+                                            fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp,
+                                            color = VpnkaColors.TextStrong, lineHeight = 17.sp,
+                                        )
+                                    }
                                 }
                             }
-                            Spacer(Modifier.height(2.dp))
-                            val preview = when {
-                                last == null -> "Нет сообщений"
-                                last.k == "image" -> (if (last.mine) "Вы: " else "") + "📷 Фото"
-                                else -> (if (last.mine) "Вы: " else "") + last.text
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+
+                    if (query.trim().length >= 2) {
+                        // Search results: channels then people.
+                        if (results.isEmpty() && channelResults.isEmpty()) {
+                            Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+                                Text("Ничего не найдено", fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp, color = VpnkaColors.TextMuted)
                             }
+                        } else {
+                            LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+                                if (channelResults.isNotEmpty()) {
+                                    item { SectionLabel("Каналы") }
+                                    items(channelResults, key = { "ch" + it.id }) { ch ->
+                                        ResultRow(glyph = "📢", title = ch.title, sub = "@${ch.handle}") { openChannel = ch; query = "" }
+                                    }
+                                }
+                                if (results.isNotEmpty()) {
+                                    item { SectionLabel("Люди") }
+                                    items(results, key = { it.id }) { r ->
+                                        ResultRow(glyph = null, title = "@${r.handle}", sub = null) {
+                                            Messenger.startChat(r); tick++; query = ""; openId = r.id
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else if (contacts.isEmpty() && myChannels.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
                             Text(
-                                preview, fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp,
-                                color = VpnkaColors.TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                "Чатов пока нет. Найдите человека по нику через поиск выше — переписка шифруется.",
+                                fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp, color = VpnkaColors.TextMuted,
                             )
+                        }
+                    } else {
+                        // Chats + subscribed channels.
+                        LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+                            if (myChannels.isNotEmpty()) {
+                                item { SectionLabel("Каналы") }
+                                items(myChannels, key = { "ch" + it.id }) { ch ->
+                                    ResultRow(glyph = "📢", title = ch.title, sub = "@${ch.handle}") { openChannel = ch }
+                                }
+                                if (contacts.isNotEmpty()) item { SectionLabel("Чаты") }
+                            }
+                            items(contacts, key = { it.id }) { c ->
+                                val last = Messenger.messages(c.id).lastOrNull()
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                                        .clip(RoundedCornerShape(18.dp)).background(VpnkaColors.CardServer)
+                                        .clickable { openId = c.id }.padding(horizontal = 12.dp, vertical = 11.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    MsgAvatar(c.name, size = 50)
+                                    Spacer(Modifier.width(12.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                c.name, fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp,
+                                                color = VpnkaColors.TextStrong, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f),
+                                            )
+                                            if (last != null) {
+                                                Text(msgTime(last.ts), fontFamily = VpnkaFonts.manrope600, fontSize = 11.sp, color = VpnkaColors.TextFaint)
+                                            }
+                                        }
+                                        Spacer(Modifier.height(2.dp))
+                                        val preview = when {
+                                            last == null -> "Нет сообщений"
+                                            last.k == "image" -> (if (last.mine) "Вы: " else "") + "📷 Фото"
+                                            else -> (if (last.mine) "Вы: " else "") + last.text
+                                        }
+                                        Text(
+                                            preview, fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp,
+                                            color = VpnkaColors.TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
         }
+        MessengerTabBar(current = tab, onSelect = { tab = it })
     }
 
     if (showCreate) {
@@ -888,23 +901,14 @@ private fun keyFingerprint(pubKey: String): String = try {
     h.take(8).joinToString(" ") { "%02X".format(it) }
 } catch (e: Exception) { "—" }
 
-/** «Мой профиль» — your own identity, encryption key and messenger settings.
- *  Opened by tapping your @handle on the chat list. */
+/** «Профиль» — your own identity and encryption key. A bottom tab, so no
+ *  back arrow: the tab bar is the way out. */
 @Composable
-private fun MyProfileScreen(handle: String, onBack: () -> Unit) {
+private fun ProfileTab(handle: String) {
     val myKey = remember { Messenger.myPublicKey() }
     Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("‹", fontSize = 24.sp, color = VpnkaColors.TextStrong,
-                modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onBack).padding(horizontal = 8.dp, vertical = 4.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("Мой профиль", fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.TextStrong)
-        }
         Column(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 18.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             MsgAvatar(if (handle.isBlank()) "?" else handle, size = 96)
@@ -913,7 +917,6 @@ private fun MyProfileScreen(handle: String, onBack: () -> Unit) {
             Spacer(Modifier.height(2.dp))
             Text("Ваш постоянный ник в мессенджере", fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp, color = VpnkaColors.TextMuted)
         }
-        Spacer(Modifier.height(14.dp))
         ProfileCard("🔒 Безопасность") {
             Text("Отпечаток вашего ключа шифрования", fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp, color = VpnkaColors.TextMuted)
             Spacer(Modifier.height(4.dp))
@@ -925,7 +928,17 @@ private fun MyProfileScreen(handle: String, onBack: () -> Unit) {
                 fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp, color = VpnkaColors.TextMuted,
             )
         }
-        ProfileCard("⚙️ Настройки") {
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+/** «Настройки» — messenger switches, split out of the profile so each bottom
+ *  tab holds one thing. */
+@Composable
+private fun SettingsTab() {
+    Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        Spacer(Modifier.height(10.dp))
+        ProfileCard("⚙️ Уведомления и статусы") {
             MyProfileToggle("Уведомлять о новых сообщениях", "notify")
             MyProfileToggle("Отправлять «печатает…»", "typing")
             MyProfileToggle("Отправлять отметку о прочтении", "read")
@@ -939,6 +952,113 @@ private fun MyProfileScreen(handle: String, onBack: () -> Unit) {
             )
         }
         Spacer(Modifier.height(24.dp))
+    }
+}
+
+/** «Контакты» — people you already talk to, plus a people-only search so a new
+ *  contact can be added without going through the chats tab. */
+@Composable
+private fun ContactsTab(
+    contacts: List<Messenger.Contact>,
+    onOpen: (Long) -> Unit,
+    onStartChat: (Messenger.Found) -> Unit,
+) {
+    var q by remember { mutableStateOf("") }
+    var found by remember { mutableStateOf<List<Messenger.Found>>(emptyList()) }
+    LaunchedEffect(q) {
+        if (q.trim().length < 2) found = emptyList() else {
+            delay(300)
+            found = Messenger.searchUsers(q)
+        }
+    }
+    Column(modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+            MsgField("Найти человека по нику", q) { q = it }
+        }
+        if (q.trim().length >= 2) {
+            if (found.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+                    Text("Никого не нашли", fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp, color = VpnkaColors.TextMuted)
+                }
+            } else {
+                LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+                    items(found, key = { it.id }) { r ->
+                        ResultRow(glyph = null, title = "@${r.handle}", sub = null) { onStartChat(r); q = "" }
+                    }
+                }
+            }
+        } else if (contacts.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+                Text(
+                    "Контактов пока нет. Найдите человека по нику из Telegram — без символа @.",
+                    fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp, color = VpnkaColors.TextMuted,
+                )
+            }
+        } else {
+            LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+                items(contacts.sortedBy { it.name.lowercase() }, key = { it.id }) { c ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                            .clip(RoundedCornerShape(18.dp)).background(VpnkaColors.CardServer)
+                            .clickable { onOpen(c.id) }.padding(horizontal = 12.dp, vertical = 11.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        MsgAvatar(c.name, size = 44)
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            c.name, fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp,
+                            color = VpnkaColors.TextStrong, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Telegram-style bottom tabs. Sits above the SmartDesk host bar, so it stays
+ *  compact — the host owns the system navigation inset. */
+@Composable
+private fun MessengerTabBar(current: MsgTab, onSelect: (MsgTab) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .background(VpnkaColors.BgOffCentre)
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        MsgTabItem("💬", "Чаты", current == MsgTab.CHATS, Modifier.weight(1f)) { onSelect(MsgTab.CHATS) }
+        MsgTabItem("👤", "Контакты", current == MsgTab.CONTACTS, Modifier.weight(1f)) { onSelect(MsgTab.CONTACTS) }
+        MsgTabItem("⚙️", "Настройки", current == MsgTab.SETTINGS, Modifier.weight(1f)) { onSelect(MsgTab.SETTINGS) }
+        MsgTabItem("🪪", "Профиль", current == MsgTab.PROFILE, Modifier.weight(1f)) { onSelect(MsgTab.PROFILE) }
+    }
+}
+
+/** One tab. The glyph is an emoji and keeps its own colours, so the selected
+ *  state has to read from the label and the pill behind it. */
+@Composable
+private fun MsgTabItem(
+    glyph: String,
+    label: String,
+    selected: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (selected) VpnkaColors.Accent.copy(alpha = 0.14f) else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(glyph, fontSize = 17.sp, color = VpnkaColors.TextStrong)
+        Spacer(Modifier.height(2.dp))
+        Text(
+            label,
+            fontFamily = VpnkaFonts.nunito800,
+            fontSize = 11.sp,
+            color = if (selected) VpnkaColors.Accent else VpnkaColors.TextMuted,
+        )
     }
 }
 
