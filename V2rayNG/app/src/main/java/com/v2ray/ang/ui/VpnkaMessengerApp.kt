@@ -1180,7 +1180,7 @@ private fun CallScreen() {
         CallManager.Phase.INCOMING -> "Входящий звонок"
         CallManager.Phase.ACTIVE ->
             if (CallManager.connectedAt > 0) fmtVoice(((now - CallManager.connectedAt) / 1000).toInt().coerceAtLeast(0)) else "Соединение…"
-        CallManager.Phase.ENDED -> "Звонок завершён"
+        CallManager.Phase.ENDED -> CallManager.endReason.ifBlank { "Звонок завершён" }
         CallManager.Phase.IDLE -> ""
     }
 
