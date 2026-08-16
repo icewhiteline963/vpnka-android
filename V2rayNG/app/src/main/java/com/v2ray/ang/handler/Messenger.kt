@@ -418,6 +418,10 @@ object Messenger {
                                 val plain = open(f.data) ?: return
                                 onCallSignal?.invoke(f.from, plain)
                             }
+                            // The peer had no live socket, so the server could
+                            // not hand our frame to anyone. Only delivery is
+                            // reported — the server still never sees content.
+                            "callmiss" -> onCallMiss?.invoke(f.to)
                         }
                     } catch (e: Exception) { /* ignore malformed frame */ }
                 }
@@ -451,6 +455,9 @@ object Messenger {
     /** The engine's incoming-signal sink: (fromClientId, plaintextJson). */
     @Volatile var onCallSignal: ((Long, String) -> Unit)? = null
 
+    /** Server could not deliver our call frame — nobody listening on (peerId). */
+    @Volatile var onCallMiss: ((Long) -> Unit)? = null
+
     /** Seal a call-signaling payload to the peer and push it over the socket. */
     fun sendCallSignal(to: Long, payloadJson: String): Boolean {
         val c = contact(to) ?: return false
@@ -480,7 +487,7 @@ object Messenger {
     private data class IceResp(val iceServers: List<IceServer> = emptyList())
     private data class WsCall(val t: String = "call", val to: Long, val data: String)
 
-    private data class WsFrame(val t: String = "", val from: Long = 0, val data: String = "")
+    private data class WsFrame(val t: String = "", val from: Long = 0, val to: Long = 0, val data: String = "")
     private data class WsTyping(val t: String = "typing", val to: Long)
 
     // The E2E plaintext is a JSON payload: uuid + kind + text (+ peer/mid on a

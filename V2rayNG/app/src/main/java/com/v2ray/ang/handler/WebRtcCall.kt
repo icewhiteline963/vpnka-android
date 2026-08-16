@@ -36,6 +36,12 @@ object CallManager {
 
     enum class Phase { IDLE, OUTGOING, INCOMING, ACTIVE, ENDED }
 
+    // Re-offer cadence while ringing: ~20 s total, which covers a socket that
+    // is mid-reconnect (the client pings every 25 s) without ringing forever
+    // at somebody whose phone is simply off.
+    private const val OFFER_RETRY_MS = 2_000L
+    private const val MAX_OFFER_TRIES = 10
+
     var phase by mutableStateOf(Phase.IDLE)
         private set
     var peerId by mutableStateOf(0L)
@@ -48,6 +54,10 @@ object CallManager {
         private set
     /** Wall-clock ms when the call connected; 0 until ACTIVE (for the timer). */
     var connectedAt by mutableStateOf(0L)
+        private set
+    /** Why the last call ended, when there is something to say (shown on the
+     *  call screen). Empty for an ordinary hang-up. */
+    var endReason by mutableStateOf("")
         private set
 
     private val gson = Gson()
@@ -73,6 +83,7 @@ object CallManager {
     /** Wire the messenger's incoming call-signal callback to us. Call once. */
     fun attach() {
         Messenger.onCallSignal = { from, json -> onSignal(from, json) }
+        Messenger.onCallMiss = { peer -> onPeerOffline(peer) }
     }
 
     // --- outgoing / incoming lifecycle ---
@@ -82,6 +93,9 @@ object CallManager {
         if (phase != Phase.IDLE && phase != Phase.ENDED) return
         appContext = context.applicationContext
         callId = java.util.UUID.randomUUID().toString()
+        endReason = ""
+        offerJson = ""
+        offerTries = 0
         setState(Phase.OUTGOING, contactId, name)
         Thread {
             iceServers = loadIce()
@@ -288,7 +302,48 @@ object CallManager {
     ) {
         val to = peerId
         if (to == 0L) return
-        Messenger.sendCallSignal(to, gson.toJson(CallSig(call = callId, kind = kind, sdp = sdp, cand = cand, mid = mid, idx = idx, name = name)))
+        val payload = gson.toJson(
+            CallSig(call = callId, kind = kind, sdp = sdp, cand = cand, mid = mid, idx = idx, name = name)
+        )
+        if (kind == "offer") { offerJson = payload; offerTries = 0 }
+        val sent = Messenger.sendCallSignal(to, payload)
+        // No socket at all (VPN down, or it died and has not reconnected yet).
+        // Only the offer is worth retrying: the rest of the exchange happens on
+        // a call that already reached the other side.
+        if (!sent && kind == "offer") scheduleOfferRetry()
+    }
+
+    // --- redelivery of the offer while we ring ---
+    //
+    // The relay has no queue: an offer sent while the callee's socket is dead
+    // reaches nobody, and the server answers "callmiss". Their app reconnects
+    // within a ping interval or two, so re-offering for a while turns a call
+    // placed in that gap into a call that rings, instead of one that silently
+    // never arrives.
+
+    private var offerJson: String = ""
+    private var offerTries = 0
+    private val offerRetry = Runnable { retryOffer() }
+
+    private fun scheduleOfferRetry() {
+        main.removeCallbacks(offerRetry)
+        main.postDelayed(offerRetry, OFFER_RETRY_MS)
+    }
+
+    private fun retryOffer() {
+        if (phase != Phase.OUTGOING || peerId == 0L || offerJson.isEmpty()) return
+        if (offerTries >= MAX_OFFER_TRIES) {
+            endReason = "Собеседник не в сети"
+            cleanup(Phase.ENDED)
+            return
+        }
+        offerTries++
+        if (!Messenger.sendCallSignal(peerId, offerJson)) scheduleOfferRetry()
+    }
+
+    /** Server could not hand our frame to anyone on the far end. */
+    private fun onPeerOffline(peer: Long) = main.post {
+        if (phase == Phase.OUTGOING && peer == peerId) scheduleOfferRetry()
     }
 
     private fun flushPendingIce() {
@@ -314,6 +369,8 @@ object CallManager {
     }
 
     private fun cleanup(end: Phase) {
+        main.removeCallbacks(offerRetry)
+        offerJson = ""; offerTries = 0
         try { pc?.dispose() } catch (e: Exception) {}
         try { localTrack?.dispose() } catch (e: Exception) {}
         try { audioSource?.dispose() } catch (e: Exception) {}
@@ -323,8 +380,12 @@ object CallManager {
         muted = false; speaker = false; connectedAt = 0L
         phase = end
         peerId = 0L; peerName = ""
-        // Auto-return to IDLE shortly after showing the ENDED state.
-        main.postDelayed({ if (phase == Phase.ENDED) phase = Phase.IDLE }, 1500)
+        // Auto-return to IDLE shortly after showing the ENDED state. When there
+        // is a reason to read ("Собеседник не в сети"), hold it longer.
+        val hold = if (endReason.isBlank()) 1500L else 3500L
+        main.postDelayed({
+            if (phase == Phase.ENDED) { phase = Phase.IDLE; endReason = "" }
+        }, hold)
     }
 
     // --- SDP observer helpers ---
