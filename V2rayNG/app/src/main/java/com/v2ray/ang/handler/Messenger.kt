@@ -397,6 +397,23 @@ object Messenger {
      * tick to auto-reconnect. `onEvent("wake", 0)` = poll now; `onEvent(
      * "typing", fromId)` = that peer is typing.
      */
+    /**
+     * Keep the socket up WITHOUT claiming the event sink — for the background
+     * link service, which must not steal "wake"/"typing" from the messenger
+     * screen when both are alive (connectWs reassigns the sink on every call).
+     */
+    fun ensureWs() {
+        if (webSocket == null) connectWs(wsCallback ?: { _, _ -> })
+    }
+
+    /**
+     * The messenger screen is going away: stop delivering UI events to its
+     * (now dead) composition, but leave the socket to the link service.
+     */
+    fun releaseWsEvents() {
+        wsCallback = null
+    }
+
     fun connectWs(onEvent: (String, Long) -> Unit) {
         wsCallback = onEvent
         if (webSocket != null) return

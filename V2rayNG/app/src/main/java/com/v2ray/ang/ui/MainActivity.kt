@@ -226,6 +226,8 @@ class MainActivity : HelperBaseComponentActivity() {
         const val EXTRA_OPEN = "vpnka_open"
         const val OPEN_SUPPORT = "support"
         const val OPEN_MESSENGER = "messenger"
+        /** A ringing-call notification was tapped: go straight to the call. */
+        const val OPEN_CALL = "call"
         /** A home-screen shortcut: `EXTRA_OPEN = "desk:<appId>"` opens SmartDesk
          *  straight on that app (see «Добавить на рабочий стол»). */
         const val OPEN_DESK_PREFIX = "desk:"
@@ -240,6 +242,7 @@ class MainActivity : HelperBaseComponentActivity() {
         setIntent(intent)
         if (intent.getStringExtra(EXTRA_OPEN) == OPEN_SUPPORT) showSupport = true
         if (intent.getStringExtra(EXTRA_OPEN) == OPEN_MESSENGER) openMessengerFromIntent(intent)
+        if (intent.getStringExtra(EXTRA_OPEN) == OPEN_CALL) openCallFromIntent()
         openDeskFromIntent(intent)
     }
 
@@ -248,6 +251,14 @@ class MainActivity : HelperBaseComponentActivity() {
         val open = intent.getStringExtra(EXTRA_OPEN) ?: return
         if (!open.startsWith(OPEN_DESK_PREFIX)) return
         com.v2ray.ang.ui.SmartDeskChrome.pendingAppId = open.removePrefix(OPEN_DESK_PREFIX)
+        showSmartDesk = true
+    }
+
+    /** A ringing-call notification was tapped. The engine is already holding
+     *  the offer in this process, and the messenger draws the call screen for
+     *  as long as it rings — so opening Messages is all it takes. */
+    private fun openCallFromIntent() {
+        com.v2ray.ang.ui.SmartDeskChrome.pendingAppId = "messages"
         showSmartDesk = true
     }
 
@@ -278,12 +289,16 @@ class MainActivity : HelperBaseComponentActivity() {
         ExpiryReminder.schedule(this)
         SupportNotifier.schedule(this)
         MessengerNotifier.schedule(this)
+        // Holds the messenger socket while the app is off screen, so a call
+        // rings instead of never arriving. No-op when switched off.
+        com.v2ray.ang.service.VpnkaLinkService.start(this)
 
         // Launched by tapping a "поддержка ответила" notification: open the
         // chat rather than the home screen. onNewIntent handles the same for
         // an app that was already running.
         if (intent?.getStringExtra(EXTRA_OPEN) == OPEN_SUPPORT) showSupport = true
         if (intent?.getStringExtra(EXTRA_OPEN) == OPEN_MESSENGER) intent?.let { openMessengerFromIntent(it) }
+        if (intent?.getStringExtra(EXTRA_OPEN) == OPEN_CALL) openCallFromIntent()
         intent?.let { openDeskFromIntent(it) }
 
         onBackPressedDispatcher.addCallback(this) {

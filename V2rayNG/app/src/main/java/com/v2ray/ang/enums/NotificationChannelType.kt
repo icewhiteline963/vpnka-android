@@ -49,5 +49,29 @@ enum class NotificationChannelType(
         channelName = "Сообщения",
         notificationId = 17,
         importance = android.app.NotificationManager.IMPORTANCE_HIGH
+    ),
+
+    /**
+     * The quiet badge for the service that holds the messenger socket while the
+     * app is off screen. Android demands a notification for a foreground
+     * service; this one is deliberately as unobtrusive as it is allowed to be.
+     */
+    MESSENGER_LINK(
+        channelId = "messenger_link_channel",
+        channelName = "Связь для звонков",
+        notificationId = 18,
+        importance = android.app.NotificationManager.IMPORTANCE_MIN
+    ),
+
+    /**
+     * A ringing call. IMPORTANCE_HIGH so it arrives as a heads-up even when the
+     * full-screen intent is not granted (Android 14 hands that only to apps the
+     * system considers calling apps).
+     */
+    CALL_INCOMING(
+        channelId = "call_incoming_channel",
+        channelName = "Входящий звонок",
+        notificationId = 19,
+        importance = android.app.NotificationManager.IMPORTANCE_HIGH
     )
 }

@@ -111,6 +111,7 @@ object CallManager {
     fun accept(context: Context) {
         if (phase != Phase.INCOMING) return
         appContext = context.applicationContext
+        onCallCleared?.invoke()
         val offer = pendingOffer ?: run { hangup(); return }
         Thread {
             iceServers = loadIce()
@@ -167,6 +168,9 @@ object CallManager {
                 callId = sig.call
                 pendingOffer = SessionDescription(SessionDescription.Type.OFFER, sig.sdp)
                 setState(Phase.INCOMING, from, sig.name.ifBlank { "Контакт $from" })
+                // The screen may be off and the app not on it — the background
+                // link service turns this into a ringing notification.
+                onIncomingCall?.invoke(from, peerName)
             }
             "answer" -> main.post {
                 if (phase != Phase.OUTGOING || from != peerId) return@post
@@ -341,6 +345,15 @@ object CallManager {
         if (!Messenger.sendCallSignal(peerId, offerJson)) scheduleOfferRetry()
     }
 
+    // --- background link service hooks ---
+    //
+    // Set by the service that holds the socket while the app is off screen. The
+    // engine itself stays UI-agnostic: it only says "this started ringing" and
+    // "there is nothing ringing any more".
+
+    @Volatile var onIncomingCall: ((Long, String) -> Unit)? = null
+    @Volatile var onCallCleared: (() -> Unit)? = null
+
     /** Server could not hand our frame to anyone on the far end. */
     private fun onPeerOffline(peer: Long) = main.post {
         if (phase == Phase.OUTGOING && peer == peerId) scheduleOfferRetry()
@@ -369,6 +382,7 @@ object CallManager {
     }
 
     private fun cleanup(end: Phase) {
+        onCallCleared?.invoke()
         main.removeCallbacks(offerRetry)
         offerJson = ""; offerTries = 0
         try { pc?.dispose() } catch (e: Exception) {}
