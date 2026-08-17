@@ -65,6 +65,7 @@ import androidx.compose.ui.unit.sp
 import com.v2ray.ang.handler.CallManager
 import com.v2ray.ang.handler.Channels
 import com.v2ray.ang.handler.Messenger
+import com.v2ray.ang.service.VpnkaLinkService
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -113,6 +114,12 @@ fun VpnkaMessengerApp() {
     var typingFrom by remember { mutableStateOf(0L) }
     var typingUntil by remember { mutableStateOf(0L) }
     val scope = rememberCoroutineScope()
+    val appCtx = LocalContext.current.applicationContext
+
+    // Opening the messenger is also when we make sure the background link is
+    // up: signing in mid-session would otherwise leave it waiting for the next
+    // cold start. No-op when it is already running or switched off.
+    LaunchedEffect(Unit) { VpnkaLinkService.start(appCtx) }
 
     // Register our public key (server assigns @handle from Telegram username
     // or device name), then poll for incoming while this app is open. A
@@ -141,7 +148,16 @@ fun VpnkaMessengerApp() {
             delay(2500)
         }
     }
-    DisposableEffect(Unit) { onDispose { Messenger.disconnectWs(); SmartDeskChrome.barHidden = false } }
+    // Leaving the messenger no longer kills the socket: the link service holds
+    // it so a call still rings with the app off screen. Only when that service
+    // is switched off does the socket belong to this screen alone.
+    DisposableEffect(Unit) {
+        onDispose {
+            Messenger.releaseWsEvents()
+            if (!VpnkaLinkService.wanted()) Messenger.disconnectWs()
+            SmartDeskChrome.barHidden = false
+        }
+    }
     LaunchedEffect(tick) { myChannels = Channels.mine() }
 
     // Opened from a message notification: jump into that chat. The contact may
@@ -942,6 +958,30 @@ private fun SettingsTab() {
             MyProfileToggle("Уведомлять о новых сообщениях", "notify")
             MyProfileToggle("Отправлять «печатает…»", "typing")
             MyProfileToggle("Отправлять отметку о прочтении", "read")
+        }
+        ProfileCard("📞 Звонки") {
+            val ctx = LocalContext.current
+            var bg by remember { mutableStateOf(Messenger.setting(VpnkaLinkService.SETTING, true)) }
+            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Принимать звонки при свёрнутом приложении",
+                    fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp,
+                    color = VpnkaColors.TextStrong, modifier = Modifier.weight(1f),
+                )
+                androidx.compose.material3.Switch(
+                    checked = bg,
+                    onCheckedChange = {
+                        bg = it
+                        Messenger.setSetting(VpnkaLinkService.SETTING, it)
+                        if (it) VpnkaLinkService.start(ctx) else VpnkaLinkService.stop(ctx)
+                    },
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Приложение держит связь с сервером и показывает уведомление «ВПНка на связи» — без него Android закрывает связь, и звонок не дойдёт. Выключите, если звонки нужны только при открытом мессенджере.",
+                fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp, color = VpnkaColors.TextMuted,
+            )
         }
         ProfileCard("🖼 Медиа") {
             MyProfileToggle("Сжимать медиа до минимума", "media_min")
