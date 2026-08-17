@@ -152,7 +152,9 @@ fun VpnkaMessengerApp() {
     // it so a call still rings with the app off screen. Only when that service
     // is switched off does the socket belong to this screen alone.
     DisposableEffect(Unit) {
+        VpnkaLinkService.messengerVisible = true
         onDispose {
+            VpnkaLinkService.messengerVisible = false
             Messenger.releaseWsEvents()
             if (!VpnkaLinkService.wanted()) Messenger.disconnectWs()
             SmartDeskChrome.barHidden = false

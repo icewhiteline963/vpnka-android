@@ -141,6 +141,10 @@ class VpnkaLinkService : Service() {
     }
 
     private fun ring(name: String) {
+        // The messenger draws its own full call screen; a heads-up on top of it
+        // would just be the same call twice. Everywhere else — home screen,
+        // another app, screen off — the notification is the only thing there is.
+        if (messengerVisible) return
         channel(NotificationChannelType.CALL_INCOMING)
         val answer = openAppIntent(MainActivity.OPEN_CALL)
         val decline = PendingIntent.getService(
@@ -181,6 +185,10 @@ class VpnkaLinkService : Service() {
 
         /** Messenger setting key: keep the socket up while off screen. */
         const val SETTING = "bg_calls"
+
+        /** Set by the messenger screen while it is composed (it owns the call UI). */
+        @Volatile
+        var messengerVisible = false
 
         private const val RECONNECT_MS = 5_000L
 
