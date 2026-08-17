@@ -42,11 +42,14 @@ import kotlinx.coroutines.launch
  * single-process MMKV store), `CallManager` (the engine and its state), and the
  * unlocked vault key. In the `:RunSoLibV2RayDaemon` process none of that exists.
  *
- * Zero-knowledge caveat, unchanged: the ringing notification needs no plaintext
- * (the frame type and the sender id are relay metadata, and contact names live
- * in the local store), but *answering* decrypts the offer, which needs the vault
- * unlocked. On a cold process the user unlocks by opening the app — which is
- * what tapping the notification does.
+ * Zero-knowledge limit, and it is a real one: a call frame is opened (RSA, key
+ * from the vault) BEFORE it reaches the engine, so with the vault locked there
+ * is no ring at all — not even a nameless one. In practice this holds because
+ * the service keeps the process, and with it the cached master key, alive: the
+ * user unlocks once and calls ring from then on. After a reboot or a kill, the
+ * app must be opened once before calls can arrive again. Ringing without the
+ * key would mean trusting the server's word that a frame is a call, which is
+ * exactly the trust this design refuses.
  */
 class VpnkaLinkService : Service() {
 
