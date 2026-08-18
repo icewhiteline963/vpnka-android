@@ -418,10 +418,14 @@ object Messenger {
         wsCallback = onEvent
         if (webSocket != null) return
         val token = MmkvManager.getAccountToken() ?: return
-        val url = "wss://get.vpnka.io/app/messenger/ws?token=" +
-            java.net.URLEncoder.encode(token, "UTF-8")
+        // The token rides in the handshake header, not the query string: a URL
+        // is written verbatim into every access log it passes, and app sessions
+        // never expire — a logged token stays a working key to the account.
+        val url = "wss://get.vpnka.io/app/messenger/ws"
         webSocket = wsClient.newWebSocket(
-            Request.Builder().url(url).build(),
+            Request.Builder().url(url)
+                .addHeader("Sec-WebSocket-Protocol", "vpnka.bearer, $token")
+                .build(),
             object : WebSocketListener() {
                 override fun onMessage(ws: WebSocket, text: String) {
                     try {
