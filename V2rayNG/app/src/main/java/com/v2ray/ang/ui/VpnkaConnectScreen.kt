@@ -133,6 +133,8 @@ fun VpnkaConnectScreen(
     canSwitchSubscription: Boolean,
     paidSubscription: Boolean,
     freeMonthEnabled: Boolean,
+    /** Бесплатный месяц ещё идёт и кончается в ближайшие сутки. */
+    freeMonthWaiting: Boolean,
     claimingFreeMonth: Boolean,
     onClaimFreeMonth: () -> Unit,
     serverName: String,
@@ -367,6 +369,7 @@ fun VpnkaConnectScreen(
                 // 24-hour first-run trial and nothing more.
                 if (!paidSubscription && freeMonthEnabled) {
                     VpnkaFreeMonthCard(
+                        waiting = freeMonthWaiting,
                         claiming = claimingFreeMonth,
                         telegramLinked = telegramLinked,
                         // Follows the tunnel like the connect button: green when
@@ -1092,6 +1095,9 @@ private fun VpnkaPlanRow(
 private fun VpnkaFreeMonthCard(
     claiming: Boolean,
     telegramLinked: Boolean,
+    /** Текущий бесплатный месяц ещё идёт: карточку показываем, но забрать
+     *  следующий можно только после того, как он закончится. */
+    waiting: Boolean,
     bgColor: androidx.compose.ui.graphics.Color,
     onClaim: () -> Unit,
 ) {
@@ -1100,14 +1106,15 @@ private fun VpnkaFreeMonthCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(bgColor)
-            .clickable(enabled = !claiming, onClick = onClaim)
+            .background(if (waiting) bgColor.copy(alpha = 0.55f) else bgColor)
+            .clickable(enabled = !claiming && !waiting, onClick = onClaim)
             .padding(horizontal = 16.dp, vertical = 14.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = when {
                     claiming -> "🎁 Оформляем…"
+                    waiting -> "🎁 Следующий месяц — завтра"
                     telegramLinked -> "🎁 Месяц бесплатно"
                     else -> "🔗 Подключить Telegram"
                 },
@@ -1127,8 +1134,12 @@ private fun VpnkaFreeMonthCard(
         }
         Spacer(Modifier.height(3.dp))
         Text(
-            text = if (telegramLinked) {
-                "30 дней бесплатно, без карты. Нажмите, чтобы получить."
+            text = if (waiting) {
+                "Текущий месяц заканчивается. Как только он истечёт, здесь " +
+                    "можно будет забрать следующий — и так сколько угодно раз."
+            } else if (telegramLinked) {
+                "30 дней бесплатно, без карты, продлевать можно сколько угодно раз. " +
+                    "Нажмите, чтобы получить."
             } else {
                 "Сейчас у вас пробные сутки. Привяжите Telegram — " +
                     "и месяц бесплатно, без карты."

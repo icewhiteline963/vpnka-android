@@ -1319,7 +1319,20 @@ class MainActivity : HelperBaseComponentActivity() {
                 // the home-screen card order (server first when paid).
                 paidSubscription = subInfo?.subscriptions.orEmpty()
                     .any { !it.frozen && !it.isTrial },
-                freeMonthEnabled = subInfo?.freeMonthEnabled == true,
+                // Бесплатный месяц продлевается сколько угодно раз, но пока
+                // текущий идёт, забрать следующий нельзя — сервер отдаёт его
+                // только в последние сутки. Поэтому карточку прячем на всё
+                // время действия и возвращаем за сутки до конца: показать
+                // раньше значит предложить кнопку, которая ответит отказом.
+                freeMonthEnabled = subInfo?.freeMonthEnabled == true &&
+                    run {
+                        val trialDays = subInfo?.subscriptions.orEmpty()
+                            .filter { !it.frozen && it.isTrial }
+                            .mapNotNull { it.daysLeft }
+                        trialDays.isEmpty() || (trialDays.minOrNull() ?: 0) <= 1
+                    },
+                freeMonthWaiting = subInfo?.subscriptions.orEmpty()
+                    .any { !it.frozen && it.isTrial && (it.daysLeft ?: 0) <= 1 },
                 claimingFreeMonth = claimingFreeMonth,
                 onClaimFreeMonth = {
                     // No Telegram behind the account → this card is the
