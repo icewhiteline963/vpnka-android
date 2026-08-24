@@ -436,18 +436,28 @@ private fun VpnkaActiveExit() {
     // backgrounded app doesn't keep hitting get.vpnka.io every few seconds.
     val lifecycleOwner = LocalLifecycleOwner.current
     var exit by remember { mutableStateOf<VpnkaExit.Exit?>(null) }
+    // 24.08.2026: ответ «я НЕ на VPN» раньше просто выбрасывался, и на экране
+    // оставался прошлый удачный флаг вместе с надписью «ЗАЩИЩЕНО». То есть
+    // единственный достоверный признак утечки мы прятали от пользователя.
+    // Теперь молчание сети (e == null) по-прежнему сохраняет прошлое
+    // состояние, а явное «on_vpn: false» — предупреждает.
+    var leaking by remember { mutableStateOf(false) }
     LaunchedEffect(lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             while (true) {
                 val e = VpnkaExit.current()
-                if (e != null && e.onVpn) exit = e  // keep last good on a miss
+                when {
+                    e == null -> Unit            // не дозвонились — судить не о чем
+                    e.onVpn -> { exit = e; leaking = false }
+                    else -> leaking = true       // сервер видит наш реальный адрес
+                }
                 delay(10_000)
             }
         }
     }
     val e = exit
     val label: String? =
-        if (e != null && e.onVpn && !e.flag.isNullOrBlank())
+        if (!leaking && e != null && e.onVpn && !e.flag.isNullOrBlank())
             "${e.flag}  ${e.name ?: e.code ?: ""}".trim()
         else null
     val known = label != null
@@ -455,14 +465,17 @@ private fun VpnkaActiveExit() {
         modifier = Modifier
             .clip(RoundedCornerShape(999.dp))
             .background(
-                if (known) VpnkaColors.Green.copy(alpha = 0.15f)
-                else VpnkaColors.CardSpeed
+                when {
+                    leaking -> VpnkaColors.Warning.copy(alpha = 0.18f)
+                    known -> VpnkaColors.Green.copy(alpha = 0.15f)
+                    else -> VpnkaColors.CardSpeed
+                }
             )
             .padding(horizontal = 14.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "СЕЙЧАС ЧЕРЕЗ",
+            text = if (leaking) "ВНИМАНИЕ" else "СЕЙЧАС ЧЕРЕЗ",
             fontFamily = VpnkaFonts.manrope700,
             fontWeight = VpnkaWeight.Bold,
             fontSize = 10.sp,
@@ -471,11 +484,18 @@ private fun VpnkaActiveExit() {
         )
         Spacer(Modifier.width(8.dp))
         Text(
-            text = label ?: "определяем сервер…",
+            text = when {
+                leaking -> "трафик идёт мимо VPN"
+                else -> label ?: "определяем сервер…"
+            },
             fontFamily = VpnkaFonts.nunito800,
             fontWeight = VpnkaWeight.Extra,
             fontSize = 13.sp,
-            color = if (known) VpnkaColors.Green else VpnkaColors.TextMuted,
+            color = when {
+                leaking -> VpnkaColors.Warning
+                known -> VpnkaColors.Green
+                else -> VpnkaColors.TextMuted
+            },
         )
     }
 }

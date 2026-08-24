@@ -42,6 +42,13 @@ object CallManager {
     private const val OFFER_RETRY_MS = 2_000L
     private const val MAX_OFFER_TRIES = 10
 
+    // 24.08.2026: если предложение звонка ушло, а трубку просто не берут,
+    // фаза оставалась OUTGOING/INCOMING без ограничения по времени — «Звоним…»
+    // висело вечно, всё это время держался режим разговора: открыт микрофон,
+    // жив PeerConnection, заглушён звук системы. Столько же звонит обычный
+    // телефон, дальше — отбой.
+    private const val RING_TIMEOUT_MS = 60_000L
+
     var phase by mutableStateOf(Phase.IDLE)
         private set
     var peerId by mutableStateOf(0L)
@@ -213,11 +220,22 @@ object CallManager {
     private fun createPeer(context: Context, caller: Boolean) {
         ensureFactory(context)
         startAudioSession(context)
+        // 24.08.2026: политика ICE не задавалась, то есть работало значение по
+        // умолчанию — ALL. Приложение исключено из собственного туннеля, поэтому
+        // в кандидатах уходил РЕАЛЬНЫЙ адрес абонента, и любой, кто смог
+        // позвонить, деанонимизировал клиента VPN. Пока есть TURN — гоняем
+        // строго через него; без TURN звонок физически не состоится, но и
+        // адрес не утечёт. Молча раскрывать IP на сервисе, который покупают
+        // ради приватности, хуже, чем не дать позвонить.
+        val hasTurn = iceServers.any { srv -> srv.urls.any { it.startsWith("turn") } }
         val rtc = PeerConnection.RTCConfiguration(iceServers).apply {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
             continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
             bundlePolicy = PeerConnection.BundlePolicy.MAXBUNDLE
             rtcpMuxPolicy = PeerConnection.RtcpMuxPolicy.REQUIRE
+            iceTransportsType =
+                if (hasTurn) PeerConnection.IceTransportsType.RELAY
+                else PeerConnection.IceTransportsType.NOHOST
         }
         pc = factory?.createPeerConnection(rtc, pcObserver) ?: return
         val f = factory ?: return
@@ -328,6 +346,12 @@ object CallManager {
     private var offerJson: String = ""
     private var offerTries = 0
     private val offerRetry = Runnable { retryOffer() }
+    private val ringTimeout = Runnable {
+        if (phase == Phase.OUTGOING || phase == Phase.INCOMING) {
+            endReason = if (phase == Phase.OUTGOING) "Не отвечает" else "Пропущенный звонок"
+            cleanup(Phase.ENDED)
+        }
+    }
 
     private fun scheduleOfferRetry() {
         main.removeCallbacks(offerRetry)
@@ -379,11 +403,16 @@ object CallManager {
 
     private fun setState(p: Phase, id: Long, name: String) {
         phase = p; peerId = id; peerName = name
+        main.removeCallbacks(ringTimeout)
+        if (p == Phase.OUTGOING || p == Phase.INCOMING) {
+            main.postDelayed(ringTimeout, RING_TIMEOUT_MS)
+        }
     }
 
     private fun cleanup(end: Phase) {
         onCallCleared?.invoke()
         main.removeCallbacks(offerRetry)
+        main.removeCallbacks(ringTimeout)
         offerJson = ""; offerTries = 0
         try { pc?.dispose() } catch (e: Exception) {}
         try { localTrack?.dispose() } catch (e: Exception) {}

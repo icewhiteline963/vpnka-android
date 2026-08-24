@@ -39,6 +39,9 @@ import java.util.concurrent.TimeUnit
  */
 object MessengerNotifier {
 
+    /** Диапазон для уведомлений переписки: выше всех фиксированных id каналов. */
+    private const val MSG_NOTIFICATION_BASE = 100_000
+
     private const val TASK_NAME = "vpnka_messenger_notify"
     private const val INTERVAL_MIN = 15L
 
@@ -122,9 +125,14 @@ object MessengerNotifier {
 
         // notify() no-ops without POST_NOTIFICATIONS on 33+; guard so a missing
         // grant can't crash the worker. Per-chat id keeps senders separate.
+        //
+        // 24.08.2026: id считался как 17 + chatId, а 18 и 19 заняты фоновой
+        // службой и ВХОДЯЩИМ ЗВОНКОМ. Клиентские id — маленькие числа, так что
+        // сообщение от собеседника №2 стирало уведомление о звонке прямо во
+        // время звонка. Уводим переписку в диапазон, где своих нет.
         runCatching {
             NotificationManagerCompat.from(context)
-                .notify(ch.notificationId + chatId.toInt(), notif)
+                .notify(MSG_NOTIFICATION_BASE + (chatId.toInt() and 0xFFFF), notif)
         }
     }
 }
