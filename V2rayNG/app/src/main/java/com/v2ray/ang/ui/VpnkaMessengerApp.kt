@@ -62,6 +62,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.v2ray.ang.handler.CallManager
 import com.v2ray.ang.handler.Channels
 import com.v2ray.ang.handler.Messenger
@@ -151,9 +154,24 @@ fun VpnkaMessengerApp() {
     // Leaving the messenger no longer kills the socket: the link service holds
     // it so a call still rings with the app off screen. Only when that service
     // is switched off does the socket belong to this screen alone.
-    DisposableEffect(Unit) {
-        VpnkaLinkService.messengerVisible = true
+    //
+    // 24.08.2026: флаг ставился на всю жизнь композиции, а Compose не
+    // разрушает её при сворачивании приложения. Значит у того, кто последним
+    // заходил в «Сообщения», флаг оставался поднятым, служба считала экран
+    // видимым и ГЛУШИЛА уведомление о входящем звонке — ровно та фича, ради
+    // которой служба и заведена. Теперь флаг следует за ON_RESUME/ON_PAUSE.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> VpnkaLinkService.messengerVisible = true
+                Lifecycle.Event.ON_PAUSE -> VpnkaLinkService.messengerVisible = false
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
             VpnkaLinkService.messengerVisible = false
             Messenger.releaseWsEvents()
             if (!VpnkaLinkService.wanted()) Messenger.disconnectWs()
@@ -1212,6 +1230,13 @@ private fun CallScreen() {
     val phase = CallManager.phase
     val name = CallManager.peerName.ifBlank { "Собеседник" }
 
+    // 24.08.2026: исходящий звонок разрешение спрашивал, а приём — нет. Кто ни
+    // разу не звонил сам, принимал звонок, слышал собеседника, а его не
+    // слышали — и понять это было невозможно, ошибки не показывалось.
+    val acceptMicLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted -> if (granted) CallManager.accept(context) else CallManager.decline() }
+
     // Live call duration once connected.
     var now by remember { mutableStateOf(System.currentTimeMillis()) }
     LaunchedEffect(phase, CallManager.connectedAt) {
@@ -1252,7 +1277,16 @@ private fun CallScreen() {
         ) {
             if (phase == CallManager.Phase.INCOMING) {
                 CallButton("✕", VpnkaColors.Warning, "Отклонить") { CallManager.decline() }
-                CallButton("📞", VpnkaColors.Green, "Принять") { CallManager.accept(context) }
+                CallButton("📞", VpnkaColors.Green, "Принять") {
+                    if (ContextCompat.checkSelfPermission(
+                            context, android.Manifest.permission.RECORD_AUDIO
+                        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                    ) {
+                        CallManager.accept(context)
+                    } else {
+                        acceptMicLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                    }
+                }
             } else if (phase != CallManager.Phase.ENDED) {
                 CallButton("✕", VpnkaColors.Warning, "Завершить") { CallManager.hangup() }
             }
