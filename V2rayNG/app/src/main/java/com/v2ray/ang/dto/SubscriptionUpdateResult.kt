@@ -7,7 +7,10 @@ data class SubscriptionUpdateResult(
     val configCount: Int = 0,      // Total configs updated
     val successCount: Int = 0,     // Subscriptions updated successfully
     val failureCount: Int = 0,     // Subscriptions failed to update
-    val skipCount: Int = 0         // Subscriptions skipped (disabled)
+    val skipCount: Int = 0,        // Subscriptions skipped (disabled)
+    // Человеческая причина, которую сервер прислал вместо серверов
+    // (например «Лимит устройств 3/3»). Показывается пользователю как есть.
+    val notice: String? = null
 ) {
     /**
      * Combine two results by adding their counts
@@ -17,7 +20,8 @@ data class SubscriptionUpdateResult(
             configCount = this.configCount + other.configCount,
             successCount = this.successCount + other.successCount,
             failureCount = this.failureCount + other.failureCount,
-            skipCount = this.skipCount + other.skipCount
+            skipCount = this.skipCount + other.skipCount,
+            notice = this.notice ?: other.notice
         )
     }
 }
