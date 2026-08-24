@@ -596,6 +596,18 @@ object AngConfigManager {
                 return SubscriptionUpdateResult(failureCount = 1)
             }
 
+            // 24.08.2026: при исчерпанном лимите устройств (и когда подписки
+            // нет вовсе) сервер отдаёт HTTP 200 и «подписку» из одной фиктивной
+            // записи 0.0.0.0:1, где причина написана в названии — так её
+            // показывает Happ. Мы же считали это успешным обновлением: стирали
+            // ВСЕ настоящие серверы, а затем сами выбирали заглушку. Человек
+            // жал «Подключить», видел «подключено» и сидел без интернета.
+            // Теперь список не трогаем, а причину показываем словами.
+            placeholderNotice(configText)?.let { reason ->
+                LogUtil.w(AppConfig.TAG, "Subscription returned a placeholder: $reason")
+                return SubscriptionUpdateResult(skipCount = 1, notice = reason)
+            }
+
             val count = parseConfigViaSub(configText, it.guid, false)
             if (count > 0) {
                 it.subscription.lastUpdated = System.currentTimeMillis()
@@ -623,6 +635,31 @@ object AngConfigManager {
      * @param append Whether to append the configurations.
      * @return The number of configurations parsed.
      */
+    /** Хосты, которыми сервер помечает «серверов нет, вот причина». */
+    private val PLACEHOLDER_MARKERS = listOf("@0.0.0.0:", "@127.0.0.1:")
+
+    /**
+     * Возвращает причину, если тело подписки состоит ТОЛЬКО из заглушек.
+     *
+     * Осторожно по построению: достаточно одной настоящей записи, чтобы
+     * тело считалось нормальным, — иначе редкий сбой распознавания стоил бы
+     * пользователю обновления конфига.
+     */
+    private fun placeholderNotice(body: String?): String? {
+        if (body.isNullOrBlank()) return null
+        val decoded = Utils.decode(body)
+        val text = if (decoded.isNotBlank()) decoded else body
+        val lines = text.lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .toList()
+        if (lines.isEmpty()) return null
+        if (!lines.all { line -> PLACEHOLDER_MARKERS.any { line.contains(it) } }) return null
+        val fragment = lines.first().substringAfter('#', "")
+        val reason = runCatching { Utils.decodeURIComponent(fragment) }.getOrNull().orEmpty().trim()
+        return reason.ifBlank { "Серверы недоступны — проверьте подписку" }
+    }
+
     private fun parseConfigViaSub(server: String?, subid: String, append: Boolean): Int {
         var count = parseBatchConfig(Utils.decode(server), subid, append)
         if (count <= 0) {

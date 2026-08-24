@@ -1668,7 +1668,11 @@ class MainActivity : HelperBaseComponentActivity() {
                 val result = withContext(Dispatchers.IO) {
                     mainViewModel.updateConfigViaSubAll()
                 }
+                // Сервер прислал причину вместо серверов («Лимит устройств
+                // 3/3») — показываем её словами, а не счётчиком «0 конфигов».
+                val notice = result.notice.orEmpty()
                 when {
+                    notice.isNotBlank() -> toast(notice)
                     result.successCount + result.failureCount + result.skipCount == 0 ->
                         toast(R.string.title_update_subscription_no_subscription)
                     result.successCount > 0 && result.failureCount + result.skipCount == 0 ->
