@@ -140,18 +140,39 @@ jobs:
         with:
           path: release
 
+      # Подпись релиза — наследие апстрима: он подписывает сборки своим
+      # GPG-ключом и выкладывает рядом `v2rayN-public-key.asc`. У нашего
+      # форка такого ключа нет, секрет пуст, и шаг ронял ВЕСЬ выпуск:
+      # `gpg --import` из пустой строки выходит с кодом 2, и APK, которые
+      # уже собрались, до людей не доезжали.
+      #
+      # Теперь подпись необязательна: есть ключ — подписываем, нет — просто
+      # выкладываем сборки. Молча пропускать плохо, поэтому пишем в журнал,
+      # что выпуск не подписан.
       - name: Sign APK files
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
         run: |
-          printf '%s' "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --import
-          KEY=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr:/ {print $10; exit}')
           mkdir -p release-files
+          find release -type f -name '*.apk' -exec cp {} release-files/ \;
 
-          find release -type f -name '*.apk' | while read apk; do
-            cp "$apk" release-files/
-            gpg --batch --yes --local-user "$KEY" --detach-sign --output "release-files/$(basename "$apk").sig" "$apk"
+          if [ -z "$GPG_PRIVATE_KEY" ]; then
+            echo "::notice::GPG_PRIVATE_KEY не задан — релиз выкладывается без подписи"
+            exit 0
+          fi
+
+          printf '%s' "$GPG_PRIVATE_KEY" | gpg --batch --import
+          KEY=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr:/ {print $10; exit}')
+          if [ -z "$KEY" ]; then
+            echo "::error::GPG_PRIVATE_KEY задан, но ключ не импортировался"
+            exit 1
+          fi
+
+          for apk in release-files/*.apk; do
+            gpg --batch --yes --local-user "$KEY" --detach-sign --output "$apk.sig" "$apk"
           done
 
-          gpg --armor --export "$KEY" > release-files/v2rayN-public-key.asc
+          gpg --armor --export "$KEY" > release-files/public-key.asc
 
       - name: Upload APKs, signatures and public key to release
         uses: svenstaro/upload-release-action@v2
