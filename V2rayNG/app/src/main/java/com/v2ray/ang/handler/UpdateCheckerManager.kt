@@ -91,18 +91,32 @@ object UpdateCheckerManager {
 
     private fun getDownloadUrl(release: GitHubRelease, abi: String): String {
         val fDroid = "fdroid"
+        val wantFDroid = BuildConfig.APPLICATION_ID.contains(fDroid, ignoreCase = true)
 
-        val assetsByAbi = release.assets.filter {
-            (it.name.contains(abi, true))
+        // Из нужной ветки сборки: у нас в релизе лежат ДВА файла с разными
+        // package id, и перепутать их значит предложить человеку обновление,
+        // которое не встанет поверх установленного.
+        fun ofRightFlavour(assets: List<GitHubRelease.Asset>) =
+            assets.firstOrNull { it.name.contains(fDroid) == wantFDroid }
+
+        // 1. Точное совпадение по разрядности телефона — самый компактный файл.
+        val byAbi = ofRightFlavour(release.assets.filter { it.name.contains(abi, true) })
+        if (byAbi != null) {
+            return byAbi.browserDownloadUrl
         }
 
-        val asset = if (BuildConfig.APPLICATION_ID.contains(fDroid, ignoreCase = true)) {
-            assetsByAbi.firstOrNull { it.name.contains(fDroid) }
-        } else {
-            assetsByAbi.firstOrNull { !it.name.contains(fDroid) }
+        // 2. Иначе — универсальный. Ради этого он и собирается.
+        //
+        // Без этого шага 32-битные телефоны НЕ МОГЛИ обновиться вообще: в
+        // релиз выкладываются только `universal` и `arm64-v8a`, поиск шёл
+        // строго по `Build.SUPPORTED_ABIS[0]`, на armeabi-v7a список
+        // оказывался пустым и обновление падало с «No compatible APK found».
+        // Молча: человек просто годами сидел на старой версии.
+        val universal = ofRightFlavour(release.assets.filter { it.name.contains("universal", true) })
+        if (universal != null) {
+            return universal.browserDownloadUrl
         }
 
-        return asset?.browserDownloadUrl
-            ?: throw IllegalStateException("No compatible APK found")
+        throw IllegalStateException("No compatible APK found for abi=$abi")
     }
 }

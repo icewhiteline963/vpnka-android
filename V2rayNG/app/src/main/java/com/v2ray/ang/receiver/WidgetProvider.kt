@@ -35,7 +35,10 @@ class WidgetProvider : AppWidgetProvider() {
      */
     private fun updateWidgetBackground(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray, isRunning: Boolean) {
         val remoteViews = RemoteViews(context.packageName, R.layout.widget_switch)
-        val intent = Intent(context, WidgetProvider::class.java)
+        // Целимся в НЕэкспортируемый ресивер: сам WidgetProvider обязан
+        // быть экспортированным ради APPWIDGET_UPDATE, и пока переключение
+        // жило в нём, погасить VPN могло любое приложение на телефоне.
+        val intent = Intent(context, WidgetToggleReceiver::class.java)
         intent.action = AppConfig.BROADCAST_ACTION_WIDGET_CLICK
         val pendingIntent = PendingIntent.getBroadcast(
             context,
@@ -66,13 +69,12 @@ class WidgetProvider : AppWidgetProvider() {
      */
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
-        if (AppConfig.BROADCAST_ACTION_WIDGET_CLICK == intent.action) {
-            if (CoreServiceManager.isRunning()) {
-                CoreServiceManager.stopVService(context)
-            } else {
-                CoreServiceManager.startVServiceFromToggle(context)
-            }
-        } else if (AppConfig.BROADCAST_ACTION_ACTIVITY == intent.action) {
+        // Переключение здесь БОЛЬШЕ НЕ ОБРАБАТЫВАЕТСЯ — оно уехало в
+        // WidgetToggleReceiver, недоступный снаружи. Этот ресивер открыт
+        // системе, и любое действие, которое он выполняет, может прислать
+        // кто угодно; перерисовка виджета — единственное, что не страшно
+        // отдать наружу.
+        if (AppConfig.BROADCAST_ACTION_ACTIVITY == intent.action) {
             AppWidgetManager.getInstance(context)?.let { manager ->
                 when (intent.getIntExtra("key", 0)) {
                     AppConfig.MSG_STATE_RUNNING, AppConfig.MSG_STATE_START_SUCCESS -> {

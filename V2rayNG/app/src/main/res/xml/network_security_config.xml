@@ -1,11 +1,34 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Доверяем ТОЛЬКО системным корневым сертификатам.
+
+  Раньше здесь стоял ещё и `src="user"` — доверие сертификатам, которые
+  установлены на самом телефоне. Для обычного приложения это мелочь, для
+  VPN — дыра в основании: любой, кто уговорил человека поставить свой
+  сертификат (публичный вайфай, «настройщик», корпоративный профиль,
+  зловред), читал ВЕСЬ наш трафик открытым текстом. А это подписка с
+  ключами, токен устройства и переписка в мессенджере.
+
+  Для отладочных сборок доверие пользовательским сертификатам оставлено —
+  без него нельзя посмотреть трафик своим прокси при разработке. На
+  выпускаемых сборках `debug-overrides` не действует.
+
+  `cleartextTrafficPermitted` остаётся: ядро слушает локальный http-порт
+  на 127.0.0.1, и через него же ходит встроенный браузер.
+-->
 <network-security-config xmlns:tools="http://schemas.android.com/tools">
     <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+
+    <debug-overrides>
         <trust-anchors>
             <certificates src="system" />
             <certificates
                 src="user"
                 tools:ignore="AcceptsUserCertificates" />
         </trust-anchors>
-    </base-config>
+    </debug-overrides>
 </network-security-config>

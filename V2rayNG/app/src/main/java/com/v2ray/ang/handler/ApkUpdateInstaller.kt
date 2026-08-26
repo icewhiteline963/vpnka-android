@@ -141,10 +141,10 @@ object ApkUpdateInstaller {
                 throw UpdateError("Файл слишком большой")
             }
 
+            var written = 0L
             body.byteStream().use { input ->
                 target.outputStream().use { output ->
                     val buf = ByteArray(64 * 1024)
-                    var written = 0L
                     var lastPercent = -1
                     while (true) {
                         val read = input.read(buf)
@@ -167,6 +167,20 @@ object ApkUpdateInstaller {
                         }
                     }
                 }
+            }
+
+            // Оборванная закачка — не закачка.
+            //
+            // Цикл выше просто читает до конца потока, а конец наступает и
+            // когда соединение оборвали на середине. Проверки ниже это не
+            // ловят: обрезанный APK начинается с той же сигнатуры zip, что и
+            // целый. Такой файл помечался готовым, установщик спотыкался о
+            // «повреждённый пакет», и человек видел это при каждой попытке.
+            //
+            // Случай не выдуманный: канал до российского зеркала режет
+            // крупные передачи, и обрыв на первых килобайтах — обычное дело.
+            if (total > 0 && written != total) {
+                throw UpdateError("Загрузка оборвалась: $written из $total байт")
             }
         }
 
