@@ -17,6 +17,7 @@ import com.v2ray.ang.enums.NotificationChannelType
 import com.v2ray.ang.handler.CallManager
 import com.v2ray.ang.handler.Messenger
 import com.v2ray.ang.handler.MmkvManager
+import com.v2ray.ang.handler.VpnkaAccount
 import com.v2ray.ang.ui.MainActivity
 import com.v2ray.ang.util.LogUtil
 import kotlinx.coroutines.CoroutineScope
@@ -73,7 +74,12 @@ class VpnkaLinkService : Service() {
         // calls the same thing on its own tick, and they share one socket.
         scope.launch {
             while (true) {
-                if (MmkvManager.getAccountToken() == null) {
+                if (!wanted()) {
+                    runCatching { Messenger.disconnectWs() }
+                    // Токен пропал или SmartDesk отключили — уходим сами.
+                    // Служба переживает и то и другое: система поднимает её
+                    // обратно, и без этой проверки она осталась бы висеть
+                    // форграунд-уведомлением, переподключаясь впустую.
                     stopSelf()
                     return@launch
                 }
@@ -196,7 +202,13 @@ class VpnkaLinkService : Service() {
         private const val RECONNECT_MS = 5_000L
 
         fun wanted(): Boolean =
-            MmkvManager.getAccountToken() != null && Messenger.setting(SETTING, true)
+            MmkvManager.getAccountToken() != null &&
+                // Служба держит сокет мессенджера, а мессенджер живёт внутри
+                // SmartDesk. Раньше она поднималась у всех при каждом
+                // запуске приложения и переподключалась вечно у тех, кого
+                // сервер не пустит никогда.
+                VpnkaAccount.smartDeskAllowed() &&
+                Messenger.setting(SETTING, true)
 
         /** Start (or leave running) the link, when it is wanted at all. */
         fun start(context: Context) {

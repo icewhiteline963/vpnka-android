@@ -33,6 +33,24 @@ object VpnkaAccount {
 
     private const val BASE = "https://get.vpnka.io"
 
+    /** Разрешён ли этому аккаунту SmartDesk — по последнему профилю. */
+    const val KEY_SMARTDESK_ALLOWED = "vpnka_smartdesk_allowed"
+
+    /**
+     * Пускают ли нас в SmartDesk.
+     *
+     * По умолчанию НЕТ. Отказ безобиднее ошибочной попытки: не пустили —
+     * человек увидит это на экране и перечитает профиль, а лишний стук в
+     * закрытую дверь идёт бесконечно и молча.
+     */
+    fun smartDeskAllowed(): Boolean =
+        MmkvManager.decodeSettingsBool(KEY_SMARTDESK_ALLOWED, false)
+
+    /** Сервер отказал — снимаем разрешение, не дожидаясь профиля. */
+    fun denySmartDesk() {
+        MmkvManager.encodeSettings(KEY_SMARTDESK_ALLOWED, false)
+    }
+
     data class Info(
         @SerializedName("active") val active: Boolean = false,
         @SerializedName("expires_at") val expiresAt: String? = null,
@@ -277,9 +295,21 @@ object VpnkaAccount {
                     LogUtil.w(AppConfig.TAG, "profile: HTTP ${resp.code}")
                     return@withContext null
                 }
-                JsonUtil.fromJsonSafe(
+                val info = JsonUtil.fromJsonSafe(
                     resp.body?.string().orEmpty(), Info::class.java
                 )
+                // Запоминаем разрешение на SmartDesk локально: службе связи
+                // и сокету мессенджера оно нужно ДО того, как экран получит
+                // профиль, а спросить им больше негде. Без этого сокет
+                // стучался у всех подряд — 1177 отказов за два часа против
+                // пяти принятых, потому что SmartDesk включён у семерых из
+                // ста пятидесяти трёх.
+                if (info != null) {
+                    MmkvManager.encodeSettings(
+                        KEY_SMARTDESK_ALLOWED, info.smartDeskEnabled
+                    )
+                }
+                info
             }
         } catch (e: Exception) {
             // Offline is the common case; the screen offers a retry rather

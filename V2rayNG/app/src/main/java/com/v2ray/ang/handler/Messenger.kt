@@ -403,6 +403,7 @@ object Messenger {
      * screen when both are alive (connectWs reassigns the sink on every call).
      */
     fun ensureWs() {
+        if (!VpnkaAccount.smartDeskAllowed()) return
         if (webSocket == null) connectWs(wsCallback ?: { _, _ -> })
     }
 
@@ -417,6 +418,13 @@ object Messenger {
     fun connectWs(onEvent: (String, Long) -> Unit) {
         wsCallback = onEvent
         if (webSocket != null) return
+        // Мессенджер живёт внутри SmartDesk, а тот включается отдельно и
+        // далеко не всем. Без этой проверки приложение открывало сокет у
+        // каждого, получало отказ и повторяло — 1177 отказов за два часа
+        // против пяти принятых. Вреда пользователю нет, но это чужая
+        // батарея, чужой трафик и мусор в логах, в котором тонет всё
+        // остальное.
+        if (!VpnkaAccount.smartDeskAllowed()) return
         val token = MmkvManager.getAccountToken() ?: return
         // The token rides in the handshake header, not the query string: a URL
         // is written verbatim into every access log it passes, and app sessions
@@ -448,6 +456,13 @@ object Messenger {
                 }
                 override fun onFailure(ws: WebSocket, t: Throwable, r: okhttp3.Response?) {
                     if (webSocket === ws) webSocket = null
+                    // Отказ на рукопожатии — это «тебе сюда нельзя», а не
+                    // сетевой сбой: повторять бессмысленно. Снимаем
+                    // разрешение сразу, не дожидаясь профиля, иначе один
+                    // устаревший флаг возвращает бесконечный стук.
+                    if (r?.code == 403 || r?.code == 401) {
+                        VpnkaAccount.denySmartDesk()
+                    }
                 }
                 override fun onClosed(ws: WebSocket, code: Int, reason: String) {
                     if (webSocket === ws) webSocket = null

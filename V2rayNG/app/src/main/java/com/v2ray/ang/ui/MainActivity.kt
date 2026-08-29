@@ -572,6 +572,11 @@ class MainActivity : HelperBaseComponentActivity() {
         LaunchedEffect(subInfo?.smartDeskEnabled, showSmartDesk) {
             if (subInfo?.smartDeskEnabled == true) {
                 smartDeskOnline = VpnkaAccount.smartDeskOnline()
+                // Служба связи стартует в onCreate, когда профиля ещё нет и
+                // разрешение на SmartDesk неизвестно. Профиль пришёл —
+                // поднимаем сейчас, иначе звонки не звонили бы до
+                // следующего запуска приложения.
+                com.v2ray.ang.service.VpnkaLinkService.start(this@MainActivity)
             }
         }
 
