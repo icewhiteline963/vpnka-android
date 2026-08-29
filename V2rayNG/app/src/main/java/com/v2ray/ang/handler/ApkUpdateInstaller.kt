@@ -61,6 +61,18 @@ object ApkUpdateInstaller {
     fun readyUpdate(context: Context): Pair<String, File>? {
         val version = MmkvManager.decodeSettingsString(KEY_READY_VERSION)
             ?.takeIf { it.isNotBlank() } ?: return null
+
+        // Установленное обновление остаётся лежать в кэше — установка файл
+        // не забирает. Пока плашку зажигала сетевая проверка, это было
+        // безобидно: она сравнивала версии сама. Как только мы стали читать
+        // готовность с диска, лежащий файл начал предлагать сам себя, и
+        // сразу после успешного обновления человек получал приглашение
+        // обновиться на ту версию, которую только что поставил.
+        if (!isNewerThanInstalled(version)) {
+            clearReady(context)
+            return null
+        }
+
         val file = cacheFile(context)
         if (!file.exists() || file.length() == 0L) {
             // Cache was cleared under us (Android does this freely) — forget
@@ -69,6 +81,23 @@ object ApkUpdateInstaller {
             return null
         }
         return version to file
+    }
+
+    /**
+     * Строго новее того, что уже стоит.
+     *
+     * Нечисловые куски считаем нулём, а не роняем разбор: версия приходит с
+     * зеркала, и одна опечатка в манифесте не должна валить экран.
+     */
+    private fun isNewerThanInstalled(version: String): Boolean {
+        val staged = version.removePrefix("v").split(".")
+        val installed = BuildConfig.VERSION_NAME.split(".")
+        for (i in 0 until maxOf(staged.size, installed.size)) {
+            val a = staged.getOrNull(i)?.toIntOrNull() ?: 0
+            val b = installed.getOrNull(i)?.toIntOrNull() ?: 0
+            if (a != b) return a > b
+        }
+        return false
     }
 
     fun markReady(version: String) {
