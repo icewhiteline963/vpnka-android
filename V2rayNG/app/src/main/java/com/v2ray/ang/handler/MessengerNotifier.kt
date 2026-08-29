@@ -67,6 +67,11 @@ object MessengerNotifier {
         override suspend fun doWork(): Result {
             // No account or messenger notifications turned off → nothing to do.
             MmkvManager.getAccountToken() ?: return Result.success()
+            // Мессенджер живёт внутри SmartDesk, а тот включён у единиц. Без
+            // этой проверки задача каждые 15 минут стучалась в закрытую
+            // дверь на КАЖДОМ устройстве — та же пара, что и с сокетом:
+            // гейт стоит на сервере, а клиент о нём не знает.
+            if (!VpnkaAccount.smartDeskAllowed()) return Result.success()
             if (!Messenger.setting("notify", true)) return Result.success()
 
             // Peek without the vault: a locked device (cold WorkManager run,
