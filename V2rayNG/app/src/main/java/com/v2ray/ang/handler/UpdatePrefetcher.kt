@@ -29,6 +29,22 @@ object UpdatePrefetcher {
     /** Roughly daily; WorkManager will batch it with other wakeups anyway. */
     private const val INTERVAL_HOURS = 24L
 
+    /** Версия, которую мы впервые увидели, и когда именно. */
+    private const val KEY_SEEN_VERSION = "vpnka_update_seen_version"
+    private const val KEY_SEEN_AT = "vpnka_update_seen_at"
+
+    /**
+     * Сколько ждём Wi-Fi, прежде чем скачать по мобильному.
+     *
+     * Ограничение «только Wi-Fi» поставлено не из осторожности: 43 МБ по
+     * сотовой связи это и грубо, и при поднятом ВПН идёт через наши же
+     * ноды с их месячными лимитами. Но у ограничения есть следствие, ради
+     * которого всё и переделано: у кого Wi-Fi не бывает, тот не обновится
+     * НИКОГДА. Через две недели ожидания одна загрузка по мобильному
+     * дешевле, чем клиент, навсегда застрявший на старой сборке.
+     */
+    private const val METERED_FALLBACK_DAYS = 14L
+
     /**
      * Schedule the background check. Idempotent — safe to call on every
      * launch, KEEP leaves an already-scheduled run alone.
@@ -68,19 +84,54 @@ object UpdatePrefetcher {
      * KEEP, so repeatedly opening the app doesn't queue the same download
      * over and over.
      */
-    fun requestPrefetchNow(context: Context) {
+    fun requestPrefetchNow(context: Context, allowMetered: Boolean = false) {
         val request = OneTimeWorkRequestBuilder<PrefetchTask>()
             .setConstraints(
                 Constraints.Builder()
-                    .setRequiredNetworkType(NetworkType.UNMETERED)
+                    .setRequiredNetworkType(
+                        if (allowMetered) NetworkType.CONNECTED
+                        else NetworkType.UNMETERED
+                    )
                     .setRequiresStorageNotLow(true)
                     .build()
             )
             .addTag(TASK_NAME)
             .build()
+        // Разные имена: иначе KEEP на уже стоящей в очереди Wi-Fi-задаче
+        // отменил бы запасной ход — а он нужен ровно тогда, когда та
+        // задача ждёт Wi-Fi, которого не будет.
         WorkManager.getInstance(context).enqueueUniqueWork(
-            TASK_NAME + "_now", ExistingWorkPolicy.KEEP, request,
+            TASK_NAME + if (allowMetered) "_now_metered" else "_now",
+            ExistingWorkPolicy.KEEP,
+            request,
         )
+    }
+
+    /**
+     * Проверка при запуске нашла версию [version].
+     *
+     * Запоминаем, когда увидели её впервые, и решаем, ждать ли дальше
+     * Wi-Fi. Проверка манифеста — несколько сотен байт и идёт по любой
+     * сети, поэтому именно отсюда и виден момент «ждём слишком долго»:
+     * суточная фоновая задача при отсутствии Wi-Fi не запускается вовсе и
+     * заметить ничего не может.
+     */
+    fun noteAvailable(context: Context, version: String) {
+        val known = MmkvManager.decodeSettingsString(KEY_SEEN_VERSION)
+        val now = System.currentTimeMillis()
+        if (known != version) {
+            MmkvManager.encodeSettings(KEY_SEEN_VERSION, version)
+            MmkvManager.encodeSettings(KEY_SEEN_AT, now.toString())
+            requestPrefetchNow(context, allowMetered = false)
+            return
+        }
+        val since = MmkvManager.decodeSettingsString(KEY_SEEN_AT)
+            ?.toLongOrNull() ?: now
+        val waited = now - since
+        val overdue = waited > METERED_FALLBACK_DAYS * 24 * 60 * 60 * 1000L
+        // Уже скачано — тратить чужой трафик не на что.
+        val staged = ApkUpdateInstaller.readyUpdate(context)?.first == version
+        requestPrefetchNow(context, allowMetered = overdue && !staged)
     }
 
     class PrefetchTask(context: Context, params: WorkerParameters) :

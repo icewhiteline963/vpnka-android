@@ -3,6 +3,7 @@ package com.v2ray.ang.handler
 import android.os.Build
 import com.google.gson.annotations.SerializedName
 import com.v2ray.ang.AppConfig
+import com.v2ray.ang.BuildConfig
 import com.v2ray.ang.util.JsonUtil
 import com.v2ray.ang.util.LogUtil
 import java.net.InetSocketAddress
@@ -255,6 +256,7 @@ object VpnkaAccount {
                 Request.Builder()
                     .url("$BASE/app/profile")
                     .header("Authorization", "Bearer $token")
+                    .header("X-App-Version", BuildConfig.VERSION_NAME)
                     // Identifies which install's trial to report on.
                     .header("Hwid", MmkvManager.getOrCreateInstallId())
                     .get()
@@ -334,6 +336,10 @@ object VpnkaAccount {
         return Request.Builder()
             .url("$BASE$path")
             .header("Authorization", "Bearer $token")
+            // Какая сборка спрашивает. Сервер не знал версий вообще, поэтому
+            // «все ли обновились» был вопрос без ответа: отставших нельзя
+            // было ни сосчитать, ни найти.
+            .header("X-App-Version", BuildConfig.VERSION_NAME)
     }
 
     private inline fun <reified T> call(builder: Request.Builder?): T? {

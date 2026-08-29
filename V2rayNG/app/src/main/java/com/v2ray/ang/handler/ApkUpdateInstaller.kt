@@ -75,6 +75,38 @@ object ApkUpdateInstaller {
         MmkvManager.encodeSettings(KEY_READY_VERSION, version)
     }
 
+    /** Что и когда мы в последний раз предлагали установить. */
+    private const val KEY_PROMPT_VERSION = "vpnka_update_prompt_version"
+    private const val KEY_PROMPT_AT = "vpnka_update_prompt_at"
+
+    /**
+     * Как часто можно предлагать одно и то же обновление.
+     *
+     * Предложение показывается при каждом выходе приложения на экран — иначе
+     * тот, кто приложение не закрывает неделями, не увидит его никогда. Но
+     * буквально каждый раз — это диалог при возвращении из банковского
+     * приложения посреди оплаты. Получасовая пауза оставляет предложение
+     * заметным и не превращает его в помеху.
+     */
+    private const val PROMPT_EVERY_MS = 30L * 60 * 1000
+
+    /** Пора ли снова предложить установку [version]. */
+    fun promptDue(version: String): Boolean {
+        val shown = MmkvManager.decodeSettingsString(KEY_PROMPT_VERSION)
+        // Новая версия — предлагаем сразу, пауза от прошлой не в счёт.
+        if (shown != version) return true
+        val at = MmkvManager.decodeSettingsString(KEY_PROMPT_AT)
+            ?.toLongOrNull() ?: 0L
+        return System.currentTimeMillis() - at > PROMPT_EVERY_MS
+    }
+
+    fun markPrompted(version: String) {
+        MmkvManager.encodeSettings(KEY_PROMPT_VERSION, version)
+        MmkvManager.encodeSettings(
+            KEY_PROMPT_AT, System.currentTimeMillis().toString()
+        )
+    }
+
     /** After a successful install, or when the file is stale. */
     fun clearReady(context: Context) {
         MmkvManager.encodeSettings(KEY_READY_VERSION, "")

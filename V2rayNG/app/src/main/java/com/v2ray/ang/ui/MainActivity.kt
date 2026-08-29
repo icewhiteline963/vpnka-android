@@ -154,6 +154,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.StateFlow
 import com.v2ray.ang.handler.UpdateCheckerManager
+import com.v2ray.ang.handler.ApkUpdateInstaller
 import com.v2ray.ang.handler.UpdatePrefetcher
 import com.v2ray.ang.handler.PowerSaveHelper
 import androidx.compose.material3.AlertDialog
@@ -288,6 +289,7 @@ class MainActivity : HelperBaseComponentActivity() {
      */
     override fun onResume() {
         super.onResume()
+        foregroundTick++
         val stored = MmkvManager.decodeSettingsString(KEY_PENDING_PAYMENT)
         val pid = stored?.toLongOrNull() ?: return
         lifecycleScope.launch {
@@ -517,6 +519,15 @@ class MainActivity : HelperBaseComponentActivity() {
      * сервера, он и приходит сюда.
      */
     private var preferGroupToken by mutableStateOf<String?>(null)
+
+    /**
+     * Счётчик выходов приложения на экран.
+     *
+     * Обновление предлагаем не только при холодном старте: человек может
+     * неделями не закрывать приложение, а «при старте» для него не
+     * наступает никогда. Экран открыт — значит, момент подходящий.
+     */
+    private var foregroundTick by mutableStateOf(0)
     private var openedPlan by mutableStateOf<VpnkaAccount.Plan?>(null)
 
     /** Set by the post-payment link; consumed on the next composition. */
@@ -662,6 +673,29 @@ class MainActivity : HelperBaseComponentActivity() {
             }
         }
         var updateVersion by remember { mutableStateOf<String?>(null) }
+        // Уже скачанное обновление, ждущее одного касания.
+        var stagedUpdate by remember {
+            mutableStateOf<Pair<String, java.io.File>?>(null)
+        }
+
+        // Читаем с ДИСКА, а не из сети, и на каждом выходе на экран.
+        //
+        // Раньше плашка про обновление показывалась только если проверка
+        // манифеста прошла прямо сейчас. Файл мог месяц лежать готовым, но
+        // без связи с зеркалом на экране было пусто — скачанное обновление
+        // оказывалось невидимым ровно для тех, у кого со связью хуже всех.
+        var showUpdatePrompt by remember { mutableStateOf(false) }
+        LaunchedEffect(foregroundTick) {
+            val staged = ApkUpdateInstaller.readyUpdate(this@MainActivity)
+            stagedUpdate = staged
+            if (staged != null) {
+                updateVersion = staged.first
+                if (ApkUpdateInstaller.promptDue(staged.first)) {
+                    ApkUpdateInstaller.markPrompted(staged.first)
+                    showUpdatePrompt = true
+                }
+            }
+        }
         var claimingFreeMonth by remember { mutableStateOf(false) }
         var askBattery by remember { mutableStateOf(PowerSaveHelper.shouldPrompt(this)) }
 
@@ -676,9 +710,13 @@ class MainActivity : HelperBaseComponentActivity() {
             }.onSuccess { result ->
                 if (result.hasUpdate) {
                     updateVersion = result.latestVersion
-                    // Start the download at the next Wi-Fi moment rather than
-                    // making the user wait for it when they finally tap.
-                    UpdatePrefetcher.requestPrefetchNow(this@MainActivity)
+                    // Качаем заранее, но не любой ценой: noteAvailable
+                    // помнит, с какого дня мы ждём Wi-Fi, и через две
+                    // недели разрешает мобильный трафик — иначе тот, у кого
+                    // Wi-Fi не бывает, не обновится никогда.
+                    result.latestVersion?.let {
+                        UpdatePrefetcher.noteAvailable(this@MainActivity, it)
+                    }
                 }
             }
         }
@@ -788,6 +826,62 @@ class MainActivity : HelperBaseComponentActivity() {
         val servers by mainViewModel
             .serversForGroup(uiState.selectedGroupId)
             .collectAsStateWithLifecycle()
+
+        // Готовое обновление: файл уже на диске, остаётся одно касание.
+        //
+        // Молча поставить его нельзя ни при каких условиях — Android
+        // разрешает тихую установку только системным приложениям и
+        // устройствам под управлением организации. Наше ставится сбоку,
+        // поэтому потолок здесь честный: «скачано заранее, одно касание».
+        stagedUpdate?.let { (version, apk) ->
+            if (showUpdatePrompt) {
+                val allowed = ApkUpdateInstaller.canInstall(this@MainActivity)
+                AlertDialog(
+                    onDismissRequest = { showUpdatePrompt = false },
+                    title = { Text("Обновление $version готово") },
+                    text = {
+                        Text(
+                            if (allowed) {
+                                "Файл уже скачан — установка займёт несколько " +
+                                    "секунд и не потратит трафик."
+                            } else {
+                                // Разрешение спрашиваем ЗАРАНЕЕ, а не в тот
+                                // момент, когда человек уже нажал «установить»
+                                // и ждёт результата: выдаётся оно только
+                                // вручную в настройках, и просить о походе
+                                // туда посреди установки — верный способ
+                                // потерять человека на полпути.
+                                "Файл уже скачан. Android ставит приложения " +
+                                    "не из магазина только с вашего разрешения " +
+                                    "— выдайте его один раз, и обновления " +
+                                    "будут ставиться в одно касание."
+                            }
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            showUpdatePrompt = false
+                            if (allowed) {
+                                ApkUpdateInstaller.promptInstall(
+                                    this@MainActivity, apk
+                                )
+                            } else {
+                                startActivity(
+                                    ApkUpdateInstaller.installPermissionIntent(
+                                        this@MainActivity
+                                    )
+                                )
+                            }
+                        }) { Text(if (allowed) "Установить" else "Разрешить") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showUpdatePrompt = false }) {
+                            Text("Позже")
+                        }
+                    },
+                )
+            }
+        }
 
         if (askBattery) {
             AlertDialog(
