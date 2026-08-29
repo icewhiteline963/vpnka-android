@@ -1108,8 +1108,33 @@ class MainActivity : HelperBaseComponentActivity() {
                         when (val r = VpnkaAccount.purchase(id, "card")) {
                             // The processor's page; paying there returns to
                             // /paid/app. Same invoice the bot creates.
-                            is VpnkaAccount.PurchaseResult.PayByCard ->
+                            is VpnkaAccount.PurchaseResult.PayByCard -> {
                                 Utils.openUri(this@MainActivity, r.url)
+                                // Страница оплаты открывается снаружи и
+                                // обратно ничего не сообщает — поэтому ждём
+                                // сами. Раньше приложение после этого шага
+                                // не спрашивало НИЧЕГО, и оплаченная подписка
+                                // появлялась только при следующем обновлении
+                                // профиля: «оплата прошла, а в приложении
+                                // ничего не произошло».
+                                val pid = r.paymentId
+                                if (pid != null) {
+                                    lifecycleScope.launch {
+                                        val deadline = System.currentTimeMillis() +
+                                            20 * 60 * 1000L
+                                        while (System.currentTimeMillis() < deadline) {
+                                            delay(3000)
+                                            if (VpnkaAccount.paymentSettled(pid)) {
+                                                toast("Оплачено — подписка активна")
+                                                selectNewestOnSync = true
+                                                subReload++
+                                                showShop = false
+                                                break
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                             is VpnkaAccount.PurchaseResult.Failed -> toast(r.message)
                             else -> {}
                         }

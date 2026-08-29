@@ -570,7 +570,9 @@ object VpnkaAccount {
      *  open, or a message to show. */
     sealed class PurchaseResult {
         data class Settled(val subscriptionUrl: String?) : PurchaseResult()
-        data class PayByCard(val url: String) : PurchaseResult()
+        /** `paymentId` нужен, чтобы дождаться оплаты: страница оплаты
+         *  открывается снаружи и обратно ничего не сообщает. */
+        data class PayByCard(val url: String, val paymentId: Long?) : PurchaseResult()
         data class Failed(val message: String) : PurchaseResult()
     }
 
@@ -578,6 +580,11 @@ object VpnkaAccount {
         @SerializedName("settled") val settled: Boolean = false,
         @SerializedName("subscription_url") val subscriptionUrl: String? = null,
         @SerializedName("payment_url") val paymentUrl: String? = null,
+        @SerializedName("payment_id") val paymentId: Long? = null,
+    )
+
+    private data class PaymentStatusResponse(
+        @SerializedName("settled") val settled: Boolean = false,
     )
 
     private data class TopUpResponse(
@@ -669,7 +676,9 @@ object VpnkaAccount {
                                 obj?.settled == true ->
                                     PurchaseResult.Settled(obj.subscriptionUrl)
                                 obj?.paymentUrl != null ->
-                                    PurchaseResult.PayByCard(obj.paymentUrl)
+                                    PurchaseResult.PayByCard(
+                                        obj.paymentUrl, obj.paymentId
+                                    )
                                 else ->
                                     PurchaseResult.Failed("Не удалось оформить покупку")
                             }
@@ -688,6 +697,37 @@ object VpnkaAccount {
             }
         }
 
+
+    /**
+     * Оплачен ли счёт.
+     *
+     * Приложение открывает страницу оплаты во внешнем браузере или в
+     * банковском приложении и обратно НИЧЕГО не получает. Раньше оно после
+     * этого не спрашивало ничего вовсе, и купленная подписка появлялась
+     * только при следующем самостоятельном обновлении профиля — жалоба
+     * владельца 29.08: «оплата прошла, в приложении ничего не произошло».
+     *
+     * Ошибку сети трактуем как «ещё не оплачено»: следующая попытка через
+     * несколько секунд, терять из-за одного обрыва весь цикл ожидания
+     * нельзя.
+     */
+    suspend fun paymentSettled(paymentId: Long): Boolean =
+        withContext(Dispatchers.IO) {
+            val req = authed("/app/payments/$paymentId")?.get()?.build()
+                ?: return@withContext false
+            try {
+                http().newCall(req).execute().use { resp ->
+                    if (!resp.isSuccessful) return@use false
+                    JsonUtil.fromJsonSafe(
+                        resp.body?.string().orEmpty(),
+                        PaymentStatusResponse::class.java
+                    )?.settled == true
+                }
+            } catch (e: Exception) {
+                LogUtil.w(AppConfig.TAG, "payment status failed: ${e.message}")
+                false
+            }
+        }
 
     /**
      * A Telegram link that attaches this account to the user's Telegram.
