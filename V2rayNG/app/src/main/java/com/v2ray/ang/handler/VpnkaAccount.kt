@@ -585,6 +585,7 @@ object VpnkaAccount {
 
     private data class PaymentStatusResponse(
         @SerializedName("settled") val settled: Boolean = false,
+        @SerializedName("status") val status: String? = null,
     )
 
     private data class TopUpResponse(
@@ -726,6 +727,37 @@ object VpnkaAccount {
             } catch (e: Exception) {
                 LogUtil.w(AppConfig.TAG, "payment status failed: ${e.message}")
                 false
+            }
+        }
+
+    /**
+     * Состояние счёта одним словом: `settled` — оплачен, `dead` — закрыт без
+     * денег, `pending` — ещё платят или связи нет.
+     *
+     * Три состояния вместо двух нужны, чтобы знать, когда ПЕРЕСТАТЬ
+     * спрашивать: иначе брошенный счёт заставлял бы опрашивать сервер при
+     * каждом открытии приложения до скончания века.
+     */
+    suspend fun paymentState(paymentId: Long): String =
+        withContext(Dispatchers.IO) {
+            val req = authed("/app/payments/$paymentId")?.get()?.build()
+                ?: return@withContext "pending"
+            try {
+                http().newCall(req).execute().use { resp ->
+                    if (!resp.isSuccessful) return@use "pending"
+                    val obj = JsonUtil.fromJsonSafe(
+                        resp.body?.string().orEmpty(),
+                        PaymentStatusResponse::class.java
+                    ) ?: return@use "pending"
+                    when {
+                        obj.settled -> "settled"
+                        obj.status in setOf("expired", "failed", "refunded") -> "dead"
+                        else -> "pending"
+                    }
+                }
+            } catch (e: Exception) {
+                LogUtil.w(AppConfig.TAG, "payment state failed: ${e.message}")
+                "pending"
             }
         }
 

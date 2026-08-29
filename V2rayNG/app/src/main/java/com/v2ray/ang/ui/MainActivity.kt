@@ -235,6 +235,10 @@ class MainActivity : HelperBaseComponentActivity() {
         const val EXTRA_CHAT = "vpnka_chat"
         /** Set once the review prompt has been raised, so it never repeats. */
         const val KEY_REVIEW_PROMPTED = "vpnka_review_prompted"
+
+        /** Счёт, оплату которого мы ждём. Пусто — значит ждать нечего и
+         *  сервер не опрашивается вообще. */
+        const val KEY_PENDING_PAYMENT = "vpnka_pending_payment"
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -267,6 +271,49 @@ class MainActivity : HelperBaseComponentActivity() {
         val chat = intent.getLongExtra(EXTRA_CHAT, 0L)
         if (chat != 0L) com.v2ray.ang.handler.Messenger.requestOpenChat(chat)
         showSmartDesk = true
+    }
+
+    /**
+     * Проверяем, не оплатился ли счёт, пока нас не было на экране.
+     *
+     * Оплата по СБП уводит человека в банковское приложение, и наша
+     * активность сворачивается — вместе с любым циклом, который её
+     * переживать не умеет. Поэтому настоящая проверка живёт ЗДЕСЬ: при
+     * каждом возвращении в приложение.
+     *
+     * Опрашиваем НЕ постоянно: только пока в памяти лежит незавершённый
+     * счёт. Как только он оплачен или окончательно умер — ключ стирается, и
+     * запросов больше нет. Окно ограничено, чтобы не крутиться вечно, если
+     * человек просто закрыл страницу оплаты.
+     */
+    override fun onResume() {
+        super.onResume()
+        val stored = MmkvManager.decodeSettingsString(KEY_PENDING_PAYMENT)
+        val pid = stored?.toLongOrNull() ?: return
+        lifecycleScope.launch {
+            val deadline = System.currentTimeMillis() + 90_000L
+            while (System.currentTimeMillis() < deadline) {
+                when (VpnkaAccount.paymentState(pid)) {
+                    "settled" -> {
+                        MmkvManager.encodeSettings(KEY_PENDING_PAYMENT, "")
+                        toast("Оплачено — подписка активна")
+                        selectNewestOnSync = true
+                        subRefreshRequest++
+                        return@launch
+                    }
+                    // Счёт закрыт без денег: ждать больше нечего, иначе
+                    // будем опрашивать до скончания века.
+                    "dead" -> {
+                        MmkvManager.encodeSettings(KEY_PENDING_PAYMENT, "")
+                        return@launch
+                    }
+                    // Ещё платит или связи нет — подождём и спросим снова.
+                    else -> delay(3000)
+                }
+            }
+            // Окно вышло, а счёт всё ещё жив: ключ НЕ стираем — спросим при
+            // следующем возвращении в приложение.
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -446,6 +493,12 @@ class MainActivity : HelperBaseComponentActivity() {
     /** Set by the post-payment link; consumed on the next composition. */
     private var vpnkaOpenProfileAfterPayment = false
 
+    /** Просьба перечитать подписки, которую можно подать ИЗВНЕ композиции.
+     *
+     *  Обычный `subReload` живёт внутри экрана, и из `onResume` до него не
+     *  дотянуться — а именно оттуда приходит новость об оплате. */
+    private var subRefreshRequest by mutableStateOf(0)
+
     @Composable
     override fun ScreenContent() {
         // Our one-button screen is what the app opens on; upstream's full
@@ -498,7 +551,7 @@ class MainActivity : HelperBaseComponentActivity() {
         // connect button never opens «Профиль», so the plans were never
         // synced — the shipped trial stayed in the list and stayed selected
         // while their paid subscription sat unused.
-        LaunchedEffect(showSubscription, subReload, signedIn) {
+        LaunchedEffect(showSubscription, subReload, signedIn, subRefreshRequest) {
             if (signedIn) {
                 subLoading = showSubscription
                 val fetched = VpnkaAccount.fetchInfo()
@@ -1119,12 +1172,26 @@ class MainActivity : HelperBaseComponentActivity() {
                                 // ничего не произошло».
                                 val pid = r.paymentId
                                 if (pid != null) {
+                                    // Запоминаем счёт НА ДИСКЕ: оплата по СБП
+                                    // уводит в банковское приложение, нашу
+                                    // активность система сворачивает, и цикл
+                                    // ниже вместе с ней умирает. Так и вышло
+                                    // 29.08: приложение успело спросить семь
+                                    // раз за 21 секунду, а деньги дошли на
+                                    // 27-й — и новость никто не услышал.
+                                    // Настоящая проверка идёт в onResume.
+                                    MmkvManager.encodeSettings(
+                                        KEY_PENDING_PAYMENT, pid.toString()
+                                    )
                                     lifecycleScope.launch {
                                         val deadline = System.currentTimeMillis() +
                                             20 * 60 * 1000L
                                         while (System.currentTimeMillis() < deadline) {
                                             delay(3000)
                                             if (VpnkaAccount.paymentSettled(pid)) {
+                                                MmkvManager.encodeSettings(
+                                                    KEY_PENDING_PAYMENT, ""
+                                                )
                                                 toast("Оплачено — подписка активна")
                                                 selectNewestOnSync = true
                                                 subReload++
