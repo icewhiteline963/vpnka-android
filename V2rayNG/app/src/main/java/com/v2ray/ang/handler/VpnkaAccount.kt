@@ -586,6 +586,21 @@ object VpnkaAccount {
     private data class PaymentStatusResponse(
         @SerializedName("settled") val settled: Boolean = false,
         @SerializedName("status") val status: String? = null,
+        // Какую подписку породила эта оплата. Приходит на шаг позже, чем
+        // `settled` — выдача ключа идёт следом за учётом денег.
+        @SerializedName("group_token") val groupToken: String? = null,
+    )
+
+    /**
+     * Состояние счёта плюс адрес купленной подписки.
+     *
+     * Токен здесь — не украшение. Приложение раньше выбирало «самую
+     * долгоживущую» подписку из профиля, и у того, кто уже держит годовой
+     * тариф, купленный сверх него месяц не становился выбранным никогда.
+     */
+    data class PaymentState(
+        val state: String,
+        val groupToken: String? = null,
     )
 
     private data class TopUpResponse(
@@ -700,37 +715,6 @@ object VpnkaAccount {
 
 
     /**
-     * Оплачен ли счёт.
-     *
-     * Приложение открывает страницу оплаты во внешнем браузере или в
-     * банковском приложении и обратно НИЧЕГО не получает. Раньше оно после
-     * этого не спрашивало ничего вовсе, и купленная подписка появлялась
-     * только при следующем самостоятельном обновлении профиля — жалоба
-     * владельца 29.08: «оплата прошла, в приложении ничего не произошло».
-     *
-     * Ошибку сети трактуем как «ещё не оплачено»: следующая попытка через
-     * несколько секунд, терять из-за одного обрыва весь цикл ожидания
-     * нельзя.
-     */
-    suspend fun paymentSettled(paymentId: Long): Boolean =
-        withContext(Dispatchers.IO) {
-            val req = authed("/app/payments/$paymentId")?.get()?.build()
-                ?: return@withContext false
-            try {
-                http().newCall(req).execute().use { resp ->
-                    if (!resp.isSuccessful) return@use false
-                    JsonUtil.fromJsonSafe(
-                        resp.body?.string().orEmpty(),
-                        PaymentStatusResponse::class.java
-                    )?.settled == true
-                }
-            } catch (e: Exception) {
-                LogUtil.w(AppConfig.TAG, "payment status failed: ${e.message}")
-                false
-            }
-        }
-
-    /**
      * Состояние счёта одним словом: `settled` — оплачен, `dead` — закрыт без
      * денег, `pending` — ещё платят или связи нет.
      *
@@ -738,26 +722,28 @@ object VpnkaAccount {
      * спрашивать: иначе брошенный счёт заставлял бы опрашивать сервер при
      * каждом открытии приложения до скончания века.
      */
-    suspend fun paymentState(paymentId: Long): String =
+    suspend fun paymentState(paymentId: Long): PaymentState =
         withContext(Dispatchers.IO) {
+            val pending = PaymentState("pending")
             val req = authed("/app/payments/$paymentId")?.get()?.build()
-                ?: return@withContext "pending"
+                ?: return@withContext pending
             try {
                 http().newCall(req).execute().use { resp ->
-                    if (!resp.isSuccessful) return@use "pending"
+                    if (!resp.isSuccessful) return@use pending
                     val obj = JsonUtil.fromJsonSafe(
                         resp.body?.string().orEmpty(),
                         PaymentStatusResponse::class.java
-                    ) ?: return@use "pending"
+                    ) ?: return@use pending
                     when {
-                        obj.settled -> "settled"
-                        obj.status in setOf("expired", "failed", "refunded") -> "dead"
-                        else -> "pending"
+                        obj.settled -> PaymentState("settled", obj.groupToken)
+                        obj.status in setOf("expired", "failed", "refunded") ->
+                            PaymentState("dead")
+                        else -> pending
                     }
                 }
             } catch (e: Exception) {
                 LogUtil.w(AppConfig.TAG, "payment state failed: ${e.message}")
-                "pending"
+                pending
             }
         }
 

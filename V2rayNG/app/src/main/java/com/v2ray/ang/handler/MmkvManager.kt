@@ -1035,6 +1035,7 @@ object MmkvManager {
     fun syncSubscriptions(
         plans: List<Pair<String, String>>,
         preferNewest: Boolean = false,
+        preferToken: String? = null,
     ): String? {
         if (plans.isEmpty()) return null
 
@@ -1074,6 +1075,23 @@ object MmkvManager {
         val selected = decodeSettingsString(CACHE_SUBSCRIPTION_ID)
         val stillValid = selected != null &&
             decodeSubscriptions().any { it.guid == selected }
+        // preferToken: сервер назвал подписку, которую породила оплата.
+        // Это точный ответ, и он бьёт любую догадку — включая догадку
+        // «самая долгоживущая». Она была неверна ровно в том случае, ради
+        // которого всё и делалось: у владельца годового тарифа купленный
+        // сверх него месяц не выбирался никогда, и покупка выглядела как
+        // будто не прошла.
+        if (preferToken != null) {
+            val url = VPNKA_SUB_PREFIX + preferToken
+            val target = decodeSubscriptions().firstOrNull { it.subscription.url == url }
+            if (target != null) {
+                encodeSettings(CACHE_SUBSCRIPTION_ID, target.guid)
+                return target.guid
+            }
+            // Токен есть, а группы под него нет — профиль ещё не догнал
+            // выдачу. Падаем на общий путь ниже, следующий круг подхватит.
+        }
+
         // preferNewest: just claimed a free month or bought a plan — activate
         // the newest (longest-lived, = firstGuid) even if the old choice is
         // still valid, so the new subscription is the one carrying traffic.

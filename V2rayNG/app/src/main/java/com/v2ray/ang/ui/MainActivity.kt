@@ -292,14 +292,24 @@ class MainActivity : HelperBaseComponentActivity() {
         val pid = stored?.toLongOrNull() ?: return
         lifecycleScope.launch {
             val deadline = System.currentTimeMillis() + 90_000L
+            // Деньги учтены, но ключ ещё не выдан. Такое состояние живёт
+            // считанные секунды, и в нём сервер ещё не может назвать
+            // подписку — ждём именно её, а не просто «оплачено».
+            var settledSeen = false
             while (System.currentTimeMillis() < deadline) {
-                when (VpnkaAccount.paymentState(pid)) {
+                val st = VpnkaAccount.paymentState(pid)
+                when (st.state) {
                     "settled" -> {
-                        MmkvManager.encodeSettings(KEY_PENDING_PAYMENT, "")
-                        toast("Оплачено — подписка активна")
-                        selectNewestOnSync = true
-                        subRefreshRequest++
-                        return@launch
+                        settledSeen = true
+                        if (st.groupToken != null) {
+                            MmkvManager.encodeSettings(KEY_PENDING_PAYMENT, "")
+                            toast("Оплачено — подписка активна")
+                            preferGroupToken = st.groupToken
+                            selectNewestOnSync = true
+                            subRefreshRequest++
+                            return@launch
+                        }
+                        delay(3000)
                     }
                     // Счёт закрыт без денег: ждать больше нечего, иначе
                     // будем опрашивать до скончания века.
@@ -311,8 +321,17 @@ class MainActivity : HelperBaseComponentActivity() {
                     else -> delay(3000)
                 }
             }
-            // Окно вышло, а счёт всё ещё жив: ключ НЕ стираем — спросим при
-            // следующем возвращении в приложение.
+            // Окно вышло. Если деньги мы всё-таки видели, а имени подписки
+            // так и не дождались — сообщаем и обновляемся вслепую, это
+            // лучше, чем молчать. Ключ стираем: платёж состоялся.
+            if (settledSeen) {
+                MmkvManager.encodeSettings(KEY_PENDING_PAYMENT, "")
+                toast("Оплачено — подписка активна")
+                selectNewestOnSync = true
+                subRefreshRequest++
+            }
+            // Счёт всё ещё жив: ключ НЕ стираем — спросим при следующем
+            // возвращении в приложение.
         }
     }
 
@@ -488,6 +507,16 @@ class MainActivity : HelperBaseComponentActivity() {
     // Set right before a profile refresh that follows claiming/buying a plan,
     // so the sync activates the newly-acquired subscription (its radio).
     private var selectNewestOnSync by mutableStateOf(false)
+
+    /**
+     * Токен подписки, которую только что оплатили, — прямо со слов сервера.
+     *
+     * Догадка «выбрать самую долгоживущую» здесь не работает: у владельца
+     * годового тарифа купленный сверх него месяц долгоживущим не является
+     * никогда, и покупка выглядела как несостоявшаяся. Точный ответ есть у
+     * сервера, он и приходит сюда.
+     */
+    private var preferGroupToken by mutableStateOf<String?>(null)
     private var openedPlan by mutableStateOf<VpnkaAccount.Plan?>(null)
 
     /** Set by the post-payment link; consumed on the next composition. */
@@ -575,19 +604,34 @@ class MainActivity : HelperBaseComponentActivity() {
                 // list: a group built for an expired plan serves nothing,
                 // and leaving it in the picker is how someone selects a
                 // subscription and finds no servers behind it.
-                val plans = fetched?.subscriptions.orEmpty()
+                val live = fetched?.subscriptions.orEmpty()
                     .filter { (it.daysLeft ?: 1) > 0 }
                     // Longest-lived first: syncSubscriptions treats the first as
                     // the one to fall back to / activate, and a just-acquired
                     // month or plan is the one with the most days left.
                     .sortedByDescending { it.daysLeft ?: 0 }
-                    .mapNotNull { plan ->
-                        val token = plan.groupToken ?: return@mapNotNull null
-                        token to (plan.tariff ?: "VPNka")
+                // Одинаково названные планы — не редкость: два купленных
+                // месяца зовутся одним и тем же тарифом, и в списке их не
+                // отличить друг от друга. Различаем датой окончания, но
+                // только когда имя действительно повторяется — у тех, у кого
+                // план один, подпись остаётся прежней.
+                val sameName = live.groupingBy { it.tariff ?: "VPNka" }.eachCount()
+                val plans = live.mapNotNull { plan ->
+                    val token = plan.groupToken ?: return@mapNotNull null
+                    val name = plan.tariff ?: "VPNka"
+                    val parts = plan.expiresAt?.take(10)?.split("-")
+                    val label = if ((sameName[name] ?: 0) > 1 && parts?.size == 3) {
+                        "$name · до ${parts[2]}.${parts[1]}"
+                    } else {
+                        name
                     }
+                    token to label
+                }
                 if (plans.isNotEmpty()) {
                     val switched = MmkvManager.syncSubscriptions(
-                        plans, preferNewest = selectNewestOnSync
+                        plans,
+                        preferNewest = selectNewestOnSync,
+                        preferToken = preferGroupToken,
                     )
                     subs = MmkvManager.vpnkaSubscriptions()
                     // The groups the viewmodel knows about are now out of
@@ -612,6 +656,7 @@ class MainActivity : HelperBaseComponentActivity() {
                         importConfigViaSub()
                     }
                     selectNewestOnSync = false
+                    preferGroupToken = null
                 }
                 subLoading = false
             }
@@ -1188,11 +1233,15 @@ class MainActivity : HelperBaseComponentActivity() {
                                             20 * 60 * 1000L
                                         while (System.currentTimeMillis() < deadline) {
                                             delay(3000)
-                                            if (VpnkaAccount.paymentSettled(pid)) {
+                                            val st = VpnkaAccount.paymentState(pid)
+                                            if (st.state == "settled" &&
+                                                st.groupToken != null
+                                            ) {
                                                 MmkvManager.encodeSettings(
                                                     KEY_PENDING_PAYMENT, ""
                                                 )
                                                 toast("Оплачено — подписка активна")
+                                                preferGroupToken = st.groupToken
                                                 selectNewestOnSync = true
                                                 subReload++
                                                 showShop = false
