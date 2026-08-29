@@ -150,6 +150,7 @@ import com.v2ray.ang.util.LogUtil
 import com.v2ray.ang.util.Utils
 import com.v2ray.ang.viewmodel.MainViewModel
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.StateFlow
@@ -287,12 +288,42 @@ class MainActivity : HelperBaseComponentActivity() {
      * запросов больше нет. Окно ограничено, чтобы не крутиться вечно, если
      * человек просто закрыл страницу оплаты.
      */
+    /**
+     * Стереть ключ незакрытого счёта — но только если там всё ещё НАШ счёт.
+     *
+     * Ключ один, а циклов ожидания может быть несколько: человек успел
+     * завести второй счёт, пока первый ещё висел. Безусловное стирание
+     * затирало бы указатель на новый счёт, и его оплату никто бы не отследил.
+     */
+    private fun clearPendingPayment(pid: Long) {
+        val now = MmkvManager.decodeSettingsString(KEY_PENDING_PAYMENT)
+        if (now.orEmpty().substringBefore(':').toLongOrNull() == pid) {
+            MmkvManager.encodeSettings(KEY_PENDING_PAYMENT, "")
+        }
+    }
+
+    /** Живой цикл ожидания оплаты — чтобы не плодить по одному на каждый выход на экран. */
+    private var paymentWatch: Job? = null
+
     override fun onResume() {
         super.onResume()
         foregroundTick++
         val stored = MmkvManager.decodeSettingsString(KEY_PENDING_PAYMENT)
-        val pid = stored?.toLongOrNull() ?: return
-        lifecycleScope.launch {
+        val pid = stored?.substringBefore(':')?.toLongOrNull() ?: return
+        // Предельный срок жизни ключа. Ответ «ещё платят» мы получаем и когда
+        // связи нет, и когда сервер отвечает непонятно, — без крайнего срока
+        // такой счёт опрашивался бы вечно, каждые три секунды, при каждом
+        // открытии приложения.
+        val bornAt = stored.substringAfter(':', "").toLongOrNull()
+        if (bornAt != null && System.currentTimeMillis() - bornAt > 24 * 60 * 60 * 1000L) {
+            clearPendingPayment(pid)
+            return
+        }
+        // Предыдущий цикл больше не нужен: он опрашивает тот же счёт и в конце
+        // покажет свой собственный тост. lifecycleScope живёт до onDestroy, а
+        // не до onPause, поэтому сами они не умирают.
+        paymentWatch?.cancel()
+        paymentWatch = lifecycleScope.launch {
             val deadline = System.currentTimeMillis() + 90_000L
             // Деньги учтены, но ключ ещё не выдан. Такое состояние живёт
             // считанные секунды, и в нём сервер ещё не может назвать
@@ -304,7 +335,7 @@ class MainActivity : HelperBaseComponentActivity() {
                     "settled" -> {
                         settledSeen = true
                         if (st.groupToken != null) {
-                            MmkvManager.encodeSettings(KEY_PENDING_PAYMENT, "")
+                            clearPendingPayment(pid)
                             toast("Оплачено — подписка активна")
                             preferGroupToken = st.groupToken
                             selectNewestOnSync = true
@@ -316,7 +347,7 @@ class MainActivity : HelperBaseComponentActivity() {
                     // Счёт закрыт без денег: ждать больше нечего, иначе
                     // будем опрашивать до скончания века.
                     "dead" -> {
-                        MmkvManager.encodeSettings(KEY_PENDING_PAYMENT, "")
+                        clearPendingPayment(pid)
                         return@launch
                     }
                     // Ещё платит или связи нет — подождём и спросим снова.
@@ -327,7 +358,7 @@ class MainActivity : HelperBaseComponentActivity() {
             // так и не дождались — сообщаем и обновляемся вслепую, это
             // лучше, чем молчать. Ключ стираем: платёж состоялся.
             if (settledSeen) {
-                MmkvManager.encodeSettings(KEY_PENDING_PAYMENT, "")
+                clearPendingPayment(pid)
                 toast("Оплачено — подписка активна")
                 selectNewestOnSync = true
                 subRefreshRequest++
@@ -672,7 +703,17 @@ class MainActivity : HelperBaseComponentActivity() {
                         importConfigViaSub()
                     }
                     selectNewestOnSync = false
-                    preferGroupToken = null
+                    // Токен сбрасываем, только если названная сервером
+                    // подписка реально была в профиле и попала в список.
+                    // Безусловный сброс возвращал исходный дефект: профиль
+                    // не успел показать покупку — точный ответ выброшен,
+                    // выбирается «самая долгоживущая», и у владельца
+                    // годового тарифа месяц снова не появляется.
+                    if (preferGroupToken != null &&
+                        plans.any { it.first == preferGroupToken }
+                    ) {
+                        preferGroupToken = null
+                    }
                 }
                 subLoading = false
             }
@@ -691,12 +732,27 @@ class MainActivity : HelperBaseComponentActivity() {
         // оказывалось невидимым ровно для тех, у кого со связью хуже всех.
         var showUpdatePrompt by remember { mutableStateOf(false) }
         LaunchedEffect(foregroundTick) {
+            // Манифест перечитываем и здесь, не чаще раза в шесть часов.
+            // Раньше это делалось только при ХОЛОДНОМ старте — а человек без
+            // Wi-Fi, который приложение не закрывает, до холодного старта не
+            // доходит никогда, и четырнадцатидневный отсчёт до загрузки по
+            // мобильному у него не начинался вовсе.
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    UpdatePrefetcher.checkIfDue(this@MainActivity)
+                }
+            }
+            // Разрешение на SmartDesk могло вернуться после случайного отказа
+            // сервера — служба связи сама об этом не узнает, её эффект висит
+            // на значении из профиля, которое не менялось. Старт идемпотентен.
+            if (VpnkaAccount.smartDeskAllowed()) {
+                com.v2ray.ang.service.VpnkaLinkService.start(this@MainActivity)
+            }
             val staged = ApkUpdateInstaller.readyUpdate(this@MainActivity)
             stagedUpdate = staged
             if (staged != null) {
                 updateVersion = staged.first
                 if (ApkUpdateInstaller.promptDue(staged.first)) {
-                    ApkUpdateInstaller.markPrompted(staged.first)
                     showUpdatePrompt = true
                 }
             }
@@ -842,7 +898,10 @@ class MainActivity : HelperBaseComponentActivity() {
             if (showUpdatePrompt) {
                 val allowed = ApkUpdateInstaller.canInstall(this@MainActivity)
                 AlertDialog(
-                    onDismissRequest = { showUpdatePrompt = false },
+                    onDismissRequest = {
+                        ApkUpdateInstaller.markPrompted(version)
+                        showUpdatePrompt = false
+                    },
                     title = { Text("Обновление $version готово") },
                     text = {
                         Text(
@@ -867,10 +926,17 @@ class MainActivity : HelperBaseComponentActivity() {
                         TextButton(onClick = {
                             showUpdatePrompt = false
                             if (allowed) {
+                                ApkUpdateInstaller.markPrompted(version)
                                 ApkUpdateInstaller.promptInstall(
                                     this@MainActivity, apk
                                 )
                             } else {
+                                // Пометку «уже предлагали» здесь НЕ ставим:
+                                // человек уходит выдавать разрешение и через
+                                // несколько секунд вернётся. С пометкой его
+                                // встречала бы получасовая тишина — то есть
+                                // шаг «спросить заранее» приводил ровно к
+                                // тому провалу, который мы им и убирали.
                                 startActivity(
                                     ApkUpdateInstaller.installPermissionIntent(
                                         this@MainActivity
@@ -880,7 +946,10 @@ class MainActivity : HelperBaseComponentActivity() {
                         }) { Text(if (allowed) "Установить" else "Разрешить") }
                     },
                     dismissButton = {
-                        TextButton(onClick = { showUpdatePrompt = false }) {
+                        TextButton(onClick = {
+                            ApkUpdateInstaller.markPrompted(version)
+                            showUpdatePrompt = false
+                        }) {
                             Text("Позже")
                         }
                     },
@@ -1325,7 +1394,8 @@ class MainActivity : HelperBaseComponentActivity() {
                                     // 27-й — и новость никто не услышал.
                                     // Настоящая проверка идёт в onResume.
                                     MmkvManager.encodeSettings(
-                                        KEY_PENDING_PAYMENT, pid.toString()
+                                        KEY_PENDING_PAYMENT,
+                                        "$pid:${System.currentTimeMillis()}",
                                     )
                                     lifecycleScope.launch {
                                         val deadline = System.currentTimeMillis() +
@@ -1336,14 +1406,21 @@ class MainActivity : HelperBaseComponentActivity() {
                                             if (st.state == "settled" &&
                                                 st.groupToken != null
                                             ) {
-                                                MmkvManager.encodeSettings(
-                                                    KEY_PENDING_PAYMENT, ""
-                                                )
+                                                clearPendingPayment(pid)
                                                 toast("Оплачено — подписка активна")
                                                 preferGroupToken = st.groupToken
                                                 selectNewestOnSync = true
                                                 subReload++
                                                 showShop = false
+                                                break
+                                            }
+                                            // Счёт закрыт без денег — ждать
+                                            // нечего. Без этой ветки цикл
+                                            // добивал все двадцать минут,
+                                            // до четырёхсот запросов по
+                                            // заведомо мёртвому счёту.
+                                            if (st.state == "dead") {
+                                                clearPendingPayment(pid)
                                                 break
                                             }
                                         }

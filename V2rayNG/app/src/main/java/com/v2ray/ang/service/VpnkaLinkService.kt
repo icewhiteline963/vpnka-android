@@ -74,7 +74,13 @@ class VpnkaLinkService : Service() {
         // calls the same thing on its own tick, and they share one socket.
         scope.launch {
             while (true) {
-                if (!wanted()) {
+                // Разговор рвать нельзя. disconnectWs обнуляет и сам сокет,
+                // и приёмник событий, а поднять его обратно теперь нельзя —
+                // connectWs тоже за гейтом. Дожидаемся конца звонка.
+                val busy = CallManager.phase == CallManager.Phase.ACTIVE ||
+                    CallManager.phase == CallManager.Phase.OUTGOING ||
+                    CallManager.phase == CallManager.Phase.INCOMING
+                if (!wanted() && !busy) {
                     runCatching { Messenger.disconnectWs() }
                     // Токен пропал или SmartDesk отключили — уходим сами.
                     // Служба переживает и то и другое: система поднимает её

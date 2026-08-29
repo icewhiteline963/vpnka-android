@@ -45,6 +45,27 @@ object UpdatePrefetcher {
      */
     private const val METERED_FALLBACK_DAYS = 14L
 
+    /** Когда последний раз перечитывали манифест с переднего плана. */
+    private const val KEY_CHECKED_AT = "vpnka_update_checked_at"
+    private const val CHECK_EVERY_MS = 6L * 60 * 60 * 1000
+
+    /**
+     * Перечитать манифест, если давно не читали.
+     *
+     * Зовётся с каждого выхода приложения на экран. Раньше проверка жила
+     * только в холодном старте, и до неё не доходил тот, кто приложение не
+     * закрывает, — а это ровно тот человек, ради которого делался запасной
+     * ход с мобильным трафиком.
+     */
+    suspend fun checkIfDue(context: Context) {
+        val last = MmkvManager.decodeSettingsString(KEY_CHECKED_AT)?.toLongOrNull() ?: 0L
+        if (System.currentTimeMillis() - last < CHECK_EVERY_MS) return
+        MmkvManager.encodeSettings(KEY_CHECKED_AT, System.currentTimeMillis().toString())
+        val check = UpdateCheckerManager.checkForUpdate(includePreRelease = false)
+        val version = check.latestVersion
+        if (check.hasUpdate && version != null) noteAvailable(context, version)
+    }
+
     /**
      * Schedule the background check. Idempotent — safe to call on every
      * launch, KEEP leaves an already-scheduled run alone.
@@ -162,10 +183,18 @@ object UpdatePrefetcher {
                 LogUtil.i(AppConfig.TAG, "Update $version staged for install")
                 Result.success()
             } catch (e: Exception) {
-                // Retry rather than fail: the usual cause is the mirror being
-                // briefly unreachable, and WorkManager will back off for us.
                 LogUtil.w(AppConfig.TAG, "Update prefetch failed: ${e.message}")
-                Result.retry()
+                // Повтор — но не бесконечный. Обрыв крупной передачи у нас
+                // штатный (РФ-канал режет), а после четырнадцати дней
+                // ожидания задача идёт уже по МОБИЛЬНОМУ: каждая попытка до
+                // 43 МБ чужого трафика, и WorkManager докидывает их сам.
+                // Пять попыток, дальше сдаёмся до следующего суточного круга.
+                if (runAttemptCount >= 5) {
+                    LogUtil.w(AppConfig.TAG, "Update prefetch: сдаёмся до следующего круга")
+                    Result.failure()
+                } else {
+                    Result.retry()
+                }
             }
         }
     }

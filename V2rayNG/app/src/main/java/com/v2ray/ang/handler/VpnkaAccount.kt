@@ -765,6 +765,12 @@ object VpnkaAccount {
                 ?: return@withContext pending
             try {
                 http().newCall(req).execute().use { resp ->
+                    // 404 — счёт не наш. Так отвечает сервер, когда токен
+                    // устройства указывает уже на ДРУГОГО клиента: человек
+                    // купил картой на анонимной оболочке, потом вошёл по коду
+                    // из бота. Считать это за «ещё платят» значит опрашивать
+                    // сервер вечно, при каждом открытии приложения.
+                    if (resp.code == 404) return@use PaymentState("dead")
                     if (!resp.isSuccessful) return@use pending
                     val obj = JsonUtil.fromJsonSafe(
                         resp.body?.string().orEmpty(),
