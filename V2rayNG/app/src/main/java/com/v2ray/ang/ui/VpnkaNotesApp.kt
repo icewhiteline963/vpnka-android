@@ -25,6 +25,8 @@ import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -62,6 +64,15 @@ fun VpnkaNotesApp(syncTick: Int, onChanged: () -> Unit) {
     var creating by remember { mutableStateOf(false) }
 
     fun reload() { notes = SmartDeskStore.notes().sortedByDescending { it.updatedAt }; onChanged() }
+
+    // «Назад» из редактора возвращает к списку, а не выбрасывает из заметок.
+    SmartDeskBackHandler {
+        when {
+            editing != null -> { editing = null; true }
+            creating -> { creating = false; true }
+            else -> false
+        }
+    }
 
     editing?.let { note ->
         NoteEditor(
@@ -217,6 +228,26 @@ private fun NoteEditor(
 private fun TextNoteBody(note: SmartDeskStore.Note, title: String, onSave: (SmartDeskStore.Note) -> Unit) {
     var tfv by remember(note.id) { mutableStateOf(TextFieldValue(note.body, TextRange(note.body.length))) }
     var spans by remember(note.id) { mutableStateOf(note.spans) }
+
+    // Сохраняем при УХОДЕ, а не только по кнопке «Готово».
+    //
+    // Раньше «назад» — и системная, и «‹» в шапке — молча стирала
+    // написанное. Человек, который просто вышел из заметки, терял её: он не
+    // сделал ничего необычного, а текста больше нет.
+    val latest by rememberUpdatedState(Triple(title, tfv.text, spans))
+    DisposableEffect(note.id) {
+        onDispose {
+            val (t, body, sp) = latest
+            if (t != note.title || body != note.body || sp != note.spans) {
+                onSave(
+                    note.copy(
+                        title = t, kind = "text", body = body, spans = sp,
+                        updatedAt = System.currentTimeMillis(),
+                    )
+                )
+            }
+        }
+    }
 
     fun toggle(style: String) {
         val sel = tfv.selection

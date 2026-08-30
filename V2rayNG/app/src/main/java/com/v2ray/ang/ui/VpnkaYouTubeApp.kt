@@ -168,6 +168,17 @@ fun YouTubeApp() {
         Toast.makeText(context, "В загрузках: ${pl.videos.size}", Toast.LENGTH_SHORT).show()
     }
 
+    // «Назад» внутри приложения: сначала закрываем открытое, и только когда
+    // закрывать нечего — отдаём столу, чтобы он закрыл YouTube.
+    SmartDeskBackHandler {
+        when {
+            playing != null -> { playing = null; true }
+            openPl != null -> { openPl = null; true }
+            tab != 0 -> { tab = 0; true }
+            else -> false
+        }
+    }
+
     // Плеер поверх списка — но ПОСЛЕ объявления всего состояния.
     //
     // Раньше здесь стоял ранний `return`, и вкладка, открытый плейлист и
@@ -981,6 +992,12 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
     // Система уменьшает всю активность целиком, поэтому без этой ветки в
     // окошко 16:9 попадали шапка «‹ YouTube», заголовок и лента кнопок —
     // нечитаемая каша вместо картинки. Кнопка обещала одно, давала другое.
+    // Из полноэкранного просмотра «назад» должна выходить в обычный вид, а
+    // не выбрасывать на рабочий стол.
+    SmartDeskBackHandler {
+        if (fullscreen) { fullscreen = false; true } else false
+    }
+
     val inPip = (context as? MainActivity)?.inPip == true
     LaunchedEffect(inPip) { playerView.useController = !inPip }
 

@@ -290,7 +290,14 @@ fun VpnkaSmartDeskScreen(
                 showShade -> { showShade = false; true }
                 showControl -> { showControl = false; true }
                 showSettings -> { showSettings = false; true }
-                openApp != null -> { openApp = null; deskTick++; true }
+                // Сначала спрашиваем само приложение: браузер вернётся на
+                // предыдущую страницу, заметки закроют редактор с
+                // сохранением, мессенджер — вернётся к списку чатов. И
+                // только если внутри идти некуда — закрываем приложение.
+                openApp != null -> {
+                    if (SmartDeskBackStack.handle()) true
+                    else { openApp = null; deskTick++; true }
+                }
                 else -> false
             }
         }

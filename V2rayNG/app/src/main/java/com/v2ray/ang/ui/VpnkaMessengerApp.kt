@@ -119,6 +119,19 @@ fun VpnkaMessengerApp() {
     val scope = rememberCoroutineScope()
     val appCtx = LocalContext.current.applicationContext
 
+    // «Назад» из чата возвращает к списку чатов, а не закрывает мессенджер.
+    // Три уровня вложенности — список, чат, канал — и ни один раньше не
+    // участвовал в системном жесте.
+    SmartDeskBackHandler {
+        when {
+            showCreate -> { showCreate = false; true }
+            openChannel != null -> { openChannel = null; true }
+            openId != null -> { openId = null; true }
+            tab != MsgTab.CHATS -> { tab = MsgTab.CHATS; true }
+            else -> false
+        }
+    }
+
     // Opening the messenger is also when we make sure the background link is
     // up: signing in mid-session would otherwise leave it waiting for the next
     // cold start. No-op when it is already running or switched off.

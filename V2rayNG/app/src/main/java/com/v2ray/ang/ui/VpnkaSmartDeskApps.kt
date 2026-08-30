@@ -1048,9 +1048,25 @@ private fun BrowserApp() {
         runCatching { t.webView.loadUrl("about:blank"); t.webView.onPause() }
     }
 
+    // «Назад» в браузере — это ПРЕДЫДУЩАЯ СТРАНИЦА.
+    //
+    // Раньше самый частый жест на Android выбрасывал на рабочий стол, да ещё
+    // и уносил все вкладки: ниже они принудительно перезагружались. Пять
+    // открытых вкладок исчезали от одного случайного движения. А переход по
+    // истории лежал в меню «⋮» — самое частое действие стоило двух нажатий.
+    SmartDeskBackHandler {
+        when {
+            showTabs -> { showTabs = false; true }
+            menuOpen -> { menuOpen = false; true }
+            editing -> { editing = false; true }
+            active.canBack.value -> { runCatching { active.webView.goBack() }; true }
+            else -> false
+        }
+    }
+
     // Leaving the browser: pause every tab so nothing keeps running after exit.
     DisposableEffect(Unit) {
-        onDispose { tabs.forEach { runCatching { it.webView.onPause(); it.webView.loadUrl("about:blank") } } }
+        onDispose { tabs.forEach { runCatching { it.webView.onPause() } } }
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
