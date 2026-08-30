@@ -156,4 +156,125 @@ class VpnkaLogicTest {
         assertTrue(VpnkaLogic.pendingIsOurs(rec, 61))
         assertFalse(VpnkaLogic.pendingIsOurs(rec, 60))
     }
+
+    // ---- Синхронизация подписок -------------------------------------
+
+    private val TRIAL = "https://get.vpnka.io/qr/app"
+    private val PREFIX = "https://get.vpnka.io/sub/"
+    private fun url(t: String) = "https://get.vpnka.io/sub/g/$t"
+    private fun sub(g: String, u: String) = VpnkaLogic.SubEntry(g, u)
+
+    @Test
+    fun `купленная подписка выбирается, даже если она не самая долгая`() {
+        // Ровно тот баг, ради которого всё делалось: у владельца годовой
+        // тариф, купленный сверх него месяц долгоживущим не станет никогда,
+        // и покупка выглядела несостоявшейся.
+        val plan = VpnkaLogic.syncPlan(
+            existing = listOf(sub("g-god", url("god"))),
+            wanted = listOf(url("god") to "🦁 Год", url("mes") to "🚀 Месяц"),
+            trialUrl = TRIAL, ourPrefix = PREFIX,
+            selectedGuid = "g-god", preferNewest = true,
+            preferUrl = url("mes"),
+        )
+        assertEquals(url("mes"), plan.selectUrl)
+    }
+
+    @Test
+    fun `названной подписки ещё нет — ничего не выбираем`() {
+        // Профиль не успел показать покупку. Сбрасываться на догадку нельзя:
+        // именно так возвращался исходный баг. Пусть решит следующий круг.
+        val plan = VpnkaLogic.syncPlan(
+            existing = listOf(sub("g-god", url("god"))),
+            wanted = listOf(url("god") to "🦁 Год"),
+            trialUrl = TRIAL, ourPrefix = PREFIX,
+            selectedGuid = "g-god", preferNewest = true,
+            preferUrl = url("новая-которой-нет"),
+        )
+        assertNull(plan.selectUrl)
+    }
+
+    @Test
+    fun `без подсказки берём первый — вызывающий сортирует по остатку дней`() {
+        val plan = VpnkaLogic.syncPlan(
+            existing = emptyList(),
+            wanted = listOf(url("a") to "A", url("b") to "B"),
+            trialUrl = TRIAL, ourPrefix = PREFIX,
+            selectedGuid = null, preferNewest = false, preferUrl = null,
+        )
+        assertEquals(url("a"), plan.selectUrl)
+    }
+
+    @Test
+    fun `живой выбор не трогаем без нужды`() {
+        // Человек выбрал сервер сам — переключать его на каждом обновлении
+        // профиля значит спорить с ним.
+        val plan = VpnkaLogic.syncPlan(
+            existing = listOf(sub("g-a", url("a")), sub("g-b", url("b"))),
+            wanted = listOf(url("a") to "A", url("b") to "B"),
+            trialUrl = TRIAL, ourPrefix = PREFIX,
+            selectedGuid = "g-b", preferNewest = false, preferUrl = null,
+        )
+        assertNull(plan.selectUrl)
+    }
+
+    @Test
+    fun `шипованный триал убирается`() {
+        val plan = VpnkaLogic.syncPlan(
+            existing = listOf(sub("g-trial", TRIAL), sub("g-a", url("a"))),
+            wanted = listOf(url("a") to "A"),
+            trialUrl = TRIAL, ourPrefix = PREFIX,
+            selectedGuid = "g-a", preferNewest = false, preferUrl = null,
+        )
+        assertEquals(listOf("g-trial"), plan.remove)
+    }
+
+    @Test
+    fun `наша подписка, которой у аккаунта больше нет, убирается`() {
+        val plan = VpnkaLogic.syncPlan(
+            existing = listOf(sub("g-old", url("истёкшая")), sub("g-a", url("a"))),
+            wanted = listOf(url("a") to "A"),
+            trialUrl = TRIAL, ourPrefix = PREFIX,
+            selectedGuid = "g-a", preferNewest = false, preferUrl = null,
+        )
+        assertEquals(listOf("g-old"), plan.remove)
+    }
+
+    @Test
+    fun `чужую подписку не трогаем`() {
+        // Ссылка, добавленная руками с другого адреса, — не наша, чтобы ею
+        // распоряжаться. Удалять её при каждом обновлении профиля значит
+        // молча отбирать у человека то, что он завёл сам.
+        val plan = VpnkaLogic.syncPlan(
+            existing = listOf(sub("g-чужая", "https://example.com/sub"), sub("g-a", url("a"))),
+            wanted = listOf(url("a") to "A"),
+            trialUrl = TRIAL, ourPrefix = PREFIX,
+            selectedGuid = "g-a", preferNewest = false, preferUrl = null,
+        )
+        assertTrue(plan.remove.isEmpty())
+    }
+
+    @Test
+    fun `удалённый выбор заменяется первым`() {
+        // Подписка кончилась и ушла из списка — оставить выбор на ней
+        // значит показать человеку экран без серверов.
+        val plan = VpnkaLogic.syncPlan(
+            existing = listOf(sub("g-old", url("истёкшая"))),
+            wanted = listOf(url("a") to "A"),
+            trialUrl = TRIAL, ourPrefix = PREFIX,
+            selectedGuid = "g-old", preferNewest = false, preferUrl = null,
+        )
+        assertEquals(url("a"), plan.selectUrl)
+    }
+
+    @Test
+    fun `пустой список ничего не ломает`() {
+        val plan = VpnkaLogic.syncPlan(
+            existing = listOf(sub("g-a", url("a"))),
+            wanted = emptyList(),
+            trialUrl = TRIAL, ourPrefix = PREFIX,
+            selectedGuid = "g-a", preferNewest = true, preferUrl = null,
+        )
+        assertTrue(plan.remove.isEmpty())
+        assertNull(plan.selectUrl)
+    }
 }

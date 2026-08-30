@@ -1039,22 +1039,28 @@ object MmkvManager {
     ): String? {
         if (plans.isEmpty()) return null
 
-        val wanted = plans.associate { (token, label) ->
-            (VPNKA_SUB_PREFIX + token) to label
-        }
-        val existing = decodeSubscriptions()
+        // Решение принимает VpnkaLogic.syncPlan — чистая функция, которую
+        // можно проверить тестом. Здесь остаётся только работа с
+        // хранилищем: прочитать, удалить, записать. Так и задумано —
+        // дважды ошибка сидела именно в РЕШЕНИИ, а не в записи, и оба раза
+        // её нельзя было поймать ничем, кроме глаз.
+        val wanted = plans.map { (token, label) -> (VPNKA_SUB_PREFIX + token) to label }
+        val plan = VpnkaLogic.syncPlan(
+            existing = decodeSubscriptions().map {
+                VpnkaLogic.SubEntry(it.guid, it.subscription.url)
+            },
+            wanted = wanted,
+            trialUrl = VPNKA_TRIAL_SUB_URL,
+            ourPrefix = VPNKA_SUB_MATCH,
+            selectedGuid = decodeSettingsString(CACHE_SUBSCRIPTION_ID),
+            preferNewest = preferNewest,
+            preferUrl = preferToken?.let { VPNKA_SUB_PREFIX + it },
+        )
 
-        // Drop what the account no longer has, plus the shipped trial.
-        existing
-            .filter {
-                val url = it.subscription.url
-                url == VPNKA_TRIAL_SUB_URL ||
-                    (url.startsWith(VPNKA_SUB_MATCH) && url !in wanted)
-            }
-            .forEach { removeSubscription(it.guid) }
+        plan.remove.forEach { removeSubscription(it) }
 
-        var firstGuid: String? = null
-        for ((url, label) in wanted) {
+        val guidByUrl = LinkedHashMap<String, String>()
+        for ((url, label) in plan.upsert) {
             val already = decodeSubscriptions().firstOrNull { it.subscription.url == url }
             val guid = already?.guid ?: Utils.getUuid()
             encodeSubscription(
@@ -1066,40 +1072,12 @@ object MmkvManager {
                     autoUpdate = true,
                 ),
             )
-            if (firstGuid == null) firstGuid = guid
+            guidByUrl[url] = guid
         }
 
-        // Keep the user's choice if it still exists; otherwise fall to the
-        // first plan, which the caller orders by expiry so it's the longest-
-        // lived one rather than an arbitrary pick.
-        val selected = decodeSettingsString(CACHE_SUBSCRIPTION_ID)
-        val stillValid = selected != null &&
-            decodeSubscriptions().any { it.guid == selected }
-        // preferToken: сервер назвал подписку, которую породила оплата.
-        // Это точный ответ, и он бьёт любую догадку — включая догадку
-        // «самая долгоживущая». Она была неверна ровно в том случае, ради
-        // которого всё и делалось: у владельца годового тарифа купленный
-        // сверх него месяц не выбирался никогда, и покупка выглядела как
-        // будто не прошла.
-        if (preferToken != null) {
-            val url = VPNKA_SUB_PREFIX + preferToken
-            val target = decodeSubscriptions().firstOrNull { it.subscription.url == url }
-            if (target != null) {
-                encodeSettings(CACHE_SUBSCRIPTION_ID, target.guid)
-                return target.guid
-            }
-            // Токен есть, а группы под него нет — профиль ещё не догнал
-            // выдачу. Падаем на общий путь ниже, следующий круг подхватит.
-        }
-
-        // preferNewest: just claimed a free month or bought a plan — activate
-        // the newest (longest-lived, = firstGuid) even if the old choice is
-        // still valid, so the new subscription is the one carrying traffic.
-        if ((preferNewest || !stillValid) && firstGuid != null) {
-            encodeSettings(CACHE_SUBSCRIPTION_ID, firstGuid)
-            return firstGuid
-        }
-        return null
+        val guid = plan.selectUrl?.let { guidByUrl[it] } ?: return null
+        encodeSettings(CACHE_SUBSCRIPTION_ID, guid)
+        return guid
     }
 
     /** The subscription groups belonging to us, for the home picker. */

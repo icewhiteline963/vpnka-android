@@ -88,6 +88,77 @@ object VpnkaLogic {
         }
     }
 
+
+    // ---- Синхронизация подписок -------------------------------------
+
+    /** Запись в списке подписок: чем её опознать и что в ней лежит. */
+    data class SubEntry(val guid: String, val url: String)
+
+    /**
+     * Что сделать со списком подписок.
+     *
+     * @param remove    какие записи удалить (по guid)
+     * @param upsert    какие адреса должны существовать, по порядку показа
+     * @param selectUrl какой адрес сделать активным; `null` — оставить как есть
+     */
+    data class SyncPlan(
+        val remove: List<String>,
+        val upsert: List<Pair<String, String>>,
+        val selectUrl: String?,
+    )
+
+    /**
+     * Решение о синхронизации подписок — без хранилища.
+     *
+     * Это самое дорогое место приложения: именно здесь выбирается, какая
+     * подписка станет активной после покупки. Ошибка тут не роняет
+     * ничего — она просто оставляет человека на старом плане, и покупка
+     * выглядит несостоявшейся. Так и было дважды: сначала выбиралась
+     * «самая долгоживущая» вместо купленной, потом точный ответ сервера
+     * выбрасывался при первой же рассинхронизации.
+     *
+     * @param wanted    адреса и подписи по порядку; ПЕРВЫЙ считается
+     *                  запасным выбором (вызывающий сортирует по остатку дней)
+     * @param preferUrl адрес, названный сервером как купленный, — бьёт любые
+     *                  догадки
+     * @param preferNewest активировать первый, даже если текущий выбор жив
+     */
+    fun syncPlan(
+        existing: List<SubEntry>,
+        wanted: List<Pair<String, String>>,
+        trialUrl: String,
+        ourPrefix: String,
+        selectedGuid: String?,
+        preferNewest: Boolean,
+        preferUrl: String?,
+    ): SyncPlan {
+        if (wanted.isEmpty()) return SyncPlan(emptyList(), emptyList(), null)
+
+        val wantedUrls = wanted.map { it.first }.toSet()
+        // Убираем шипованный триал и наши подписки, которых у аккаунта уже
+        // нет. Чужие записи (добавленные вручную не по нашему адресу) не
+        // трогаем — они не наши, чтобы ими распоряжаться.
+        val remove = existing
+            .filter { it.url == trialUrl || (it.url.startsWith(ourPrefix) && it.url !in wantedUrls) }
+            .map { it.guid }
+
+        // Жив ли текущий выбор ПОСЛЕ уборки: удалённая запись выбором быть
+        // не может, а уцелевшая — может, даже если её нет в `wanted`
+        // (например, подписка, добавленная вручную).
+        val survives = existing.any { it.guid == selectedGuid && it.guid !in remove }
+
+        val selectUrl = when {
+            // Точный ответ сервера. Если названной подписки в списке ещё
+            // нет — НЕ выбираем ничего и не сбрасываем на догадку: пусть
+            // решение примет следующий круг, когда профиль догонит.
+            preferUrl != null && preferUrl in wantedUrls -> preferUrl
+            preferUrl != null -> null
+            preferNewest || !survives -> wanted.first().first
+            else -> null
+        }
+        return SyncPlan(remove = remove, upsert = wanted, selectUrl = selectUrl)
+    }
+
     // ---- Незакрытый счёт --------------------------------------------
 
     /** Как счёт хранится на диске: «номер:когда_заведён». */
