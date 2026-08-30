@@ -49,6 +49,10 @@
          Asking is all we can do — the user grants it, and can revoke it. -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Фоновое воспроизведение YouTube в SmartDesk. С Android 14 у медийной
+         службы должно быть СВОЁ разрешение: specialUse для неё не годится, и
+         система убивает такую службу при уходе с экрана. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"
         tools:ignore="ForegroundServicesPolicy" />
     <uses-permission
@@ -90,7 +94,8 @@
             android:name=".ui.MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
-            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|screenSize|smallestScreenSize"
+            android:supportsPictureInPicture="true"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -309,6 +314,19 @@
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="messenger_call_signaling" />
+        </service>
+
+        <!-- Держит плеер YouTube, пока экран закрыт. Плеер обязан жить ЗДЕСЬ,
+             а не в Compose-экране: экран умирает при сворачивании, и вместе с
+             ним умирала музыка. Управление приходит с экрана блокировки и с
+             наушников через MediaSession. -->
+        <service
+            android:name=".service.VpnkaMediaService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
         </service>
 
         <service

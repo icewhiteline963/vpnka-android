@@ -19,14 +19,14 @@ android {
         applicationId = "io.vpnka.android"
         minSdk = 24
         targetSdk = 37
-        versionCode = 850
+        versionCode = 851
         // Upstream's version plus a fourth segment for our own builds, so we
         // can ship a fix without waiting for a v2rayNG release. Digits and
         // dots only: UpdateCheckerManager.compareVersions calls toInt() on
         // every segment, so a tag like "2.2.6-vpnka1" would throw and take
         // the whole update check down with it.
         // On merging upstream: take their number, re-append our segment.
-        versionName = "2.9.67.0"
+        versionName = "2.9.68.0"
 
         // Ни одной x86-загрузки за всю историю логов (это эмуляторы и
         // Chromebook, не телефоны). abiFilters выкидывает их нативные
@@ -196,6 +196,8 @@ dependencies {
     implementation(libs.media3.transformer)
     implementation(libs.media3.effect)
     implementation(libs.media3.common)
+    // Фоновое воспроизведение: плеер живёт в службе, а не в экране.
+    implementation(libs.media3.session)
     // WebRTC (maintained getstream fork; package stays org.webrtc.*) for
     // end-to-end voice calls in the messenger.
     implementation(libs.stream.webrtc.android)

@@ -52,6 +52,8 @@ import androidx.core.view.WindowInsetsControllerCompat
 import android.Manifest
 import android.app.Activity
 import android.content.Context
+import android.os.Bundle
+import android.content.ComponentName
 import android.content.pm.ActivityInfo
 import android.content.pm.PackageManager
 import android.os.Build
@@ -64,6 +66,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
+import androidx.media3.common.C
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
@@ -73,6 +77,8 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.media3.ui.PlayerView
+import androidx.media3.session.SessionToken
+import androidx.media3.session.MediaController
 import com.v2ray.ang.handler.YouTubeService
 import com.v2ray.ang.handler.YouTubeFavorites
 import com.v2ray.ang.handler.YouTubePlaylists
@@ -80,6 +86,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.foundation.shape.CircleShape
 import com.v2ray.ang.handler.SettingsManager
+import com.v2ray.ang.service.VpnkaMediaService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -627,33 +634,74 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
     // Mutable so the quality picker can swap the stream in place; the player is
     // keyed on the current stream URL, so choosing a quality rebuilds it.
     var pbState by remember(pb.pageUrl) { mutableStateOf(pb) }
-    val player = remember(pbState.streamUrl, pbState.audioUrl) {
-        // Locals: pbState is a delegated property, so its fields can't be
-        // smart-cast to non-null after a `!= null` check.
-        val streamUrl = pbState.streamUrl
-        val audioUrl = pbState.audioUrl
-        val ok = OkHttpClient.Builder()
-            .proxy(Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", port)))
-            .build()
-        val dsf = OkHttpDataSource.Factory(ok)
-        val video = ProgressiveMediaSource.Factory(dsf).createMediaSource(MediaItem.fromUri(streamUrl))
-        // Adaptive: video-only track + separate audio, merged for HD playback.
-        val src = if (audioUrl != null) {
-            val audio = ProgressiveMediaSource.Factory(dsf).createMediaSource(MediaItem.fromUri(audioUrl))
-            MergingMediaSource(video, audio)
-        } else {
-            video
-        }
-        ExoPlayer.Builder(context).build().apply {
-            setMediaSource(src)
-            prepare()
-            playWhenReady = true
+    // Плеер живёт в СЛУЖБЕ, а экран лишь подключается к нему контроллером.
+    // Раньше ExoPlayer создавался прямо здесь и умирал вместе с экраном:
+    // свернул приложение — звук кончился. Ровно за это люди ставили Vanced.
+    var player by remember { mutableStateOf<MediaController?>(null) }
+    DisposableEffect(Unit) {
+        val token = SessionToken(
+            context,
+            ComponentName(context, VpnkaMediaService::class.java),
+        )
+        val future = MediaController.Builder(context, token).buildAsync()
+        future.addListener(
+            { player = runCatching { future.get() }.getOrNull() },
+            ContextCompat.getMainExecutor(context),
+        )
+        onDispose {
+            // Отпускаем ТОЛЬКО контроллер: плеер остаётся в службе и играет
+            // дальше. В этом и смысл — уход с экрана больше не тишина.
+            MediaController.releaseFuture(future)
+            player = null
         }
     }
-    DisposableEffect(player) { onDispose { player.release() } }
+
+    // Новый адрес потока (в том числе после смены качества) отдаём службе.
+    // Адрес звуковой дорожки едет в extras: это Bundle, он переживает
+    // передачу между процессами, а обычный tag — нет.
+    LaunchedEffect(player, pbState.streamUrl, pbState.audioUrl) {
+        val c = player ?: return@LaunchedEffect
+        val extras = Bundle().apply {
+            pbState.audioUrl?.let { putString(VpnkaMediaService.EXTRA_AUDIO_URL, it) }
+        }
+        val item = MediaItem.Builder()
+            .setUri(pbState.streamUrl)
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(pbState.title)
+                    .build()
+            )
+            .setRequestMetadata(
+                MediaItem.RequestMetadata.Builder().setExtras(extras).build()
+            )
+            .build()
+        c.setMediaItem(item)
+        c.prepare()
+        c.playWhenReady = true
+    }
     var playQual by remember { mutableStateOf<List<YouTubeService.DownloadOption>?>(null) }
 
+    // Картинка-в-картинке: окно системы поверх других приложений. Плеер уже
+    // в службе, поэтому переживает сворачивание сам — здесь только просьба
+    // к системе показать маленькое окно.
+    val enterPip: () -> Unit = {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val act = context as? android.app.Activity
+            runCatching {
+                act?.enterPictureInPictureMode(
+                    android.app.PictureInPictureParams.Builder()
+                        .setAspectRatio(android.util.Rational(16, 9))
+                        .build()
+                )
+            }
+        }
+    }
+
     var fullscreen by remember { mutableStateOf(false) }
+    // «Только звук»: видео-дорожка выключается, и плеер перестаёт её качать.
+    // Это не украшение — трафик идёт через НАШИ ноды с их лимитами, так что
+    // экономия здесь наша прямая, а не только пользовательская.
+    var audioOnly by remember { mutableStateOf(false) }
     var qualities by remember { mutableStateOf<List<YouTubeService.DownloadOption>?>(null) }
     var subs by remember { mutableStateOf<List<YouTubeService.SubtitleOption>?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -678,6 +726,14 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
     // The PlayerView is a stable single instance; when a quality change rebuilds
     // `player`, re-point the view at the new one (else it shows the released one).
     LaunchedEffect(player) { playerView.player = player }
+
+    LaunchedEffect(player, audioOnly) {
+        val c = player ?: return@LaunchedEffect
+        c.trackSelectionParameters = c.trackSelectionParameters
+            .buildUpon()
+            .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, audioOnly)
+            .build()
+    }
 
     fun openPlayQuality() {
         busy = true
@@ -814,6 +870,14 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                     .padding(horizontal = 14.dp, vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                YtActionChip(if (audioOnly) "🎧  Только звук ✓" else "🎧  Только звук", enabled = true) {
+                    audioOnly = !audioOnly
+                }
+                Spacer(Modifier.width(8.dp))
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    YtActionChip("⧉  В окне", enabled = true) { enterPip() }
+                    Spacer(Modifier.width(8.dp))
+                }
                 YtActionChip(if (busy) "…" else "⚙  Качество", enabled = !busy) { openPlayQuality() }
                 Spacer(Modifier.width(8.dp))
                 YtActionChip("⬇  Видео", enabled = !busy) { openQualities() }
