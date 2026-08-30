@@ -3,6 +3,8 @@ package com.v2ray.ang.service
 import android.app.PendingIntent
 import android.content.Intent
 import androidx.media3.common.MediaItem
+import androidx.media3.common.C
+import androidx.media3.common.AudioAttributes
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
@@ -54,9 +56,22 @@ class VpnkaMediaService : MediaSessionService() {
 
         val player = ExoPlayer.Builder(this)
             .setMediaSourceFactory(MergingSourceFactory(dataSource))
-            // Пауза при звонке или чужом воспроизведении — иначе два звука
-            // играют поверх друг друга.
+            // Пауза при выдёргивании наушников.
             .setHandleAudioBecomingNoisy(true)
+            // И — отдельно — уступать звук чужим.
+            //
+            // Прежний комментарий здесь утверждал, что предыдущая строка даёт
+            // паузу при звонке. Неправда: она реагирует ТОЛЬКО на наушники.
+            // Без управления фокусом наше видео орёт поверх звонка, будильника
+            // и чужой музыки — а с фоновым воспроизведением это стало
+            // ежедневным.
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(C.USAGE_MEDIA)
+                    .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+                    .build(),
+                /* handleAudioFocus = */ true,
+            )
             .build()
 
         // Нажатие на уведомление плеера возвращает в приложение.
@@ -89,6 +104,9 @@ class VpnkaMediaService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        // Служба ушла — строки «сейчас играет» быть не должно, иначе она
+        // предлагает остановить то, чего уже нет.
+        com.v2ray.ang.handler.YouTubeNowPlaying.current = null
         session?.run {
             player.release()
             release()

@@ -66,6 +66,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.common.C
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.util.UnstableApi
@@ -86,6 +87,8 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.foundation.shape.CircleShape
 import com.v2ray.ang.handler.SettingsManager
+import com.v2ray.ang.handler.YouTubeLater
+import com.v2ray.ang.handler.YouTubeNowPlaying
 import com.v2ray.ang.service.VpnkaMediaService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -108,11 +111,6 @@ fun YouTubeApp() {
     var resolving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var playing by remember { mutableStateOf<YouTubeService.Playback?>(null) }
-
-    playing?.let { pb ->
-        YouTubePlayerScreen(pb, onBack = { playing = null })
-        return
-    }
 
     fun runSearchFor(q0: String) {
         val q = q0.trim()
@@ -145,6 +143,7 @@ fun YouTubeApp() {
     }
 
     var tab by remember { mutableStateOf(0) } // 0 = поиск, 1 = плейлисты
+    var laterTick by remember { mutableStateOf(0) }
     var plTick by remember { mutableStateOf(0) }
     var openPl by remember { mutableStateOf<String?>(null) }
     var addTo by remember { mutableStateOf<YouTubePlaylists.Item?>(null) }
@@ -169,10 +168,25 @@ fun YouTubeApp() {
         Toast.makeText(context, "В загрузках: ${pl.videos.size}", Toast.LENGTH_SHORT).show()
     }
 
+    // Плеер поверх списка — но ПОСЛЕ объявления всего состояния.
+    //
+    // Раньше здесь стоял ранний `return`, и вкладка, открытый плейлист и
+    // сортировки объявлялись ниже него: пока играл ролик, их группа не
+    // выполнялась и значения терялись. Человек включал трек из плейлиста,
+    // выходил из плеера — и оказывался на вкладке «Поиск» с чужой лентой
+    // англоязычной электроники. Последовательно слушать плейлист было
+    // невозможно.
+    playing?.let { pb ->
+        YouTubePlayerScreen(pb, onBack = { playing = null })
+        return
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp)) {
             var searchSort by remember { mutableStateOf(YtSort.DEFAULT) }
             var plSort by remember { mutableStateOf(YtSort.DEFAULT) }
+
+            NowPlayingBar(onOpen = { pb -> playing = pb })
 
             Row(modifier = Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 YtTabChip("Поиск", tab == 0) { tab = 0 }
@@ -338,7 +352,63 @@ fun YouTubeApp() {
             } else {
                 // tab == 2: downloads
                 val dls = YouTubeDownloads.entries
-                if (dls.isEmpty()) {
+                val later = remember(laterTick) { YouTubeLater.all() }
+
+                // Очередь «скачать позже» — над списком загрузок.
+                //
+                // Отмеченное лежит здесь, пока человек сам не решит качать:
+                // трафик идёт через наши ноды и на мобильном стоит ему денег,
+                // поэтому «взять с собой» и «качать сейчас» — разные решения.
+                if (later.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "Скачать позже · ${later.size}",
+                            fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp,
+                            color = VpnkaColors.TextStrong, modifier = Modifier.weight(1f),
+                        )
+                        DlAction("Скачать всё") {
+                            withStorage {
+                                later.forEach { i ->
+                                    YouTubeDownloads.enqueueVideoByUrl(context, i.url, i.title)
+                                }
+                                YouTubeLater.clear()
+                                laterTick++
+                                Toast.makeText(
+                                    context, "В загрузках: ${later.size}", Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                        }
+                        Spacer(Modifier.width(6.dp))
+                        DlAction("Очистить") { YouTubeLater.clear(); laterTick++ }
+                    }
+                    later.forEach { i ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                i.title, fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp,
+                                color = VpnkaColors.TextMuted, maxLines = 1,
+                                overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                            )
+                            DlAction("⬇") {
+                                withStorage {
+                                    YouTubeDownloads.enqueueVideoByUrl(context, i.url, i.title)
+                                    YouTubeLater.remove(i.url)
+                                    laterTick++
+                                }
+                            }
+                            Spacer(Modifier.width(6.dp))
+                            DlAction("🗑") { YouTubeLater.remove(i.url); laterTick++ }
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
+
+                if (dls.isEmpty() && later.isEmpty()) {
                     CenterBox {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text("⬇", fontSize = 44.sp, color = VpnkaColors.TextMuted)
@@ -351,7 +421,7 @@ fun YouTubeApp() {
                                 textAlign = TextAlign.Center)
                         }
                     }
-                } else {
+                } else if (dls.isNotEmpty()) {
                     LazyColumn(modifier = Modifier.fillMaxSize().padding(top = 6.dp)) {
                         items(dls, key = { it.id }) { e -> DownloadRow(e) }
                     }
@@ -425,6 +495,77 @@ fun YouTubeApp() {
                 },
                 containerColor = VpnkaColors.BgOffCentre,
             )
+        }
+    }
+}
+
+/**
+ * Что играет прямо сейчас — и чем это остановить.
+ *
+ * Плеер переехал в фоновую службу, и выход с экрана перестал быть тишиной.
+ * Но обратного пути не осталось: любой выход оставлял звук идти, а
+ * вернувшись в YouTube, человек видел обычный поиск — ни паузы, ни
+ * продолжения. Единственным способом выключить наш же звук была системная
+ * шторка Android. Получилось «Vanced наоборот»: фон есть, управления нет.
+ */
+@Composable
+private fun NowPlayingBar(onOpen: (YouTubeService.Playback) -> Unit) {
+    val current = YouTubeNowPlaying.current ?: return
+    val context = LocalContext.current
+    var ctl by remember { mutableStateOf<MediaController?>(null) }
+    var playing by remember { mutableStateOf(true) }
+
+    DisposableEffect(Unit) {
+        val token = SessionToken(
+            context,
+            ComponentName(context, VpnkaMediaService::class.java),
+        )
+        val future = MediaController.Builder(context, token).buildAsync()
+        var listener: Player.Listener? = null
+        future.addListener({
+            val c = runCatching { future.get() }.getOrNull()
+            ctl = c
+            if (c != null) {
+                playing = c.isPlaying
+                listener = object : Player.Listener {
+                    override fun onIsPlayingChanged(isPlaying: Boolean) { playing = isPlaying }
+                }.also { c.addListener(it) }
+            }
+        }, ContextCompat.getMainExecutor(context))
+        onDispose {
+            listener?.let { l -> ctl?.removeListener(l) }
+            MediaController.releaseFuture(future)
+            ctl = null
+        }
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(VpnkaColors.CardServer)
+            .clickable { onOpen(current) }
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("♪", fontSize = 16.sp, color = VpnkaColors.Accent)
+        Spacer(Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                "Сейчас играет", fontFamily = VpnkaFonts.manrope600, fontSize = 11.sp,
+                color = VpnkaColors.TextMuted,
+            )
+            Text(
+                current.title, fontFamily = VpnkaFonts.nunito800, fontSize = 13.sp,
+                color = VpnkaColors.TextStrong, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+        }
+        DlAction(if (playing) "⏸" else "▶") {
+            ctl?.let { if (it.isPlaying) it.pause() else it.play() }
+        }
+        Spacer(Modifier.width(6.dp))
+        DlAction("⏹") {
+            ctl?.run { pause(); clearMediaItems() }
+            YouTubeNowPlaying.current = null
         }
     }
 }
@@ -661,6 +802,16 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
     // передачу между процессами, а обычный tag — нет.
     LaunchedEffect(player, pbState.streamUrl, pbState.audioUrl) {
         val c = player ?: return@LaunchedEffect
+        // Если в службе УЖЕ играет ровно это — не трогаем.
+        //
+        // Иначе каждый вход на экран сбрасывал позицию и запускал заново:
+        // вышел на 40-й минуте лекции, вернулся — снова ноль, да ещё и
+        // играет, хотя ставил на паузу. Именно ради этого плеер и переехал
+        // в службу, и было бы глупо ломать это здесь.
+        val already = c.currentMediaItem
+            ?.localConfiguration?.uri?.toString() == pbState.streamUrl
+        if (already) return@LaunchedEffect
+
         val extras = Bundle().apply {
             pbState.audioUrl?.let { putString(VpnkaMediaService.EXTRA_AUDIO_URL, it) }
         }
@@ -678,6 +829,7 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
         c.setMediaItem(item)
         c.prepare()
         c.playWhenReady = true
+        YouTubeNowPlaying.current = pbState
     }
     var playQual by remember { mutableStateOf<List<YouTubeService.DownloadOption>?>(null) }
 
@@ -702,6 +854,10 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
     // Это не украшение — трафик идёт через НАШИ ноды с их лимитами, так что
     // экономия здесь наша прямая, а не только пользовательская.
     var audioOnly by remember { mutableStateOf(false) }
+    // Отметка «взять с собой» — решение отдельное от «качать сейчас»:
+    // трафик идёт через наши ноды и на мобильном стоит человеку денег.
+    var laterTick by remember { mutableStateOf(0) }
+    val inLater = remember(laterTick, pb.pageUrl) { YouTubeLater.has(pb.pageUrl) }
     var qualities by remember { mutableStateOf<List<YouTubeService.DownloadOption>?>(null) }
     var subs by remember { mutableStateOf<List<YouTubeService.SubtitleOption>?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -820,7 +976,19 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
         }
     }
 
-    if (fullscreen) {
+    // В маленьком окне поверх других приложений рисуем ТОЛЬКО видео.
+    //
+    // Система уменьшает всю активность целиком, поэтому без этой ветки в
+    // окошко 16:9 попадали шапка «‹ YouTube», заголовок и лента кнопок —
+    // нечитаемая каша вместо картинки. Кнопка обещала одно, давала другое.
+    val inPip = (context as? MainActivity)?.inPip == true
+    LaunchedEffect(inPip) { playerView.useController = !inPip }
+
+    if (inPip) {
+        Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+            AndroidView(factory = attach, modifier = Modifier.fillMaxSize())
+        }
+    } else if (fullscreen) {
         Dialog(
             onDismissRequest = { fullscreen = false },
             properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
@@ -870,6 +1038,20 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                     .padding(horizontal = 14.dp, vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                YtActionChip(
+                    if (inLater) "⏱  В очереди ✓" else "⏱  Скачать позже",
+                    enabled = true,
+                ) {
+                    if (inLater) {
+                        YouTubeLater.remove(pb.pageUrl)
+                        Toast.makeText(context, "Убрано из очереди", Toast.LENGTH_SHORT).show()
+                    } else {
+                        YouTubeLater.add(pb.pageUrl, pb.title)
+                        Toast.makeText(context, "Скачаем позже — в «Загрузках»", Toast.LENGTH_SHORT).show()
+                    }
+                    laterTick++
+                }
+                Spacer(Modifier.width(8.dp))
                 YtActionChip(if (audioOnly) "🎧  Только звук ✓" else "🎧  Только звук", enabled = true) {
                     audioOnly = !audioOnly
                 }

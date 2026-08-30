@@ -574,6 +574,24 @@ class MainActivity : HelperBaseComponentActivity() {
 
     /** Пришли по уведомлению об обновлении — паузу показа игнорируем. */
     private var forceUpdatePrompt by mutableStateOf(false)
+
+    /**
+     * Мы в маленьком окне поверх других приложений.
+     *
+     * Система уменьшает ВСЮ активность, а не один плеер. Без этого признака
+     * в окошко 16:9 попадали шапка, заголовок и лента кнопок — кнопка
+     * обещала картинку-в-картинке, а давала уменьшенный снимок интерфейса.
+     */
+    var inPip by mutableStateOf(false)
+        private set
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: android.content.res.Configuration,
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        inPip = isInPictureInPictureMode
+    }
     private var openedPlan by mutableStateOf<VpnkaAccount.Plan?>(null)
 
     /** Set by the post-payment link; consumed on the next composition. */
