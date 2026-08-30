@@ -8,6 +8,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.v2ray.ang.handler.YouTubeService
 import kotlinx.coroutines.CoroutineScope
+import kotlin.coroutines.coroutineContext
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
@@ -21,7 +23,7 @@ import kotlinx.coroutines.sync.withPermit
  * State is lost on process death — the files stay in the public Downloads folder.
  */
 object YouTubeDownloads {
-    enum class State { RUNNING, DONE, FAILED }
+    enum class State { RUNNING, DONE, FAILED, CANCELLED }
 
     class Entry(val id: Long, label: String, val mime: String) {
         var label by mutableStateOf(label)
@@ -31,6 +33,9 @@ object YouTubeDownloads {
         var speed by mutableStateOf(0L)
         var uri by mutableStateOf<Uri?>(null)
         var error by mutableStateOf<String?>(null)
+
+        /** Живая задача — чтобы начатую загрузку можно было прервать. */
+        var job: Job? = null
     }
 
     val entries = mutableStateListOf<Entry>()
@@ -47,22 +52,49 @@ object YouTubeDownloads {
     fun enqueueVideo(context: Context, option: YouTubeService.DownloadOption, title: String) {
         val ctx = context.applicationContext
         val e = add("$title · ${option.label}", option.mime)
-        scope.launch {
+        e.job = scope.launch {
+            val self = coroutineContext[Job]
             gate.withPermit {
                 runCatching {
-                    YouTubeService.download(ctx, option, title) { d, t, s -> e.done = d; e.total = t; e.speed = s }
+                    YouTubeService.download(
+                        ctx, option, title,
+                        isCancelled = { self?.isActive != true },
+                    ) { d, t, s -> e.done = d; e.total = t; e.speed = s }
                 }
                     .onSuccess { e.uri = it; e.state = State.DONE }
-                    .onFailure { e.error = it.message ?: it.javaClass.simpleName; e.state = State.FAILED }
+                    .onFailure { e.state = failureState(it, e) }
             }
         }
+    }
+
+    /**
+     * Отмена — не ошибка.
+     *
+     * Показывать её красным «не удалось» значит врать человеку о том, что
+     * произошло: он сам нажал «отменить».
+     */
+    private fun failureState(t: Throwable, e: Entry): State =
+        if (t is YouTubeService.Cancelled || t is kotlinx.coroutines.CancellationException) {
+            State.CANCELLED
+        } else {
+            e.error = t.message ?: t.javaClass.simpleName
+            State.FAILED
+        }
+
+    /** Прервать начатую загрузку. Времянки чистит сам YouTubeService. */
+    fun cancel(e: Entry) {
+        if (e.state != State.RUNNING) return
+        e.state = State.CANCELLED
+        e.job?.cancel()
+        e.job = null
     }
 
     /** Resolves the best quality for a bare video URL, then downloads it. */
     fun enqueueVideoByUrl(context: Context, url: String, title: String) {
         val ctx = context.applicationContext
         val e = add(title, "video/mp4")
-        scope.launch {
+        e.job = scope.launch {
+            val self = coroutineContext[Job]
             gate.withPermit {
                 val opt = runCatching { YouTubeService.videoStreams(url).firstOrNull() }.getOrNull()
                 if (opt == null) { e.error = "Нет форматов"; e.state = State.FAILED; return@withPermit }
@@ -79,7 +111,7 @@ object YouTubeDownloads {
     fun enqueueSubtitle(context: Context, sub: YouTubeService.SubtitleOption, title: String) {
         val ctx = context.applicationContext
         val e = add("$title · субтитры (${sub.label})", "text/plain")
-        scope.launch {
+        e.job = scope.launch {
             gate.withPermit {
                 runCatching { YouTubeService.downloadSubtitle(ctx, sub, title) }
                     .onSuccess { e.uri = it; e.state = State.DONE }

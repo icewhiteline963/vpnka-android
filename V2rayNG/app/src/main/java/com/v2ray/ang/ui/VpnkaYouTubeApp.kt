@@ -1021,14 +1021,28 @@ private fun DownloadRow(e: YouTubeDownloads.Entry) {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = VpnkaColors.Accent)
                 }
                 Spacer(Modifier.height(4.dp))
-                Text(
-                    buildString {
-                        append(fmtBytes(e.done))
-                        if (e.total > 0) append(" / ${fmtBytes(e.total)}")
-                        if (e.speed > 0) append("  ·  ${fmtBytes(e.speed)}/с")
-                    },
-                    fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp, color = VpnkaColors.TextMuted,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        buildString {
+                            append(fmtBytes(e.done))
+                            if (e.total > 0) append(" / ${fmtBytes(e.total)}")
+                            if (e.speed > 0) append("  ·  ${fmtBytes(e.speed)}/с")
+                        },
+                        fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp,
+                        color = VpnkaColors.TextMuted, modifier = Modifier.weight(1f),
+                    )
+                    // Начатую загрузку надо уметь бросить. Раньше её было
+                    // нечем остановить: файл качался до конца, даже если
+                    // человек передумал, — а качается он через наши ноды.
+                    DlAction("Отменить") { YouTubeDownloads.cancel(e) }
+                }
+            }
+            YouTubeDownloads.State.CANCELLED -> {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Отменено", fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp,
+                        color = VpnkaColors.TextMuted, modifier = Modifier.weight(1f))
+                    DlAction("🗑") { YouTubeDownloads.removeFromList(e) }
+                }
             }
             YouTubeDownloads.State.DONE -> {
                 Row(verticalAlignment = Alignment.CenterVertically) {

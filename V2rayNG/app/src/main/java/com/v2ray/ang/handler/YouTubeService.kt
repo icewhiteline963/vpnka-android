@@ -234,10 +234,17 @@ object YouTubeService {
     /** Saves the chosen quality to public Downloads THROUGH the VPN proxy. For
      *  adaptive options the video-only + audio are downloaded to cache and
      *  remuxed (no re-encode) into one mp4. Blocking — off main. */
+    /**
+     * Загрузку отменил человек — это не ошибка, и показывать её как ошибку
+     * нельзя. Отдельный тип, чтобы вызывающий отличил одно от другого.
+     */
+    class Cancelled : IOException("отменено")
+
     fun download(
         context: Context,
         option: DownloadOption,
         title: String,
+        isCancelled: () -> Boolean = { false },
         onProgress: (done: Long, total: Long, speedBps: Long) -> Unit = { _, _, _ -> },
     ): android.net.Uri {
         ensureInit()
@@ -250,14 +257,14 @@ object YouTubeService {
         val ts = System.currentTimeMillis()
         val tmpV = File(context.cacheDir, "yt_v_$ts.mp4")
         try {
-            downloadTo(client, option.videoUrl, tmpV, onProgress)
+            downloadTo(client, option.videoUrl, tmpV, isCancelled, onProgress)
             return if (option.audioUrl == null) {
                 saveFileToDownloads(context, fileName, option.mime, tmpV)
             } else {
                 val tmpA = File(context.cacheDir, "yt_a_$ts.m4a")
                 val tmpOut = File(context.cacheDir, "yt_out_$ts.mp4")
                 try {
-                    downloadTo(client, option.audioUrl, tmpA, onProgress)
+                    downloadTo(client, option.audioUrl, tmpA, isCancelled, onProgress)
                     remux(tmpV, tmpA, tmpOut)
                     saveFileToDownloads(context, fileName, "video/mp4", tmpOut)
                 } finally {
@@ -273,6 +280,7 @@ object YouTubeService {
         client: OkHttpClient,
         url: String,
         dest: File,
+        isCancelled: () -> Boolean = { false },
         onProgress: (done: Long, total: Long, speedBps: Long) -> Unit = { _, _, _ -> },
     ) {
         val req = okhttp3.Request.Builder().url(url).header("User-Agent", USER_AGENT_DESKTOP).build()
@@ -288,6 +296,11 @@ object YouTubeService {
                 var windowBytes = 0L
                 var speed = 0L
                 while (true) {
+                    // Проверяем отмену на КАЖДОМ куске. Чтение блокирующее, и
+                    // само по себе оно на отмену корутины не отзовётся: без
+                    // этой строки начатую загрузку остановить нечем — она
+                    // качает до конца, даже если человек передумал.
+                    if (isCancelled()) throw Cancelled()
                     val n = input.read(buf)
                     if (n < 0) break
                     out.write(buf, 0, n)
