@@ -157,6 +157,7 @@ import kotlinx.coroutines.flow.StateFlow
 import com.v2ray.ang.handler.UpdateCheckerManager
 import com.v2ray.ang.handler.ApkUpdateInstaller
 import com.v2ray.ang.handler.UpdatePrefetcher
+import com.v2ray.ang.handler.VpnkaLogic
 import com.v2ray.ang.handler.PowerSaveHelper
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
@@ -297,7 +298,7 @@ class MainActivity : HelperBaseComponentActivity() {
      */
     private fun clearPendingPayment(pid: Long) {
         val now = MmkvManager.decodeSettingsString(KEY_PENDING_PAYMENT)
-        if (now.orEmpty().substringBefore(':').toLongOrNull() == pid) {
+        if (VpnkaLogic.pendingIsOurs(now, pid)) {
             MmkvManager.encodeSettings(KEY_PENDING_PAYMENT, "")
         }
     }
@@ -309,13 +310,15 @@ class MainActivity : HelperBaseComponentActivity() {
         super.onResume()
         foregroundTick++
         val stored = MmkvManager.decodeSettingsString(KEY_PENDING_PAYMENT)
-        val pid = stored?.substringBefore(':')?.toLongOrNull() ?: return
+        val pid = VpnkaLogic.pendingId(stored) ?: return
         // Предельный срок жизни ключа. Ответ «ещё платят» мы получаем и когда
         // связи нет, и когда сервер отвечает непонятно, — без крайнего срока
         // такой счёт опрашивался бы вечно, каждые три секунды, при каждом
         // открытии приложения.
-        val bornAt = stored.substringAfter(':', "").toLongOrNull()
-        if (bornAt != null && System.currentTimeMillis() - bornAt > 24 * 60 * 60 * 1000L) {
+        if (VpnkaLogic.pendingExpired(
+                stored, System.currentTimeMillis(), 24 * 60 * 60 * 1000L
+            )
+        ) {
             clearPendingPayment(pid)
             return
         }
@@ -662,17 +665,12 @@ class MainActivity : HelperBaseComponentActivity() {
                 // отличить друг от друга. Различаем датой окончания, но
                 // только когда имя действительно повторяется — у тех, у кого
                 // план один, подпись остаётся прежней.
-                val sameName = live.groupingBy { it.tariff ?: "VPNka" }.eachCount()
-                val plans = live.mapNotNull { plan ->
-                    val token = plan.groupToken ?: return@mapNotNull null
-                    val name = plan.tariff ?: "VPNka"
-                    val parts = plan.expiresAt?.take(10)?.split("-")
-                    val label = if ((sameName[name] ?: 0) > 1 && parts?.size == 3) {
-                        "$name · до ${parts[2]}.${parts[1]}"
-                    } else {
-                        name
-                    }
-                    token to label
+                val labels = VpnkaLogic.planLabels(
+                    live.map { (it.tariff ?: "VPNka") to it.expiresAt }
+                )
+                val plans = live.mapIndexedNotNull { i, plan ->
+                    val token = plan.groupToken ?: return@mapIndexedNotNull null
+                    token to (labels.getOrNull(i) ?: plan.tariff ?: "VPNka")
                 }
                 if (plans.isNotEmpty()) {
                     val switched = MmkvManager.syncSubscriptions(
@@ -1395,7 +1393,9 @@ class MainActivity : HelperBaseComponentActivity() {
                                     // Настоящая проверка идёт в onResume.
                                     MmkvManager.encodeSettings(
                                         KEY_PENDING_PAYMENT,
-                                        "$pid:${System.currentTimeMillis()}",
+                                        VpnkaLogic.formatPending(
+                                            pid, System.currentTimeMillis()
+                                        ),
                                     )
                                     lifecycleScope.launch {
                                         val deadline = System.currentTimeMillis() +

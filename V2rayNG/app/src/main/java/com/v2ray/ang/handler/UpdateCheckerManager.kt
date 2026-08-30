@@ -77,17 +77,12 @@ object UpdateCheckerManager {
         }
     }
 
-    private fun compareVersions(version1: String, version2: String): Int {
-        val v1 = version1.split(".")
-        val v2 = version2.split(".")
-
-        for (i in 0 until maxOf(v1.size, v2.size)) {
-            val num1 = if (i < v1.size) v1[i].toInt() else 0
-            val num2 = if (i < v2.size) v2[i].toInt() else 0
-            if (num1 != num2) return num1 - num2
-        }
-        return 0
-    }
+    // Общий разбор с ApkUpdateInstaller. Здесь был свой, с `toInt()`:
+    // нечисловой кусок в версии («2.9.64.0-rc1») бросал исключение, и
+    // фоновая задача обновления уходила в вечный повтор — после
+    // четырнадцати дней ожидания Wi-Fi ещё и по мобильному трафику.
+    private fun compareVersions(version1: String, version2: String): Int =
+        VpnkaLogic.compareVersions(version1, version2)
 
     private fun getDownloadUrl(release: GitHubRelease, abi: String): String {
         val fDroid = "fdroid"

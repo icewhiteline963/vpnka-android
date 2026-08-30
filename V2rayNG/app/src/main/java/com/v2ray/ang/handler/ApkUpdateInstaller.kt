@@ -89,16 +89,8 @@ object ApkUpdateInstaller {
      * Нечисловые куски считаем нулём, а не роняем разбор: версия приходит с
      * зеркала, и одна опечатка в манифесте не должна валить экран.
      */
-    private fun isNewerThanInstalled(version: String): Boolean {
-        val staged = version.removePrefix("v").split(".")
-        val installed = BuildConfig.VERSION_NAME.split(".")
-        for (i in 0 until maxOf(staged.size, installed.size)) {
-            val a = staged.getOrNull(i)?.toIntOrNull() ?: 0
-            val b = installed.getOrNull(i)?.toIntOrNull() ?: 0
-            if (a != b) return a > b
-        }
-        return false
-    }
+    private fun isNewerThanInstalled(version: String): Boolean =
+        VpnkaLogic.isNewer(version, BuildConfig.VERSION_NAME)
 
     fun markReady(version: String) {
         MmkvManager.encodeSettings(KEY_READY_VERSION, version)

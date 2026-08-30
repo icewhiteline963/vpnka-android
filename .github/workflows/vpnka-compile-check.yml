@@ -113,4 +113,5 @@ jobs:
           cd ${{ github.workspace }}/V2rayNG
           ./gradlew testPlaystoreDebugUnitTest --no-daemon \
             --tests 'com.v2ray.ang.HttpUtilTest' \
-            --tests 'com.v2ray.ang.fmt.ShadowsocksFmtTest'
+            --tests 'com.v2ray.ang.fmt.ShadowsocksFmtTest' \
+            --tests 'com.v2ray.ang.VpnkaLogicTest'

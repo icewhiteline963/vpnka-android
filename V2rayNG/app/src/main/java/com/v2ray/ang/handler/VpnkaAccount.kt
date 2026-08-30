@@ -765,22 +765,28 @@ object VpnkaAccount {
                 ?: return@withContext pending
             try {
                 http().newCall(req).execute().use { resp ->
-                    // 404 — счёт не наш. Так отвечает сервер, когда токен
-                    // устройства указывает уже на ДРУГОГО клиента: человек
-                    // купил картой на анонимной оболочке, потом вошёл по коду
-                    // из бота. Считать это за «ещё платят» значит опрашивать
-                    // сервер вечно, при каждом открытии приложения.
-                    if (resp.code == 404) return@use PaymentState("dead")
-                    if (!resp.isSuccessful) return@use pending
-                    val obj = JsonUtil.fromJsonSafe(
-                        resp.body?.string().orEmpty(),
-                        PaymentStatusResponse::class.java
-                    ) ?: return@use pending
-                    when {
-                        obj.settled -> PaymentState("settled", obj.groupToken)
-                        obj.status in setOf("expired", "failed", "refunded") ->
-                            PaymentState("dead")
-                        else -> pending
+                    // Решение о состоянии вынесено в VpnkaLogic — там же оно
+                    // и проверяется тестами. Смысл прежний: 404 значит «счёт
+                    // не наш» (токен устройства указывает уже на другого
+                    // клиента), и это МЁРТВЫЙ счёт, а не ожидание.
+                    val obj = if (resp.isSuccessful) {
+                        JsonUtil.fromJsonSafe(
+                            resp.body?.string().orEmpty(),
+                            PaymentStatusResponse::class.java
+                        )
+                    } else {
+                        null
+                    }
+                    val state = VpnkaLogic.paymentState(
+                        httpCode = resp.code,
+                        settled = obj?.settled == true,
+                        status = obj?.status,
+                        groupToken = obj?.groupToken,
+                    )
+                    if (state == "settled") {
+                        PaymentState("settled", obj?.groupToken)
+                    } else {
+                        PaymentState(state)
                     }
                 }
             } catch (e: Exception) {
