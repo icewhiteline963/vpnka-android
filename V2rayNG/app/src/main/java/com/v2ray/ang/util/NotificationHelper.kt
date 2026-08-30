@@ -5,9 +5,12 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
+import android.content.Intent
+import android.app.PendingIntent
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import com.v2ray.ang.R
+import com.v2ray.ang.ui.MainActivity
 import com.v2ray.ang.enums.NotificationChannelType
 
 /**
@@ -31,15 +34,24 @@ object NotificationHelper {
      * @param title The notification title
      * @param content The notification content text
      */
+    /**
+     * Показать уведомление.
+     *
+     * @param openExtra что открыть при нажатии (значение `MainActivity.EXTRA_OPEN`).
+     *        `null` — просто открыть приложение.
+     */
     fun notify(
         channelType: NotificationChannelType,
         context: Context,
         title: String,
-        content: String
+        content: String,
+        openExtra: String? = null,
     ) {
         ensureChannelCreated(channelType, context)
         val notificationManager = getNotificationManager(context)
-        val builder = buildNotificationBuilder(channelType, context, title, content)
+        val builder = buildNotificationBuilder(
+            channelType, context, title, content, openExtra
+        )
         notificationManager.notify(channelType.notificationId, builder.build())
     }
 
@@ -140,7 +152,8 @@ object NotificationHelper {
         channelType: NotificationChannelType,
         context: Context,
         title: String,
-        content: String
+        content: String,
+        openExtra: String? = null,
     ): NotificationCompat.Builder {
         val channelId = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             channelType.channelId
@@ -149,10 +162,33 @@ object NotificationHelper {
         }
 
         val displayTitle = title.ifEmpty { context.getString(R.string.app_name) }
+
+        // Нажатие ОБЯЗАНО что-то делать. Уведомления «доступно обновление»,
+        // «подписка кончается» и «подписка обновляется» строились здесь без
+        // contentIntent — то есть на нажатие не отзывались вообще. Человек
+        // читает «откройте приложение», жмёт, и ничего не происходит
+        // (жалоба владельца 30.08). Уведомление, которое нельзя нажать, хуже
+        // отсутствующего: оно выглядит как приглашение к действию.
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            if (openExtra != null) putExtra(MainActivity.EXTRA_OPEN, openExtra)
+        }
+        // Свой requestCode на канал — иначе PendingIntent'ы разных
+        // уведомлений схлопываются в один, и «подписка кончается» открывает
+        // то, что просило открыть обновление.
+        val pi = PendingIntent.getActivity(
+            context,
+            channelType.notificationId,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
         return NotificationCompat.Builder(context, channelId)
             .setSmallIcon(R.drawable.ic_stat_name)
             .setContentTitle(displayTitle)
             .setContentText(content)
+            .setContentIntent(pi)
+            .setAutoCancel(true)
             .setOngoing(false)
             .setOnlyAlertOnce(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)

@@ -11,6 +11,7 @@ import androidx.work.WorkerParameters
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.enums.NotificationChannelType
 import com.v2ray.ang.util.LogUtil
+import com.v2ray.ang.ui.MainActivity
 import com.v2ray.ang.util.NotificationHelper
 import java.util.concurrent.TimeUnit
 
@@ -97,7 +98,8 @@ object UpdateNotifier {
                 NotificationChannelType.UPDATE_AVAILABLE,
                 applicationContext,
                 title = "Доступно обновление VPNka $version",
-                content = "Откройте приложение и нажмите «Обновить», чтобы установить.",
+                content = "Нажмите, чтобы установить.",
+                openExtra = MainActivity.OPEN_UPDATE,
             )
             MmkvManager.encodeSettings(KEY_NOTIFIED_VERSION, version)
             return Result.success()

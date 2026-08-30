@@ -229,6 +229,10 @@ class MainActivity : HelperBaseComponentActivity() {
         const val EXTRA_OPEN = "vpnka_open"
         const val OPEN_SUPPORT = "support"
         const val OPEN_MESSENGER = "messenger"
+        /** Нажали уведомление «доступно обновление» — показать предложение
+         *  установить, не считаясь с получасовой паузой: человек пришёл
+         *  именно за этим. */
+        const val OPEN_UPDATE = "update"
         /** A ringing-call notification was tapped: go straight to the call. */
         const val OPEN_CALL = "call"
         /** A home-screen shortcut: `EXTRA_OPEN = "desk:<appId>"` opens SmartDesk
@@ -247,6 +251,7 @@ class MainActivity : HelperBaseComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        if (intent.getStringExtra(EXTRA_OPEN) == OPEN_UPDATE) forceUpdatePrompt = true
         if (intent.getStringExtra(EXTRA_OPEN) == OPEN_SUPPORT) showSupport = true
         if (intent.getStringExtra(EXTRA_OPEN) == OPEN_MESSENGER) openMessengerFromIntent(intent)
         if (intent.getStringExtra(EXTRA_OPEN) == OPEN_CALL) openCallFromIntent()
@@ -398,6 +403,10 @@ class MainActivity : HelperBaseComponentActivity() {
         // Launched by tapping a "поддержка ответила" notification: open the
         // chat rather than the home screen. onNewIntent handles the same for
         // an app that was already running.
+        if (intent?.getStringExtra(EXTRA_OPEN) == OPEN_UPDATE) {
+            forceUpdatePrompt = true
+            foregroundTick++
+        }
         if (intent?.getStringExtra(EXTRA_OPEN) == OPEN_SUPPORT) showSupport = true
         if (intent?.getStringExtra(EXTRA_OPEN) == OPEN_MESSENGER) intent?.let { openMessengerFromIntent(it) }
         if (intent?.getStringExtra(EXTRA_OPEN) == OPEN_CALL) openCallFromIntent()
@@ -562,6 +571,9 @@ class MainActivity : HelperBaseComponentActivity() {
      * наступает никогда. Экран открыт — значит, момент подходящий.
      */
     private var foregroundTick by mutableStateOf(0)
+
+    /** Пришли по уведомлению об обновлении — паузу показа игнорируем. */
+    private var forceUpdatePrompt by mutableStateOf(false)
     private var openedPlan by mutableStateOf<VpnkaAccount.Plan?>(null)
 
     /** Set by the post-payment link; consumed on the next composition. */
@@ -750,7 +762,10 @@ class MainActivity : HelperBaseComponentActivity() {
             stagedUpdate = staged
             if (staged != null) {
                 updateVersion = staged.first
-                if (ApkUpdateInstaller.promptDue(staged.first)) {
+                // Пауза между показами не действует, когда человек сам
+                // нажал уведомление: он пришёл именно за установкой.
+                if (forceUpdatePrompt || ApkUpdateInstaller.promptDue(staged.first)) {
+                    forceUpdatePrompt = false
                     showUpdatePrompt = true
                 }
             }
