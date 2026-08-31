@@ -929,14 +929,17 @@ private fun YtPresetChip(label: String, onClick: () -> Unit) {
 
 @Composable
 private fun YtTabChip(label: String, selected: Boolean, onClick: () -> Unit) {
+    // Форма чипа из макета: радиус 7, кегль 11, выбранный — залит акцентом с
+    // тёмными чернилами, остальные — плёнка с приглушённым текстом. Прежние
+    // 12/13/16×9 делали из полок ряд крупных кнопок, спорящих с содержимым.
     Box(
-        modifier = Modifier.clip(RoundedCornerShape(12.dp))
+        modifier = Modifier.clip(RoundedCornerShape(7.dp))
             .background(if (selected) VpnkaColors.Accent else VpnkaColors.CardServer)
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 9.dp),
+            .padding(horizontal = 11.dp, vertical = 6.dp),
     ) {
-        Text(label, fontFamily = VpnkaFonts.nunito800, fontSize = 13.sp,
-            color = if (selected) Color.White else VpnkaColors.TextStrong)
+        Text(label, fontFamily = VpnkaFonts.nunito800, fontSize = 11.sp,
+            color = if (selected) VpnkaColors.OnAccent else VpnkaColors.TextMuted)
     }
 }
 

@@ -1468,12 +1468,46 @@ private fun BrowserApp() {
                         .padding(horizontal = 14.dp, vertical = 9.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("🔒", fontSize = 12.sp)
-                    Spacer(Modifier.width(8.dp))
+                    // Замок · домен · приглушённый путь · «A» (чтение) · ↻.
+                    // В макете именно так: адрес читается доменом, а хвост
+                    // страницы гасится — он нужен глазу, но не спорит с ним.
+                    Text(if (active.url.value.startsWith("https")) "🔒" else "⚠", fontSize = 12.sp)
+                    Spacer(Modifier.width(9.dp))
                     Text(
                         text = domainOf(active.url.value),
-                        fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp, color = VpnkaColors.TextStrong,
+                        fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp, color = VpnkaColors.TextStrong,
                         maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    )
+                    val path = remember(active.url.value) {
+                        runCatching {
+                            val u = android.net.Uri.parse(active.url.value)
+                            (u.path.orEmpty() + (u.query?.let { "?" + it } ?: "")).take(40)
+                        }.getOrDefault("")
+                    }
+                    if (path.isNotBlank() && path != "/") {
+                        Text(
+                            path, fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp,
+                            color = VpnkaColors.TextFaint, maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
+                        )
+                    }
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        "A", fontFamily = VpnkaFonts.nunito800, fontSize = 13.sp,
+                        color = if (reading) VpnkaColors.Accent else VpnkaColors.TextMuted,
+                        modifier = Modifier.clip(CircleShape)
+                            .clickable {
+                                if (reading) { reading = false; active.webView.reload() }
+                                else { reading = true; active.webView.evaluateJavascript(READER_JS, null) }
+                            }
+                            .padding(horizontal = 7.dp, vertical = 2.dp),
+                    )
+                    Text(
+                        "↻", fontSize = 13.sp, color = VpnkaColors.TextMuted,
+                        modifier = Modifier.clip(CircleShape)
+                            .clickable { active.webView.reload() }
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
                     )
                 }
             }

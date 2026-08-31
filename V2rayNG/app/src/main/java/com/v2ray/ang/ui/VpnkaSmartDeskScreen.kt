@@ -775,9 +775,12 @@ private fun SmartDeskTabBar(
     onApp: (String, Int?) -> Unit,
     onExit: () -> Unit,
 ) {
+    Column(modifier = Modifier.fillMaxWidth().background(VpnkaColors.BgOffCentre)) {
+        // Волосяная черта сверху — в макете панель отделена от содержимого
+        // именно ею, а не тенью.
+        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(VpnkaColors.Hairline))
     Row(
         modifier = Modifier.fillMaxWidth()
-            .background(VpnkaColors.BgOffCentre)
             .padding(horizontal = 4.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -787,6 +790,7 @@ private fun SmartDeskTabBar(
         BarItem("🌐", "Браузер", current == "browser", Modifier.weight(1f)) { onApp("browser", null) }
         BarItem("⤓", "Загрузки", false, Modifier.weight(1f)) { onApp("youtube", 2) }
         BarItem("↩", "Выход", false, Modifier.weight(1f)) { onExit() }
+    }
     }
 }
 
@@ -800,20 +804,20 @@ private fun BarItem(
 ) {
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(11.dp))
-            .background(if (selected) VpnkaColors.Accent.copy(alpha = 0.14f) else Color.Transparent)
+            .clip(RoundedCornerShape(9.dp))
+            .background(if (selected) VpnkaColors.Accent.copy(alpha = 0.22f) else Color.Transparent)
             .clickable(onClick = onClick)
             .padding(vertical = 5.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(glyph, fontSize = 16.sp, color = VpnkaColors.TextStrong)
-        Spacer(Modifier.height(2.dp))
+        Spacer(Modifier.height(3.dp))
         Text(
             label,
             fontFamily = VpnkaFonts.nunito800,
             fontSize = 9.sp,
             maxLines = 1,
-            color = if (selected) VpnkaColors.Accent else VpnkaColors.TextMuted,
+            color = if (selected) VpnkaColors.AccentLight else VpnkaColors.TextFaint,
         )
     }
 }

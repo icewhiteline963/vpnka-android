@@ -341,6 +341,34 @@ fun VpnkaMessengerApp() {
                     }
                     Spacer(Modifier.height(4.dp))
 
+                    // Полки. «Архив» показываем только когда в нём что-то
+                    // лежит, иначе он занимает место под пустоту.
+                    val hasArchive = remember(prefsTick, tick) { ChatPrefs.archived().isNotEmpty() }
+                    if (query.trim().length < 2) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
+                                .padding(horizontal = 14.dp, vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            ChatFilter.entries.forEach { f ->
+                                if (f == ChatFilter.ARCHIVE && !hasArchive) return@forEach
+                                val on = filter == f
+                                Text(
+                                    f.label,
+                                    fontFamily = VpnkaFonts.nunito800, fontSize = 11.sp,
+                                    color = if (on) VpnkaColors.OnAccent else VpnkaColors.TextMuted,
+                                    modifier = Modifier.padding(end = 7.dp)
+                                        .clip(RoundedCornerShape(7.dp))
+                                        .background(if (on) VpnkaColors.Accent else VpnkaColors.CardServer)
+                                        .clickable { filter = f }
+                                        .padding(horizontal = 11.dp, vertical = 6.dp),
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                    }
+
                     if (query.trim().length >= 2) {
                         // Search results: channels then people.
                         if (results.isEmpty() && channelResults.isEmpty()) {
@@ -564,7 +592,15 @@ private fun SheetAction(label: String, danger: Boolean = false, onClick: () -> U
     )
 }
 
-/** Строка списка чатов: аватар, имя, время, предпросмотр, значки. */
+/**
+ * Строка списка чатов — по макету.
+ *
+ * В макете это НЕ карточка, а строка с волосяным разделителем снизу: список
+ * читается как список, а не как стопка плиток. Аватар круглый (46), имя и
+ * время в одной строке по базовой линии, под ними предпросмотр и счётчик
+ * непрочитанного; «⋯» справа открывает действия — тем, кто не догадается
+ * подержать палец.
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ChatRow(
@@ -576,56 +612,72 @@ private fun ChatRow(
     onOpen: () -> Unit,
     onLong: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-            .clip(RoundedCornerShape(13.dp)).background(VpnkaColors.CardServer).border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(13.dp))
-            .combinedClickable(onClick = onOpen, onLongClick = onLong)
-            .padding(horizontal = 12.dp, vertical = 11.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        MsgAvatar(contact.name, size = 50)
-        Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    contact.name, fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp,
-                    color = VpnkaColors.TextStrong, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                if (pinned) Text(" 📌", fontSize = 11.sp, color = VpnkaColors.TextFaint)
-                if (muted) Text(" 🔕", fontSize = 11.sp, color = VpnkaColors.TextFaint)
-                Spacer(Modifier.weight(1f))
-                if (last != null) {
-                    Text(msgTime(last.ts), fontFamily = VpnkaFonts.manrope600, fontSize = 11.sp, color = VpnkaColors.TextFaint)
-                }
-            }
-            Spacer(Modifier.height(2.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                val preview = when {
-                    last == null -> "Нет сообщений"
-                    last.k == "image" -> (if (last.mine) "Вы: " else "") + "📷 Фото"
-                    last.k == "voice" -> (if (last.mine) "Вы: " else "") + "🎤 Голосовое"
-                    last.k == "video" -> (if (last.mine) "Вы: " else "") + "🎬 Видео"
-                    else -> (if (last.mine) "Вы: " else "") + last.text
-                }
-                Text(
-                    preview, fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp,
-                    color = VpnkaColors.TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                if (unread > 0) {
-                    Spacer(Modifier.width(8.dp))
+    Column {
+        Row(
+            modifier = Modifier.fillMaxWidth()
+                .combinedClickable(onClick = onOpen, onLongClick = onLong)
+                .padding(vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            MsgAvatar(contact.name, size = 46)
+            Spacer(Modifier.width(11.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        if (unread > 99) "99+" else unread.toString(),
-                        fontFamily = VpnkaFonts.nunito800, fontSize = 11.sp,
-                        color = VpnkaColors.OnAccent,
-                        modifier = Modifier.clip(CircleShape)
-                            .background(if (muted) VpnkaColors.TextFaint else VpnkaColors.Accent)
-                            .padding(horizontal = 7.dp, vertical = 2.dp),
+                        contact.name, fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp,
+                        color = VpnkaColors.TextStrong, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
                     )
+                    if (pinned) Text(" 📌", fontSize = 10.sp, color = VpnkaColors.TextFaint)
+                    if (muted) Text(" 🔕", fontSize = 10.sp, color = VpnkaColors.TextFaint)
+                    Spacer(Modifier.weight(1f))
+                    if (last != null) {
+                        Text(
+                            msgTime(last.ts), fontFamily = VpnkaFonts.manrope600, fontSize = 10.sp,
+                            color = VpnkaColors.TextFaint,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    val preview = when {
+                        last == null -> "Нет сообщений"
+                        last.k == "image" -> (if (last.mine) "Вы: " else "") + "📷 Фото"
+                        last.k == "voice" -> (if (last.mine) "Вы: " else "") + "🎤 Голосовое"
+                        last.k == "video" -> (if (last.mine) "Вы: " else "") + "🎬 Видео"
+                        else -> (if (last.mine) "Вы: " else "") + last.text
+                    }
+                    Text(
+                        preview, fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp,
+                        // Непрочитанное читается ярче — это единственная разница,
+                        // жирного начертания в макете здесь нет.
+                        color = if (unread > 0) VpnkaColors.TextMuted else VpnkaColors.TextFaint,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (unread > 0) {
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            if (unread > 99) "99+" else unread.toString(),
+                            fontFamily = VpnkaFonts.nunito800, fontSize = 10.sp,
+                            color = if (muted) VpnkaColors.TextStrong else VpnkaColors.OnAccent,
+                            modifier = Modifier.clip(RoundedCornerShape(10.dp))
+                                .background(
+                                    if (muted) VpnkaColors.TextFaint.copy(alpha = 0.35f)
+                                    else VpnkaColors.Accent,
+                                )
+                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                        )
+                    }
                 }
             }
+            Text(
+                "⋯", fontSize = 14.sp, color = VpnkaColors.TextFaint,
+                modifier = Modifier.clip(CircleShape).clickable(onClick = onLong)
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+            )
         }
+        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(VpnkaColors.Hairline))
     }
 }
 
@@ -709,8 +761,16 @@ private fun CallsTab(
 
 @Composable
 private fun SectionLabel(text: String) {
-    Text(text, fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp, color = VpnkaColors.TextMuted,
-        modifier = Modifier.padding(top = 8.dp, bottom = 2.dp))
+    // Капс с разрядкой и приглушённый — в макете это не заголовок, а метка
+    // полки: она должна отделять, а не соперничать с именами в списке.
+    Text(
+        text.uppercase(),
+        fontFamily = VpnkaFonts.nunito800,
+        fontSize = 10.sp,
+        letterSpacing = 1.0.sp,
+        color = VpnkaColors.TextFaint,
+        modifier = Modifier.padding(top = 10.dp, bottom = 6.dp),
+    )
 }
 
 @Composable
@@ -960,21 +1020,27 @@ private fun ChatScreen(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
                     horizontalArrangement = if (m.mine) Arrangement.End else Arrangement.Start,
                 ) {
+                    // Пузырь по макету: 16px со срезанным «хвостиком» 5px со
+                    // своей стороны. Своё сообщение — не зелёная плашка с белым
+                    // текстом, а подложка акцентом навылет (22 %) с рамкой
+                    // (45 %); текст в обоих случаях обычный. Так своё и чужое
+                    // отличаются оттенком фона, а не двумя разными типографиками.
+                    val bubbleShape = RoundedCornerShape(
+                        topStart = 16.dp, topEnd = 16.dp,
+                        bottomStart = if (m.mine) 16.dp else 5.dp,
+                        bottomEnd = if (m.mine) 5.dp else 16.dp,
+                    )
                     Box(
-                        modifier = Modifier.widthIn(max = 284.dp)
-                            .clip(
-                                RoundedCornerShape(
-                                    topStart = 18.dp, topEnd = 18.dp,
-                                    bottomStart = if (m.mine) 18.dp else 5.dp,
-                                    bottomEnd = if (m.mine) 5.dp else 18.dp,
-                                )
-                            )
+                        modifier = Modifier.widthIn(max = 270.dp)
+                            .clip(bubbleShape)
                             .then(
                                 if (m.mine)
-                                    Modifier.background(Brush.linearGradient(listOf(Color(0xFF2FAE4F), Color(0xFF10B981))))
+                                    Modifier.background(VpnkaColors.Accent.copy(alpha = 0.22f))
+                                        .border(1.dp, VpnkaColors.Accent.copy(alpha = 0.45f), bubbleShape)
                                 else Modifier.background(VpnkaColors.CardServer)
+                                    .border(1.dp, VpnkaColors.Hairline, bubbleShape)
                             )
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
                     ) {
                         Column(horizontalAlignment = Alignment.Start) {
                             if (m.k == "image" && m.img.isNotEmpty()) {
@@ -991,7 +1057,7 @@ private fun ChatScreen(
                                     )
                                 } else {
                                     Text("🖼 фото", fontFamily = VpnkaFonts.manrope600, fontSize = 15.sp,
-                                        color = if (m.mine) Color.White else VpnkaColors.TextStrong)
+                                        color = VpnkaColors.TextStrong)
                                 }
                             } else if (m.k == "voice") {
                                 val playing = MessengerVoice.playingId == m.id
@@ -1003,13 +1069,13 @@ private fun ChatScreen(
                                 ) {
                                     Text(
                                         if (playing) "⏸" else "▶", fontSize = 22.sp,
-                                        color = if (m.mine) Color.White else VpnkaColors.Accent,
+                                        color = VpnkaColors.Accent,
                                     )
                                     Spacer(Modifier.width(10.dp))
                                     Text(
                                         "🎤  " + fmtVoice(m.dur),
                                         fontFamily = VpnkaFonts.manrope600, fontSize = 15.sp,
-                                        color = if (m.mine) Color.White else VpnkaColors.TextStrong,
+                                        color = VpnkaColors.TextStrong,
                                     )
                                 }
                             } else if (m.k == "video") {
@@ -1028,12 +1094,12 @@ private fun ChatScreen(
                                     Text(
                                         "🎬  Видео" + if (m.dur > 0) "  ·  ${fmtVoice(m.dur)}" else "",
                                         fontFamily = VpnkaFonts.manrope600, fontSize = 15.sp,
-                                        color = if (m.mine) Color.White else VpnkaColors.TextStrong,
+                                        color = VpnkaColors.TextStrong,
                                     )
                                 }
                             } else {
                                 Text(m.text, fontFamily = VpnkaFonts.manrope600, fontSize = 15.sp,
-                                    color = if (m.mine) Color.White else VpnkaColors.TextStrong)
+                                    color = VpnkaColors.TextStrong)
                             }
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -1041,7 +1107,7 @@ private fun ChatScreen(
                             ) {
                                 Text(
                                     msgTime(m.ts), fontSize = 10.sp,
-                                    color = if (m.mine) Color.White.copy(alpha = 0.85f) else VpnkaColors.TextFaint,
+                                    color = VpnkaColors.TextFaint,
                                 )
                                 if (m.mine) {
                                     Spacer(Modifier.width(4.dp))
