@@ -44,55 +44,75 @@ object VpnkaColors {
      */
     var connected by mutableStateOf(false)
 
+    /**
+     * Палитра «Поток» — тёмная тёплая, из макетов супер-приложения.
+     *
+     * Включается на время рабочего стола и его приложений и перекрывает обе
+     * прежние: там своя вселенная (видео, чаты, браузер), и светлый вариант
+     * главного экрана в ней смотрится чужим. Значения — ровно те, что в
+     * макете: страница #100d09, полотно #15110c, панель #1b160f, акцент
+     * #ff961e.
+     */
+    var flow by mutableStateOf(false)
+
     private fun pick(light: Color, night: Color) = if (dark) night else light
+
+    /** Трёхходовой выбор: «Поток» важнее и светлой, и ночной. */
+    private fun pick(light: Color, night: Color, flowC: Color) =
+        if (flow) flowC else if (dark) night else light
 
     // Disconnected — the resting state. The accent survives inversion: it
     // is the brand, and it reads on both washes.
-    val Accent = Color(0xFFE8850C)
-    val AccentLight = Color(0xFFF5A83C)
+    val Accent: Color get() = if (flow) Color(0xFFFF961E) else Color(0xFFE8850C)
+    val AccentLight: Color get() = if (flow) Color(0xFFFFB655) else Color(0xFFF5A83C)
+
+    /** Второй акцент макета — жёлтый; им отмечено «сейчас играет» и активное. */
+    val Accent2: Color get() = if (flow) Color(0xFFFFC61F) else Color(0xFFF5A83C)
 
     // Connected.
-    val Green: Color get() = pick(Color(0xFF2FAE4F), Color(0xFF5FD07E))
+    val Green: Color get() = pick(Color(0xFF2FAE4F), Color(0xFF5FD07E), Color(0xFF7DBF5E))
 
     // The trial countdown, and nothing else. Reserved so it keeps meaning
     // "this is about to stop working" rather than becoming another accent.
-    val Warning: Color get() = pick(Color(0xFFD32F2F), Color(0xFFFF6B6B))
+    val Warning: Color get() = pick(Color(0xFFD32F2F), Color(0xFFFF6B6B), Color(0xFFFF7A5C))
 
     // A step below Warning: "worth doing something about soon", not "now".
     // The expiry banner starts here at three days and turns to Warning
     // inside the last one, so the change of colour carries the urgency.
-    val Amber: Color get() = pick(Color(0xFFB26B00), Color(0xFFE8A33C))
+    val Amber: Color get() = pick(Color(0xFFB26B00), Color(0xFFE8A33C), Color(0xFFFFC61F))
 
     // Text, darkest first — and lightest first once inverted.
-    val TextStrong: Color get() = pick(Color(0xFF5C3D10), Color(0xFFF6E7CE))
-    val TextBrand: Color get() = pick(Color(0xFF7A4A12), Color(0xFFEBD3AC))
-    val TextMuted: Color get() = pick(Color(0xFF8A6635), Color(0xFFC3AC85))
-    val TextFaint: Color get() = pick(Color(0xFFB98C4E), Color(0xFF9A8362))
-    val TextUnit: Color get() = pick(Color(0xFFA07A3E), Color(0xFFB09A72))
-    val IconMuted: Color get() = pick(Color(0xFFA06A20), Color(0xFFD8A65A))
+    val TextStrong: Color get() = pick(Color(0xFF5C3D10), Color(0xFFF6E7CE), Color(0xFFF8F1E6))
+    val TextBrand: Color get() = pick(Color(0xFF7A4A12), Color(0xFFEBD3AC), Color(0xFFEFE5D6))
+    val TextMuted: Color get() = pick(Color(0xFF8A6635), Color(0xFFC3AC85), Color(0xFFAEA394))
+    val TextFaint: Color get() = pick(Color(0xFFB98C4E), Color(0xFF9A8362), Color(0xFF7E7469))
+    val TextUnit: Color get() = pick(Color(0xFFA07A3E), Color(0xFFB09A72), Color(0xFF9A9084))
+    val IconMuted: Color get() = pick(Color(0xFFA06A20), Color(0xFFD8A65A), Color(0xFFFFB655))
 
     // Screen background — a radial wash, three stops each way. Dark keeps
     // the same warmth rather than going neutral grey, so it still reads as
     // this app at night.
-    val BgOffCentre: Color get() = pick(Color(0xFFFFF8EA), Color(0xFF2A2116))
-    val BgOffMid: Color get() = pick(Color(0xFFFFEFD2), Color(0xFF1F1810))
-    val BgOffEdge: Color get() = pick(Color(0xFFFFE4B8), Color(0xFF15100A))
-    val BgOnCentre: Color get() = pick(Color(0xFFEEFBE9), Color(0xFF1B2A1C))
-    val BgOnMid: Color get() = pick(Color(0xFFDCF3D2), Color(0xFF152015))
-    val BgOnEdge: Color get() = pick(Color(0xFFCDEABF), Color(0xFF0E160F))
+    val BgOffCentre: Color get() = pick(Color(0xFFFFF8EA), Color(0xFF2A2116), Color(0xFF1B160F))
+    val BgOffMid: Color get() = pick(Color(0xFFFFEFD2), Color(0xFF1F1810), Color(0xFF15110C))
+    val BgOffEdge: Color get() = pick(Color(0xFFFFE4B8), Color(0xFF15100A), Color(0xFF100D09))
+    val BgOnCentre: Color get() = pick(Color(0xFFEEFBE9), Color(0xFF1B2A1C), Color(0xFF1B160F))
+    val BgOnMid: Color get() = pick(Color(0xFFDCF3D2), Color(0xFF152015), Color(0xFF15110C))
+    val BgOnEdge: Color get() = pick(Color(0xFFCDEABF), Color(0xFF0E160F), Color(0xFF100D09))
 
     // Cards sit on the wash rather than on a surface, so they are white with
     // alpha rather than a solid colour — the gradient shows through and the
     // card belongs to the page. Dark inverts the tint, not the idea.
+    // В «Потоке» карточки не полупрозрачные, а сплошные тона макета: там
+    // фон ровный, и белая плёнка поверх него давала бы грязь, а не глубину.
     val CardSpeed: Color get() =
-        pick(Color(0xFFFFFFFF).copy(alpha = 0.75f), Color(0xFFFFFFFF).copy(alpha = 0.07f))
+        pick(Color(0xFFFFFFFF).copy(alpha = 0.75f), Color(0xFFFFFFFF).copy(alpha = 0.07f), Color(0xFF211B14))
     val CardServer: Color get() =
-        pick(Color(0xFFFFFFFF).copy(alpha = 0.85f), Color(0xFFFFFFFF).copy(alpha = 0.10f))
+        pick(Color(0xFFFFFFFF).copy(alpha = 0.85f), Color(0xFFFFFFFF).copy(alpha = 0.10f), Color(0xFF2A231A))
     val CardSettings: Color get() =
-        pick(Color(0xFFFFFFFF).copy(alpha = 0.70f), Color(0xFFFFFFFF).copy(alpha = 0.06f))
+        pick(Color(0xFFFFFFFF).copy(alpha = 0.70f), Color(0xFFFFFFFF).copy(alpha = 0.06f), Color(0xFF1B160F))
 
     // The warm shadow that ties the whole screen together.
-    val Shadow: Color get() = pick(Color(0xFFB47814), Color(0xFF000000))
+    val Shadow: Color get() = pick(Color(0xFFB47814), Color(0xFF000000), Color(0xFF000000))
 
     val FlagCircleStart = Color(0xFFFFD75E)
     val FlagCircleEnd = Color(0xFFFF9D2E)

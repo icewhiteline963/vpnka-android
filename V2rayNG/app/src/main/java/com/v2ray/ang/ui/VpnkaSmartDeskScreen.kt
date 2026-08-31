@@ -132,10 +132,12 @@ private val DEFAULT_INSTALLED = listOf("store", "messages", "help", "calendar", 
 // ---- «Android 17» look: gradient wallpapers + colourful squircle app tiles ----
 
 /** Wallpaper ids offered in the pickers, in order. */
-private val WALLPAPERS = listOf("warm", "aurora", "ocean", "night", "forest")
+private val WALLPAPERS = listOf("flow", "warm", "aurora", "ocean", "night", "forest")
 
 /** Full-screen wallpaper gradient. */
 private fun wallpaperBrush(id: String): Brush = when (id) {
+    // Полотно из макета: страница → полотно → панель. Тёплое тёмное, не серое.
+    "flow" -> Brush.linearGradient(listOf(Color(0xFF100D09), Color(0xFF15110C), Color(0xFF1B160F)))
     "aurora" -> Brush.linearGradient(listOf(Color(0xFF6A11CB), Color(0xFF9D50BB), Color(0xFFF56C6C)))
     "ocean" -> Brush.linearGradient(listOf(Color(0xFF1A2980), Color(0xFF26D0CE)))
     "night" -> Brush.linearGradient(listOf(Color(0xFF0F2027), Color(0xFF203A43), Color(0xFF2C5364)))
@@ -145,6 +147,7 @@ private fun wallpaperBrush(id: String): Brush = when (id) {
 
 /** One swatch colour for the picker chip. */
 private fun wallpaperSwatch(id: String): Color = when (id) {
+    "flow" -> Color(0xFF1B160F)
     "aurora" -> Color(0xFF9D50BB)
     "ocean" -> Color(0xFF1A94A8)
     "night" -> Color(0xFF213A44)
@@ -287,7 +290,7 @@ fun VpnkaSmartDeskScreen(
     var showShade by remember { mutableStateOf(false) }     // swipe top-left down
     var showControl by remember { mutableStateOf(false) }   // swipe top-right down
     var wallpaper by remember {
-        mutableStateOf(MmkvManager.decodeSettingsString("vpnka_smartdesk_wallpaper") ?: "warm")
+        mutableStateOf(MmkvManager.decodeSettingsString("vpnka_smartdesk_wallpaper") ?: "flow")
     }
 
     // The activity intercepts the system back before Compose's BackHandler, so
@@ -323,6 +326,13 @@ fun VpnkaSmartDeskScreen(
     // erases the local copy. Between sessions the phone holds no SmartDesk data;
     // the next open re-pulls it from the encrypted server. Offline → nothing is
     // wiped (see SmartDeskSync.syncAndWipe), so no edits are lost.
+    // Пока открыт рабочий стол — палитра «Поток» из макетов. Снимается на
+    // выходе: главный экран VPNka остаётся в своей, светлой.
+    DisposableEffect(Unit) {
+        VpnkaColors.flow = true
+        onDispose { VpnkaColors.flow = false }
+    }
+
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val obs = LifecycleEventObserver { _, event ->
