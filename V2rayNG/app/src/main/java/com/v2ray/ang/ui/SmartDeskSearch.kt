@@ -27,6 +27,8 @@ object SmartDeskSearch {
         val tag: String,
         val target: Target,
         val query: String = "",
+        /** Для чата — с кем: без этого «перейти к переписке» вело в общий список. */
+        val chatId: Long? = null,
     )
 
     /**
@@ -68,7 +70,7 @@ object SmartDeskSearch {
         runCatching {
             Messenger.contacts().forEach { c ->
                 if (match(c.name)) {
-                    hits.add(Hit("✉", c.name, "перейти к переписке", "чат", Target.MESSENGER))
+                    hits.add(Hit("✉", c.name, "перейти к переписке", "чат", Target.MESSENGER, chatId = c.id))
                 }
             }
         }

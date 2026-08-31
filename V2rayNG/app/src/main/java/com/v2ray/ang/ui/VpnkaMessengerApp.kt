@@ -113,8 +113,7 @@ private enum class MsgTab { CHATS, CALLS, CONTACTS, SETTINGS, PROFILE }
 /** Полки списка чатов. «Группы» из макета не заводим: групповых чатов у нас
  *  нет, а фильтр, который всегда пуст, — обман. */
 private enum class ChatFilter(val label: String) {
-    ALL("Все"), PERSONAL("Личные"), CHANNELS("Каналы"),
-    UNREAD("Непрочитанные"), ARCHIVE("Архив"),
+    ALL("Все"), CHANNELS("Каналы"), UNREAD("Непрочитанные"), ARCHIVE("Архив"),
 }
 
 /** «Сообщения» — an E2E messenger in the Telegram mould. */
@@ -238,14 +237,26 @@ fun VpnkaMessengerApp() {
     // chat). The polling/WS effects above stay mounted, so signaling keeps
     // flowing while the call UI is shown.
     if (CallManager.phase != CallManager.Phase.IDLE) {
+        // Во время разговора панель супер-приложения не нужна — под кнопками
+        // звонка она только мешала.
+        DisposableEffect(Unit) {
+            SmartDeskChrome.barHidden = true
+            onDispose {}
+        }
         CallScreen()
         return
     }
 
     // Hide the SmartDesk host bar while a nested screen (chat, channel) is open —
     // those have their own header; the tabbed main screen keeps the bar.
-    val nested = openChannel != null || openId != null
-    DisposableEffect(nested) { SmartDeskChrome.barHidden = nested; onDispose {} }
+    // Панель супер-приложения прячется на ВСЁ время мессенджера, а не только
+    // на вложенных экранах: у него своя пятипунктовая полоса (Чаты · Звонки ·
+    // Контакты · Настройки · Профиль), и две такие полосы одна над другой —
+    // это не навигация, а стена. Возврат к столу — системной «назад».
+    DisposableEffect(Unit) {
+        SmartDeskChrome.barHidden = true
+        onDispose { SmartDeskChrome.barHidden = false }
+    }
 
     openChannel?.let { ch ->
         ChannelScreen(channel = ch, onBack = { openChannel = null; tick++ })
@@ -256,10 +267,25 @@ fun VpnkaMessengerApp() {
         val c = contacts.firstOrNull { it.id == id }
         if (c != null) {
             val typing = typingFrom == c.id && System.currentTimeMillis() < typingUntil
-            // Вход в чат = «прочитано»: значок непрочитанного гаснет при
-            // выходе, а не в момент, когда сообщение только пришло на экран.
-            DisposableEffect(c.id, tick) {
-                onDispose { ChatPrefs.markSeen(c.id); prefsTick++ }
+            // «Прочитано» — при уходе ИЗ чата и при сворачивании приложения.
+            //
+            // Ключом стоял `tick`, а он растёт на каждый пришедший пакет:
+            // эффект пересоздавался, и отметка ставилась на каждое новое
+            // сообщение. Чат, оставленный открытым в свёрнутом приложении,
+            // молча гасил непрочитанное у сообщений, которых никто не видел, —
+            // а уведомления по ним уже не приходило.
+            val chatLifecycle = LocalLifecycleOwner.current
+            DisposableEffect(c.id, chatLifecycle) {
+                val obs = LifecycleEventObserver { _, event ->
+                    if (event == Lifecycle.Event.ON_PAUSE) {
+                        ChatPrefs.markSeen(c.id); prefsTick++
+                    }
+                }
+                chatLifecycle.lifecycle.addObserver(obs)
+                onDispose {
+                    chatLifecycle.lifecycle.removeObserver(obs)
+                    ChatPrefs.markSeen(c.id); prefsTick++
+                }
             }
             ChatScreen(contact = c, tick = tick, typing = typing, onSent = { tick++ }, onBack = { openId = null })
             return
@@ -347,6 +373,12 @@ fun VpnkaMessengerApp() {
                     // Полки. «Архив» показываем только когда в нём что-то
                     // лежит, иначе он занимает место под пустоту.
                     val hasArchive = remember(prefsTick, tick) { ChatPrefs.archived().isNotEmpty() }
+                    // Разархивировали последний чат, стоя в «Архиве», — чип
+                    // пропадал, а полка оставалась выбранной: ни один не
+                    // подсвечен и надпись «в архиве пусто».
+                    LaunchedEffect(hasArchive) {
+                        if (!hasArchive && filter == ChatFilter.ARCHIVE) filter = ChatFilter.ALL
+                    }
                     if (query.trim().length < 2) {
                         Row(
                             modifier = Modifier.fillMaxWidth()
@@ -437,7 +469,6 @@ fun VpnkaMessengerApp() {
                                         ChatFilter.ARCHIVE -> "В архиве пусто."
                                         ChatFilter.UNREAD -> "Непрочитанных нет."
                                         ChatFilter.CHANNELS -> "Вы пока не подписаны ни на один канал."
-                                        ChatFilter.PERSONAL -> "Личных чатов пока нет."
                                     },
                                     fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp,
                                     color = VpnkaColors.TextMuted, textAlign = TextAlign.Center,
@@ -742,6 +773,7 @@ private fun CallsTab(
                             val arrow = when (c.dir) {
                                 "outgoing" -> "↗ исходящий"
                                 "missed" -> "↙ пропущенный"
+                                "declined" -> "↙ отклонён"
                                 else -> "↙ входящий"
                             }
                             val dur = if (c.sec > 0) " · ${c.sec / 60}:${"%02d".format(c.sec % 60)}" else ""
@@ -847,7 +879,7 @@ private fun ChannelScreen(channel: Channels.Channel, onBack: () -> Unit) {
                     Box(modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(VpnkaColors.Accent)
                         .clickable { scope.launch { if (Channels.subscribe(channel.id)) { subscribed = true; refresh++ } } }
                         .padding(horizontal = 20.dp, vertical = 10.dp)) {
-                        Text("Подписаться", fontFamily = VpnkaFonts.nunito800, fontSize = 15.sp, color = Color.White)
+                        Text("Подписаться", fontFamily = VpnkaFonts.nunito800, fontSize = 15.sp, color = VpnkaColors.OnAccent)
                     }
                 }
             }
@@ -881,7 +913,7 @@ private fun ChannelScreen(channel: Channels.Channel, onBack: () -> Unit) {
                         .clickable {
                             val t = draft.trim()
                             if (t.isNotBlank()) { draft = ""; scope.launch { if (Channels.post(channel.id, t)) refresh++ } }
-                        }, contentAlignment = Alignment.Center) { Text("➤", fontSize = 20.sp, color = Color.White) }
+                        }, contentAlignment = Alignment.Center) { Text("➤", fontSize = 20.sp, color = VpnkaColors.OnAccent) }
                 }
             }
         }
@@ -934,8 +966,24 @@ private fun ChatScreen(
         if (total > 0) listState.animateScrollToItem(total - 1)
     }
 
-    // Opening the chat (and each new incoming message) marks it read (✓✓).
-    LaunchedEffect(tick, contact.id) {
+    // Отчёт о прочтении — только когда экран РЕАЛЬНО на переднем плане.
+    // Свёрнутое приложение с открытым чатом продолжало слать собеседнику ✓✓
+    // на сообщения, которых никто не читал.
+    val readLifecycle = LocalLifecycleOwner.current
+    var chatResumed by remember { mutableStateOf(true) }
+    DisposableEffect(readLifecycle) {
+        val obs = LifecycleEventObserver { _, e ->
+            when (e) {
+                Lifecycle.Event.ON_RESUME -> chatResumed = true
+                Lifecycle.Event.ON_PAUSE -> chatResumed = false
+                else -> Unit
+            }
+        }
+        readLifecycle.lifecycle.addObserver(obs)
+        onDispose { readLifecycle.lifecycle.removeObserver(obs) }
+    }
+    LaunchedEffect(tick, contact.id, chatResumed) {
+        if (!chatResumed) return@LaunchedEffect
         val maxIn = msgs.filter { !it.mine }.maxOfOrNull { it.id } ?: 0L
         if (maxIn > 0L) Messenger.markRead(contact.id, maxIn)
     }
@@ -1260,7 +1308,7 @@ private fun ChatScreen(
                             )
                         },
                     contentAlignment = Alignment.Center,
-                ) { Text("🎤", fontSize = 20.sp, color = Color.White) }
+                ) { Text("🎤", fontSize = 20.sp, color = VpnkaColors.OnAccent) }
             } else {
                 Box(
                     modifier = Modifier.size(46.dp).clip(CircleShape).background(VpnkaColors.Accent)
@@ -1272,7 +1320,7 @@ private fun ChatScreen(
                             }
                         },
                     contentAlignment = Alignment.Center,
-                ) { Text("➤", fontSize = 20.sp, color = Color.White) }
+                ) { Text("➤", fontSize = 20.sp, color = VpnkaColors.OnAccent) }
             }
         }
     }

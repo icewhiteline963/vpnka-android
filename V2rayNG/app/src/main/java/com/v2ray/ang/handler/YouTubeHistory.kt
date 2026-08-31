@@ -66,7 +66,12 @@ object YouTubeHistory {
      */
     fun savePosition(url: String, posSec: Long, durationSec: Long) {
         val map = positions()
-        val finished = durationSec > 0 && posSec > durationSec - 30
+        // «Досмотрел» — это не «оказался в последних тридцати секундах».
+        // У ролика короче минуты правая часть уходила в минус, и условие было
+        // истинным ВСЕГДА: открыл пятнадцатисекундный ролик, сразу закрыл — и
+        // он уже «просмотрен», а значит попадёт под уборку скачанного.
+        val finished = durationSec >= 60 && posSec > durationSec - 30 &&
+            posSec > durationSec * 0.6
         if (posSec < 30 || finished) {
             map.remove(url)
         } else {

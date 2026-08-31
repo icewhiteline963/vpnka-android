@@ -117,6 +117,8 @@ object CallManager {
     /** Accept a ringing call (callee side). The offer is already stored. */
     fun accept(context: Context) {
         if (phase != Phase.INCOMING) return
+        if (answered) return  // второе нажатие клало трубку на только что принятом звонке
+        answered = true
         appContext = context.applicationContext
         onCallCleared?.invoke()
         val offer = pendingOffer ?: run { hangup(); return }
@@ -137,6 +139,7 @@ object CallManager {
 
     /** Reject a ringing call without answering. */
     fun decline() {
+        declined = true
         if (peerId != 0L) signal(kind = "hangup")
         cleanup(Phase.ENDED)
     }
@@ -170,6 +173,17 @@ object CallManager {
                     (phase == Phase.INCOMING && from != peerId)
                 ) {
                     Messenger.sendCallSignal(from, gson.toJson(CallSig(call = sig.call, kind = "busy")))
+                    // Звонок, пришедший во время разговора, тоже попадает в
+                    // журнал: вкладка называется журналом, а теряла ровно те
+                    // звонки, которые важнее всего увидеть потом.
+                    ChatPrefs.addCall(
+                        ChatPrefs.Call(
+                            peerId = from,
+                            name = sig.name.ifBlank { "Контакт $from" },
+                            dir = "missed",
+                            ts = System.currentTimeMillis(),
+                        ),
+                    )
                     return@post
                 }
                 callId = sig.call
@@ -404,9 +418,15 @@ object CallManager {
     /** Кто кому звонил: к моменту отбоя фаза уже ACTIVE и направление теряется. */
     private var lastOutgoing = false
 
+    /** Трубку сняли (даже если разговор потом не состоялся). */
+    private var answered = false
+
+    /** Входящий отклонили сознательно — это НЕ «пропущенный». */
+    private var declined = false
+
     private fun setState(p: Phase, id: Long, name: String) {
-        if (p == Phase.OUTGOING) lastOutgoing = true
-        if (p == Phase.INCOMING) lastOutgoing = false
+        if (p == Phase.OUTGOING) { lastOutgoing = true; answered = false; declined = false }
+        if (p == Phase.INCOMING) { lastOutgoing = false; answered = false; declined = false }
         phase = p; peerId = id; peerName = name
         main.removeCallbacks(ringTimeout)
         if (p == Phase.OUTGOING || p == Phase.INCOMING) {
@@ -427,7 +447,11 @@ object CallManager {
                     peerId = peerId,
                     name = peerName,
                     dir = when {
-                        phase == Phase.INCOMING && !talked -> "missed"
+                        // Отклонил сам — это не «пропустил». И снятая трубка,
+                        // после которой связь не поднялась, тоже: человек
+                        // ответил, а в журнале стояло «пропущенный».
+                        declined -> "declined"
+                        phase == Phase.INCOMING && !talked && !answered -> "missed"
                         lastOutgoing -> "outgoing"
                         else -> "incoming"
                     },

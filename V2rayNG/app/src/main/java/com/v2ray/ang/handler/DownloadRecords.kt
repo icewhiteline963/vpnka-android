@@ -71,7 +71,10 @@ object DownloadRecords {
             else if (u.scheme == "content") context.contentResolver.delete(u, null, null) > 0
             else u.path?.let { java.io.File(it).delete() } ?: false
         }.getOrDefault(false)
-        forget(r.uri)
+        // Забываем запись, только если файл действительно исчез. Иначе он
+        // остался бы на диске, а мы бы о нём больше не знали: повторная
+        // уборка его уже не подберёт, и убрать станет нечем.
+        if (ok) forget(r.uri)
         return if (ok) r.bytes else 0L
     }
 

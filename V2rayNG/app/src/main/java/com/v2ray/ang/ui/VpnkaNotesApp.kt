@@ -314,6 +314,12 @@ private fun ChecklistBody(note: SmartDeskStore.Note, title: String, onSave: (Sma
             updatedAt = System.currentTimeMillis()))
     }
 
+    // Сохранение при уходе с экрана — как у текстовой заметки. Без него
+    // «назад» из списка покупок молча терял правки, если не нажать «Готово»;
+    // у текстовых заметок это починили, у списков забыли.
+    val latest = rememberUpdatedState(::persist)
+    DisposableEffect(note.id) { onDispose { latest.value.invoke() } }
+
     Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         items.forEachIndexed { i, item ->
             Row(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {

@@ -8,6 +8,7 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import com.v2ray.ang.handler.BrowserHistory
+import com.v2ray.ang.handler.YouTubeService
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.PasswordStore
 import androidx.compose.foundation.text.KeyboardActions
@@ -129,6 +130,15 @@ object SmartDeskChrome {
     @Volatile
     var pendingAppId: String? = null
 
+    /** Что открыть в плеере: мини-плеер вёл в список, а не к играющему. */
+    var pendingPlayback by mutableStateOf<YouTubeService.Playback?>(null)
+
+    fun consumePendingPlayback(): YouTubeService.Playback? {
+        val p = pendingPlayback
+        pendingPlayback = null
+        return p
+    }
+
     /** Адрес, который браузер должен открыть первым (с домашнего экрана). */
     @Volatile
     var pendingUrl: String? = null
@@ -139,9 +149,15 @@ object SmartDeskChrome {
         return u
     }
 
-    /** Куда открыть «Видео»: 2 — сразу на вкладку загрузок (нижняя панель). */
-    @Volatile
-    var pendingYtTab: Int? = null
+    /**
+     * Куда открыть «Видео»: 2 — сразу на вкладку загрузок (нижняя панель).
+     *
+     * Compose-состояние, а не обычное поле: если «Видео» УЖЕ открыто, новой
+     * композиции не будет, и просьба останется непрочитанной — кнопка
+     * «Загрузки» молча не делала ничего, а зависшее значение потом уводило
+     * следующий вход в «Видео» не на ту вкладку.
+     */
+    var pendingYtTab by mutableStateOf<Int?>(null)
 
     fun consumePendingYtTab(): Int? {
         val t = pendingYtTab
@@ -863,27 +879,48 @@ internal object AdBlocker {
     private const val KEY = "vpnka_browser_adblock"
     private const val KEY_COUNT = "vpnka_browser_adblock_count"
 
-    // Счётчик держим в памяти и сбрасываем на диск пачками: запись в MMKV на
-    // каждый заблокированный запрос — это сотни записей на одну страницу.
-    private var pending = 0
+    // Счётчик копится в памяти и сбрасывается на диск пачками: запись в MMKV
+    // на каждый заблокированный запрос — это сотни записей на одну страницу.
+    //
+    // Считаем ПОД замком: shouldInterceptRequest зовётся WebView с фоновых
+    // потоков, при нескольких вкладках — параллельно, и без синхронизации
+    // инкременты просто терялись.
+    private val lock = Any()
+    private var unsaved = 0
 
-    var blocked: Long = -1
-        get() {
-            if (field < 0) {
-                field = MmkvManager.decodeSettingsString(KEY_COUNT)?.toLongOrNull() ?: 0L
-            }
-            return field + pending
-        }
+    /** Compose-состояние: плитка «Заблокировано» обновляется живьём. */
+    var blocked by mutableStateOf(-1L)
         private set
 
-    private fun countOne() {
-        pending++
-        if (pending >= 20) {
-            val total = blocked
-            MmkvManager.encodeSettings(KEY_COUNT, total.toString())
-            blocked = total
-            pending = 0
+    private fun ensureLoaded() {
+        if (blocked < 0) {
+            blocked = MmkvManager.decodeSettingsString(KEY_COUNT)?.toLongOrNull() ?: 0L
         }
+    }
+
+    private fun countOne() {
+        synchronized(lock) {
+            ensureLoaded()
+            blocked += 1
+            unsaved++
+            if (unsaved >= 20) { MmkvManager.encodeSettings(KEY_COUNT, blocked.toString()); unsaved = 0 }
+        }
+    }
+
+    /** Дописать хвост на диск — при уходе с экрана, чтобы он не пропадал. */
+    fun flush() {
+        synchronized(lock) {
+            if (unsaved > 0 && blocked >= 0) {
+                MmkvManager.encodeSettings(KEY_COUNT, blocked.toString())
+                unsaved = 0
+            }
+        }
+    }
+
+    /** Показание для интерфейса (подгружает с диска при первом обращении). */
+    fun blockedNow(): Long {
+        synchronized(lock) { ensureLoaded() }
+        return blocked
     }
     var enabled: Boolean
         get() = MmkvManager.decodeSettingsString(KEY) != "0"
@@ -1138,7 +1175,11 @@ private class BrowserTab(
     val id: Int,
     startUrl: String,
     onOfferSave: (host: String, user: String, pass: String) -> Unit,
-    /** Инкогнито: не пишем историю и стираем следы при закрытии вкладки. */
+    /**
+     * Инкогнито: не пишем журнал, не держим кэш и формы, а при закрытии
+     * вкладки стираем то, что вообще в нашей власти. Куки у WebView общие на
+     * всё приложение — их мы не трогаем, и «невидимку» не обещаем.
+     */
     val incognito: Boolean = false,
     onDownload: ((url: String, name: String) -> Unit)? = null,
 ) {
@@ -1169,7 +1210,10 @@ private class BrowserTab(
         settings.loadWithOverviewMode = true
         settings.builtInZoomControls = true
         settings.displayZoomControls = false
-        addJavascriptInterface(object {
+        // В инкогнито менеджер паролей молчит: подставлять сохранённый
+        // пароль и предлагать записать новый в режиме «без следов» —
+        // ровно то, чего от него не ждут.
+        if (!incognito) addJavascriptInterface(object {
             @android.webkit.JavascriptInterface
             fun getCredentials(): String? = currentHost()?.let { PasswordStore.credentialsJson(it) }
 
@@ -1193,7 +1237,7 @@ private class BrowserTab(
             }
             override fun onPageFinished(view: WebView?, u: String?) {
                 u?.let { this@BrowserTab.url.value = it }; this@BrowserTab.canBack.value = canGoBack(); this@BrowserTab.canFwd.value = canGoForward()
-                view?.evaluateJavascript(PWD_JS, null)
+                if (!incognito) view?.evaluateJavascript(PWD_JS, null)
                 // Журнал посещений. Инкогнито молчит — иначе окно «без следов»
                 // оставляло бы главный след.
                 if (!incognito) u?.let { BrowserHistory.add(it, this@BrowserTab.title.value) }
@@ -1365,6 +1409,16 @@ private fun BrowserApp() {
         else if (activeId == t.id) activeId = tabs[i.coerceAtMost(tabs.lastIndex)].id
         // Halt the closed tab so it stops running JS/media/network in the bg.
         runCatching { t.webView.loadUrl("about:blank"); t.webView.onPause() }
+        // У инкогнито-вкладки дочищаем то, что в нашей власти: кэш, формы и
+        // её собственную историю переходов. Куки у WebView общие на всё
+        // приложение — их не трогаем и «невидимку» не обещаем.
+        if (t.incognito) {
+            runCatching {
+                t.webView.clearCache(true)
+                t.webView.clearFormData()
+                t.webView.clearHistory()
+            }
+        }
     }
 
     // «Назад» в браузере — это ПРЕДЫДУЩАЯ СТРАНИЦА.
@@ -1379,6 +1433,8 @@ private fun BrowserApp() {
     SmartDeskBackHandler {
         when {
             showHistory -> { showHistory = false; true }
+            menuOpen -> { menuOpen = false; true }
+            showTabs -> { showTabs = false; true }
             findQuery != null -> { findQuery = null; active.webView.clearMatches(); true }
             showTabs -> { showTabs = false; true }
             menuOpen -> { menuOpen = false; true }
@@ -1500,7 +1556,14 @@ private fun BrowserApp() {
                     // Замок · домен · приглушённый путь · «A» (чтение) · ↻.
                     // В макете именно так: адрес читается доменом, а хвост
                     // страницы гасится — он нужен глазу, но не спорит с ним.
-                    Text(if (active.url.value.startsWith("https")) "🔒" else "⚠", fontSize = 12.sp)
+                    // Признак инкогнито прямо в адресной строке: раньше
+                    // приватную вкладку нельзя было отличить от обычной, а
+                    // цена ошибки здесь — ровно приватность.
+                    if (active.incognito) {
+                        Text("🕶", fontSize = 12.sp)
+                    } else {
+                        Text(if (active.url.value.startsWith("https")) "🔒" else "⚠", fontSize = 12.sp)
+                    }
                     Spacer(Modifier.width(9.dp))
                     Text(
                         text = domainOf(active.url.value),

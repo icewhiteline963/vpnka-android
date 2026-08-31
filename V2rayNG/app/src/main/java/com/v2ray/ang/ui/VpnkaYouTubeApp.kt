@@ -4,6 +4,9 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Image
@@ -173,6 +176,15 @@ fun YouTubeApp() {
     var laterTick by remember { mutableStateOf(0) }
     var plTick by remember { mutableStateOf(0) }
     var openPl by remember { mutableStateOf<String?>(null) }
+    // Просьба открыть вкладку может прийти, когда «Видео» УЖЕ на экране —
+    // тогда новой композиции нет, и одного чтения при рождении мало.
+    LaunchedEffect(SmartDeskChrome.pendingYtTab) {
+        SmartDeskChrome.consumePendingYtTab()?.let { tab = it; playing = null; openPl = null }
+    }
+    // Мини-плеер с рабочего стола: открываем ИМЕННО играющий ролик.
+    LaunchedEffect(SmartDeskChrome.pendingPlayback) {
+        SmartDeskChrome.consumePendingPlayback()?.let { playing = it }
+    }
     var addTo by remember { mutableStateOf<YouTubePlaylists.Item?>(null) }
     var newPlDialog by remember { mutableStateOf(false) }
     var renamePl by remember { mutableStateOf<YouTubePlaylists.Playlist?>(null) }
@@ -385,7 +397,7 @@ fun YouTubeApp() {
                             Box(
                                 modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(11.dp))
                                     .background(VpnkaColors.Accent).clickable { newPlDialog = true }.padding(14.dp),
-                            ) { Text("＋ Новый плейлист", fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp, color = Color.White) }
+                            ) { Text("＋ Новый плейлист", fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp, color = VpnkaColors.OnAccent) }
                             Spacer(Modifier.height(10.dp))
                         }
                         items(pls, key = { it.id }) { pl ->
@@ -459,6 +471,7 @@ fun YouTubeApp() {
                 }
             } else {
                 // tab == 2: downloads
+                LaunchedEffect(Unit) { YouTubeDownloads.restore() }
                 val dls = YouTubeDownloads.entries
                 val later = remember(laterTick) { YouTubeLater.all() }
                 var wifiOnly by remember { mutableStateOf(YouTubeLater.wifiOnly) }
@@ -577,7 +590,10 @@ fun YouTubeApp() {
                         recTick++
                     }
                 }
-                if (watchedRecs.isNotEmpty() || autoDel) {
+                // Блок показываем ВСЕГДА: раньше он появлялся, только когда
+                // уже было что убирать, и включить автоуборку заранее было
+                // невозможно — настройка пряталась от того, кто её ищет.
+                run {
                     Spacer(Modifier.height(12.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         YtTabChip(
@@ -1290,6 +1306,8 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
     val marks = remember(marksTick, pb.pageUrl) { YouTubeMarks.marks(pb.pageUrl) }
     val notes = remember(marksTick, pb.pageUrl) { YouTubeMarks.notes(pb.pageUrl) }
     var isPlaying by remember { mutableStateOf(true) }
+    // «Хотим играть» отдельно от «играет»: между ними буферизация.
+    var wantsPlay by remember { mutableStateOf(true) }
     var position by remember { mutableStateOf(0L) }
 
     // Позиция нужна закладкам и заметкам, а подсветка строки транскрипта —
@@ -1297,8 +1315,12 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
     // нет, а чаще незачем.
     LaunchedEffect(player) {
         val c = player ?: return@LaunchedEffect
+        // Скорость держит служба, а не экран: вернувшись в плеер, человек
+        // раньше видел подсвеченную «1×» при фактических 2×.
+        speed = c.playbackParameters.speed
         while (true) {
             isPlaying = c.isPlaying
+            wantsPlay = c.playWhenReady
             position = c.currentPosition
             kotlinx.coroutines.delay(500)
         }
@@ -1381,7 +1403,7 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
 
     fun runDownload(opt: YouTubeService.DownloadOption) {
         qualities = null
-        YouTubeDownloads.enqueueVideo(context, opt, pb.title)
+        YouTubeDownloads.enqueueVideo(context, opt, pb.title, pb.pageUrl)
         SmartDeskToast.show("Добавлено в загрузки", "Открыть", "downloads")
     }
 
@@ -1433,7 +1455,17 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
     }
 
     val inPip = (context as? MainActivity)?.inPip == true
-    LaunchedEffect(inPip) { playerView.useController = !inPip }
+    // Встроенный контроллер PlayerView нужен РОВНО в полноэкранном режиме:
+    // свой оверлей мы рисуем только в обычном виде, а в маленьком окне поверх
+    // приложений управление не показываем вовсе.
+    //
+    // Раньше здесь стояли два эффекта в разных ветках, и порядок слотов решал,
+    // какой отработает последним: в полноэкранном не оставалось НИКАКОГО
+    // управления — ни паузы, ни перемотки, ни даже кнопки выхода. Один эффект
+    // с явными ключами убирает эту зависимость от порядка.
+    LaunchedEffect(inPip, fullscreen, player) {
+        playerView.useController = fullscreen && !inPip
+    }
 
     if (inPip) {
         Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
@@ -1503,10 +1535,13 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
             // Кадр с управлением ПОВЕРХ него. Тап по кадру прячет и
             // показывает оверлей — рядов кнопок под видео больше нет.
             var uiVisible by remember { mutableStateOf(true) }
-            LaunchedEffect(uiVisible, isPlaying) {
+            // Счётчик касаний по оверлею — он же ключ таймера автоскрытия.
+            // Без него панель гасла посреди перемотки: таймер отсчитывал от
+            // появления и не знал, что человек в этот момент ею пользуется.
+            var uiTick by remember { mutableIntStateOf(0) }
+            LaunchedEffect(uiVisible, isPlaying, uiTick) {
                 if (uiVisible && isPlaying) { kotlinx.coroutines.delay(3500); uiVisible = false }
             }
-            LaunchedEffect(player) { playerView.useController = false }
             Box(
                 modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black)
                     .clickable(
@@ -1527,7 +1562,10 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                     ) {
                         val spLabel = if (speed == 1f) "1×" else
                             ("%.2f".format(speed).trimEnd('0').trimEnd('.').replace('.', ',') + "×")
-                        OverlayPill(spLabel) { uiVisible = true }
+                        // Просто показание, не кнопка: скорость меняется
+                        // плашками внизу, а нажатие сюда раньше не делало
+                        // ничего вообще.
+                        OverlayPill(spLabel, onClick = null)
                         Spacer(Modifier.weight(1f))
                         OverlayPill(if (busy) "…" else "качество") { openPlayQuality() }
                         Spacer(Modifier.width(6.dp))
@@ -1547,6 +1585,7 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                             modifier = Modifier.size(46.dp).clip(CircleShape)
                                 .background(Color.Black.copy(alpha = 0.55f))
                                 .clickable {
+                                    uiTick++
                                     player?.let { it.seekTo((it.currentPosition - 10_000).coerceAtLeast(0)) }
                                 },
                             contentAlignment = Alignment.Center,
@@ -1554,13 +1593,28 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                         Box(
                             modifier = Modifier.size(60.dp).clip(CircleShape)
                                 .background(VpnkaColors.Accent)
-                                .clickable { player?.let { if (it.isPlaying) it.pause() else it.play() } },
+                                .clickable {
+                                uiTick++
+                                player?.let { if (it.playWhenReady) it.pause() else it.play() }
+                            },
                             contentAlignment = Alignment.Center,
-                        ) { Text(if (isPlaying) "‖" else "▶", fontSize = 19.sp, color = VpnkaColors.OnAccent) }
+                        ) {
+                            // Значок следует за НАМЕРЕНИЕМ (playWhenReady), а не за
+                            // фактическим isPlaying: при просадке сети плеер
+                            // буферизует, isPlaying=false — и кнопка врала, что
+                            // видео на паузе, хотя никто её не ставил.
+                            Text(
+                                if (wantsPlay) "‖" else "▶", fontSize = 19.sp,
+                                color = VpnkaColors.OnAccent,
+                            )
+                        }
                         Box(
                             modifier = Modifier.size(46.dp).clip(CircleShape)
                                 .background(Color.Black.copy(alpha = 0.55f))
-                                .clickable { player?.let { it.seekTo(it.currentPosition + 10_000) } },
+                                .clickable {
+                                uiTick++
+                                player?.let { it.seekTo(it.currentPosition + 10_000) }
+                            },
                             contentAlignment = Alignment.Center,
                         ) { Text("+10", fontFamily = VpnkaFonts.manrope700, fontSize = 11.sp, color = Color.White) }
                     }
@@ -1586,21 +1640,43 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                         Spacer(Modifier.height(6.dp))
                         // Полоса времени: и показывает, и перематывает. Тап по
                         // ней — переход, протяжка — перемотка на ходу.
-                        val frac = if (dur > 0) (position.toFloat() / dur).coerceIn(0f, 1f) else 0f
+                        // Пока тянут — рисуем СВОЮ долю и молчим; seekTo уходит
+                        // один раз, когда палец отпустили.
+                        //
+                        // Иначе на каждое движение пальца улетал seekTo: сотня
+                        // вызовов в секунду, и каждый для потокового видео —
+                        // новый запрос с Range через наши ноды. Полоса при этом
+                        // дёргалась: позицию мы опрашиваем раз в полсекунды, и
+                        // она отскакивала назад под пальцем.
+                        var scrub by remember { mutableStateOf<Float?>(null) }
+                        val frac = scrub
+                            ?: if (dur > 0) (position.toFloat() / dur).coerceIn(0f, 1f) else 0f
                         Box(
                             modifier = Modifier.fillMaxWidth().height(14.dp)
                                 .pointerInput(dur) {
                                     if (dur <= 0) return@pointerInput
                                     detectTapGestures { off ->
+                                        uiTick++
                                         player?.seekTo((off.x / size.width * dur).toLong().coerceIn(0, dur))
                                     }
                                 }
                                 .pointerInput(dur) {
                                     if (dur <= 0) return@pointerInput
-                                    detectHorizontalDragGestures { change, _ ->
-                                        player?.seekTo(
-                                            (change.position.x / size.width * dur).toLong().coerceIn(0, dur),
-                                        )
+                                    detectHorizontalDragGestures(
+                                        onDragStart = { off ->
+                                            uiTick++
+                                            scrub = (off.x / size.width).coerceIn(0f, 1f)
+                                        },
+                                        onDragEnd = {
+                                            scrub?.let { f ->
+                                                player?.seekTo((f * dur).toLong().coerceIn(0, dur))
+                                            }
+                                            scrub = null
+                                            uiTick++
+                                        },
+                                        onDragCancel = { scrub = null },
+                                    ) { change, _ ->
+                                        scrub = (change.position.x / size.width).coerceIn(0f, 1f)
                                     }
                                 },
                             contentAlignment = Alignment.CenterStart,
@@ -1631,7 +1707,7 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                                         .background(
                                             if (on) VpnkaColors.Accent else Color.Black.copy(alpha = 0.55f),
                                         )
-                                        .clickable { speed = sp; player?.setPlaybackSpeed(sp) },
+                                        .clickable { uiTick++; speed = sp; player?.setPlaybackSpeed(sp) },
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     Text(
@@ -2018,11 +2094,11 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
 
 /** Пилюля управления поверх кадра: тёмная подложка, мелкий моно. */
 @Composable
-private fun OverlayPill(label: String, onClick: () -> Unit) {
+private fun OverlayPill(label: String, onClick: (() -> Unit)?) {
     Box(
         modifier = Modifier.clip(RoundedCornerShape(8.dp))
             .background(Color.Black.copy(alpha = 0.6f))
-            .clickable(onClick = onClick)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(horizontal = 9.dp, vertical = 5.dp),
     ) {
         Text(label, fontFamily = VpnkaFonts.manrope700, fontSize = 10.sp, color = Color.White)
@@ -2084,12 +2160,26 @@ private fun YtEdgeFade(modifier: Modifier = Modifier) {
 /** Пустое состояние — карточка с пунктиром, объяснением и действием. */
 @Composable
 private fun YtEmptyCard(title: String, body: String, action: String?, onAction: (() -> Unit)?) {
+    val hairline = VpnkaColors.Hairline
     Column(
         modifier = Modifier.fillMaxWidth().padding(16.dp)
             .clip(RoundedCornerShape(14.dp))
-            .border(
-                1.dp, VpnkaColors.Hairline, RoundedCornerShape(14.dp),
-            )
+            // Рамка ПУНКТИРНАЯ, как в эталоне: сплошная читается как готовый
+            // блок, пунктир — как место, которое ещё предстоит заполнить.
+            .drawBehind {
+                val r = 14.dp.toPx()
+                drawRoundRect(
+                    color = hairline,
+                    size = size,
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(r, r),
+                    style = Stroke(
+                        width = 1.dp.toPx(),
+                        pathEffect = PathEffect.dashPathEffect(
+                            floatArrayOf(6.dp.toPx(), 5.dp.toPx()), 0f,
+                        ),
+                    ),
+                )
+            }
             .padding(horizontal = 16.dp, vertical = 18.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {

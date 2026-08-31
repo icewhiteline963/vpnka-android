@@ -23,6 +23,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -292,6 +294,8 @@ fun VpnkaSmartDeskScreen(
     var showSettings by remember { mutableStateOf(false) }
     var showShade by remember { mutableStateOf(false) }     // swipe top-left down
     var showControl by remember { mutableStateOf(false) }   // swipe top-right down
+    // Фактическая высота нижнего блока — её и отводим содержимому.
+    var bottomOverlay by remember { mutableStateOf(BAR_HEIGHT) }
     var wallpaper by remember {
         mutableStateOf(MmkvManager.decodeSettingsString("vpnka_smartdesk_wallpaper") ?: "flow")
     }
@@ -458,6 +462,15 @@ fun VpnkaSmartDeskScreen(
                                             SmartDeskSearch.Target.MESSENGER -> "messages"
                                             else -> "youtube"
                                         }
+                                        // Открываем НАЙДЕННОЕ, а не просто
+                                        // приложение: загрузка вела на вкладку
+                                        // поиска, а чат — в общий список.
+                                        if (h.target == SmartDeskSearch.Target.DOWNLOADS) {
+                                            SmartDeskChrome.pendingYtTab = 2
+                                        }
+                                        if (h.target == SmartDeskSearch.Target.MESSENGER) {
+                                            h.chatId?.let { Messenger.requestOpenChat(it) }
+                                        }
                                         openApp = SMARTDESK_CATALOG.firstOrNull { it.id == id }
                                     }
                                     .padding(horizontal = 6.dp, vertical = 9.dp),
@@ -543,7 +556,7 @@ fun VpnkaSmartDeskScreen(
                 Spacer(Modifier.height(7.dp))
                 // Число настоящее: счётчик ведёт сам блокировщик браузера.
                 Text(
-                    AdBlocker.blocked.toString(),
+                    AdBlocker.blockedNow().toString(),
                     fontFamily = VpnkaFonts.nunito900, fontSize = 17.sp, color = VpnkaColors.Accent,
                 )
             }
@@ -690,16 +703,6 @@ fun VpnkaSmartDeskScreen(
                 }
             }
 
-            if (showSettings) {
-                DesktopSettingsSheet(
-                    current = wallpaper,
-                    onPick = { choice ->
-                        wallpaper = choice
-                        MmkvManager.encodeSettings("vpnka_smartdesk_wallpaper", choice)
-                    },
-                    onDismiss = { showSettings = false },
-                )
-            }
         }
 
         // «Продолжить» — последние страницы браузера, как в макете.
@@ -791,8 +794,8 @@ fun VpnkaSmartDeskScreen(
             }
         }
 
-        // Место под нижнюю панель — она рисуется поверх, у самого низа окна.
-        Spacer(Modifier.height(BAR_HEIGHT))
+        // Место под нижний блок — он рисуется поверх, у самого низа окна.
+        Spacer(Modifier.height(bottomOverlay))
     }
 
         AnimatedVisibility(
@@ -829,7 +832,7 @@ fun VpnkaSmartDeskScreen(
             lastApp?.let { app ->
               // Приложение рисуется НАД панелью, поэтому оставляем ей место:
               // иначе нижняя строка приложения уходила бы под панель.
-              Box(modifier = Modifier.padding(bottom = if (SmartDeskChrome.barHidden) 0.dp else BAR_HEIGHT)) {
+              Box(modifier = Modifier.padding(bottom = bottomOverlay)) {
                 VpnkaSmartDeskAppScreen(
                     appId = app.id,
                     appLabel = app.label,
@@ -844,17 +847,36 @@ fun VpnkaSmartDeskScreen(
         // Нижняя панель супер-приложения: одно касание вместо «назад → значок».
         // Прячется на вложенных экранах (чат, канал) — там своя шапка и свои
         // жесты, вторая панель внизу только мешает.
-        if (!SmartDeskChrome.barHidden) {
-            Column(
-                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
-            ) {
+        // Нижний блок: подсказка + мини-плеер + панель.
+        //
+        // Подсказка живёт ВНЕ условия про панель: экран плеера прячет панель,
+        // и вместе с ней пропадали все сообщения «добавлено в загрузки» —
+        // главный сценарий скачивания оставался вообще без ответа, а текст
+        // потом всплывал уже после выхода из плеера, вне контекста.
+        //
+        // Высоту блока меряем и отдаём содержимому: раньше под него
+        // резервировалась константа, а реальная высота растёт от мини-плеера
+        // и подсказки — и они накрывали низ любого экрана.
+        val density = LocalDensity.current
+        Column(
+            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                // Панель системной навигации: без этого отступа кнопки панели
+                // оказывались ПОД тремя системными кнопками Android.
+                .navigationBarsPadding()
+                .onSizeChanged { bottomOverlay = with(density) { it.height.toDp() } },
+        ) {
                 // Мини-плеер: фоновый звук продолжает играть, когда «Видео»
                 // закрыто, и до сих пор остановить его можно было, только
                 // вернувшись в приложение. Строка та же, что внутри «Видео», —
                 // с настоящими паузой и стопом через MediaController.
-                if (YouTubeNowPlaying.current != null && openApp?.id != "youtube") {
+                if (!SmartDeskChrome.barHidden &&
+                    YouTubeNowPlaying.current != null && openApp?.id != "youtube"
+                ) {
                     Box(modifier = Modifier.padding(horizontal = 10.dp)) {
-                        NowPlayingBar(onOpen = { CATALOG_BY_ID["youtube"]?.let { a -> openApp = a } })
+                        NowPlayingBar(onOpen = { pb ->
+                            SmartDeskChrome.pendingPlayback = pb
+                            CATALOG_BY_ID["youtube"]?.let { a -> openApp = a }
+                        })
                     }
                 }
                 // Подсказка с действием — над панелью, чтобы кнопка «Открыть»
@@ -894,16 +916,31 @@ fun VpnkaSmartDeskScreen(
                         }
                     }
                 }
-                SmartDeskTabBar(
-                    current = openApp?.id,
-                    onDesk = { openApp = null; deskTick++ },
-                    onApp = { id, ytTab ->
-                        SmartDeskChrome.pendingYtTab = ytTab
-                        CATALOG_BY_ID[id]?.let { openApp = it }
-                    },
-                    onExit = onBack,
-                )
-            }
+                if (!SmartDeskChrome.barHidden) {
+                    SmartDeskTabBar(
+                        current = openApp?.id,
+                        onDesk = { openApp = null; deskTick++ },
+                        onApp = { id, ytTab ->
+                            SmartDeskChrome.pendingYtTab = ytTab
+                            CATALOG_BY_ID[id]?.let { openApp = it }
+                        },
+                        onExit = onBack,
+                    )
+                }
+        }
+        // Лист настроек рисуется на уровне ВСЕГО экрана. Внутри полосы сетки
+        // значков ему оставалось 250-300 dp: вместо нижнего листа выходила
+        // узкая полоса посреди экрана, а тап мимо неё попадал в карточки под
+        // ней вместо закрытия.
+        if (showSettings) {
+            DesktopSettingsSheet(
+                current = wallpaper,
+                onPick = { choice ->
+                    wallpaper = choice
+                    MmkvManager.encodeSettings("vpnka_smartdesk_wallpaper", choice)
+                },
+                onDismiss = { showSettings = false },
+            )
         }
         // Dark strip behind the Android status bar so its white icons (clock,
         // battery, signal) stay visible over the light SmartDesk wallpaper —

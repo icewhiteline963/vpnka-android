@@ -55,6 +55,29 @@ object YouTubeDownloads {
     }
 
     val entries = mutableStateListOf<Entry>()
+
+    /**
+     * Поднять из журнала уже скачанное — список жил только в памяти, и после
+     * перезапуска вкладка «Загрузки» была пустой, хотя файлы на месте.
+     * Восстанавливаем как готовые: прогресс и скорость у них уже в прошлом.
+     */
+    fun restore() {
+        if (restored) return
+        restored = true
+        DownloadRecords.all().sortedBy { it.savedAt }.forEach { r ->
+            if (entries.any { it.uri?.toString() == r.uri }) return@forEach
+            val e = Entry(nextId++, r.name, "application/octet-stream")
+            e.state = State.DONE
+            e.uri = android.net.Uri.parse(r.uri)
+            e.total = r.bytes
+            e.done = r.bytes
+            e.sourceUrl = r.sourceUrl
+            e.sourceTitle = r.name
+            entries.add(e)
+        }
+    }
+
+    private var restored = false
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val gate = Semaphore(2)
     private var nextId = 0L
@@ -74,7 +97,12 @@ object YouTubeDownloads {
             val reason = blockReason(ctx) ?: break
             e.waitReason = reason
             e.state = State.QUEUED
-            kotlinx.coroutines.delay(30_000)
+            // Спим короткими шагами: «Сейчас» должно срабатывать сразу, а не
+            // ждать конца получасовой дрёмы.
+            repeat(15) {
+                if (e.bypass) return@repeat
+                kotlinx.coroutines.delay(2_000)
+            }
         }
         e.waitReason = null
     }
@@ -107,10 +135,14 @@ object YouTubeDownloads {
         if (!caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN)) {
             return caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)
         }
+        // Требуем ПРОВЕРЕННУЮ сеть: подключённый Wi-Fi без интернета system
+        // оставляет в списке, трафик при этом идёт по сотовой — и очередь
+        // качала бы гигабайты за деньги, считая, что мы дома.
         return cm.allNetworks.any { n ->
             val c = cm.getNetworkCapabilities(n) ?: return@any false
             !c.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN) &&
-                c.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)
+                c.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) &&
+                c.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)
         }
     }
 
@@ -123,9 +155,17 @@ object YouTubeDownloads {
         return e
     }
 
-    fun enqueueVideo(context: Context, option: YouTubeService.DownloadOption, title: String) {
+    fun enqueueVideo(
+        context: Context,
+        option: YouTubeService.DownloadOption,
+        title: String,
+        /** Страница ролика — без неё запись не знает, что смотрели, и уборка
+         *  просмотренного её не видит, а «Повторить» не работает. */
+        pageUrl: String? = null,
+    ) {
         val ctx = context.applicationContext
         val e = add("$title · ${option.label}", option.mime)
+        e.sourceUrl = pageUrl; e.sourceTitle = title
         e.job = scope.launch {
             val self = coroutineContext[Job]
             awaitWindow(ctx, e)
@@ -179,10 +219,17 @@ object YouTubeDownloads {
         enqueueVideoByUrl(context, src, e.sourceTitle ?: e.label, e.sourceQuality)
     }
 
-    /** Прервать начатую загрузку. Времянки чистит сам YouTubeService. */
+    /**
+     * Прервать загрузку — идущую или ещё ждущую.
+     *
+     * Раньше отмена работала только для RUNNING, а кнопка «Отменить» стоит и
+     * у ждущей строки: нажатие не делало ничего, задача продолжала ждать
+     * ворота и всё равно качала.
+     */
     fun cancel(e: Entry) {
-        if (e.state != State.RUNNING) return
+        if (e.state != State.RUNNING && e.state != State.QUEUED) return
         e.state = State.CANCELLED
+        e.waitReason = null
         e.job?.cancel()
         e.job = null
     }
@@ -195,7 +242,20 @@ object YouTubeDownloads {
      * тридцати роликов означало десятки гигабайт через наши ноды по одному
      * тапу. Теперь качество выбирает человек, у каждой строки своё.
      */
-    fun enqueueVideoByUrl(context: Context, url: String, title: String, quality: String = "") {
+    fun enqueueVideoByUrl(
+        context: Context,
+        url: String,
+        title: String,
+        quality: String = "",
+        /**
+         * Убрать из очереди «позже» — но ТОЛЬКО когда загрузка реально
+         * началась. Раньше строку вычёркивали сразу при постановке: список
+         * «позже» лежит на диске, а очередь загрузок — в памяти, и если
+         * процесс умирал во время ожидания Wi-Fi или ночи (а ждать там
+         * положено часами), ролик оказывался и не скачан, и вычеркнут.
+         */
+        clearLater: String? = null,
+    ) {
         val ctx = context.applicationContext
         val e = add(title, "video/mp4")
         e.sourceUrl = url; e.sourceTitle = title; e.sourceQuality = quality
@@ -204,6 +264,7 @@ object YouTubeDownloads {
             awaitWindow(ctx, e)
             gate.withPermit {
                 e.state = State.RUNNING
+                clearLater?.let { YouTubeLater.remove(it) }
                 val opt = runCatching {
                     if (quality == "♪") {
                         YouTubeService.audioDownload(url)
@@ -217,7 +278,13 @@ object YouTubeDownloads {
                 if (opt == null) { e.error = "Нет форматов"; e.state = State.FAILED; return@withPermit }
                 e.label = "$title · ${opt.label}"
                 runCatching {
-                    YouTubeService.download(ctx, opt, title) { d, t, s -> e.done = d; e.total = t; e.speed = s }
+                    // Без isCancelled отменённая загрузка дочитывалась до
+                    // конца (трафик через наши ноды!) и перетирала
+                    // «Отменено» на «Готово».
+                    YouTubeService.download(
+                        ctx, opt, title,
+                        isCancelled = { self?.isActive != true },
+                    ) { d, t, s -> e.done = d; e.total = t; e.speed = s }
                 }
                     .onSuccess {
                         e.uri = it; e.state = State.DONE
@@ -225,7 +292,7 @@ object YouTubeDownloads {
                         // процессом, а файл останется.
                         DownloadRecords.add(it.toString(), e.label, e.sourceUrl, e.total)
                     }
-                    .onFailure { e.error = it.message ?: it.javaClass.simpleName; e.state = State.FAILED }
+                    .onFailure { e.state = failureState(it, e) }
             }
         }
     }
@@ -269,6 +336,10 @@ object YouTubeDownloads {
         e.kind = "Субтитры"
         e.job = scope.launch {
             gate.withPermit {
+                // Субтитры — килобайты, ворота очереди им ни к чему, но
+                // состояние показывать надо: строка висела «В очереди» до
+                // самого конца и не отменялась.
+                e.state = State.RUNNING
                 runCatching { YouTubeService.downloadSubtitle(ctx, sub, title) }
                     .onSuccess {
                         e.uri = it; e.state = State.DONE
