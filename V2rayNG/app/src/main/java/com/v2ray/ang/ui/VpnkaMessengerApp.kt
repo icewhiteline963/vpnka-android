@@ -966,10 +966,6 @@ private fun ChatScreen(
     var showProfile by remember { mutableStateOf(false) }
     // Follow the conversation: when a message is sent OR arrives (msgs grows),
     // and while a photo uploads, keep the newest row on screen.
-    LaunchedEffect(msgs.size, sendPct, compressing) {
-        val total = msgs.size + (if (sendPct != null) 1 else 0) + (if (compressing) 1 else 0)
-        if (total > 0) listState.animateScrollToItem(total - 1)
-    }
 
     // Отчёт о прочтении — только когда экран РЕАЛЬНО на переднем плане.
     // Свёрнутое приложение с открытым чатом продолжало слать собеседнику ✓✓
@@ -1011,6 +1007,13 @@ private fun ChatScreen(
     }
 
     var compressing by remember { mutableStateOf(false) }
+
+    // Следим за концом переписки: новое сообщение, отправка фото и строка
+    // «Сжатие видео…» — всё это должно оставаться на виду.
+    LaunchedEffect(msgs.size, sendPct, compressing) {
+        val total = msgs.size + (if (sendPct != null) 1 else 0) + (if (compressing) 1 else 0)
+        if (total > 0) listState.animateScrollToItem(total - 1)
+    }
     var showAttach by remember { mutableStateOf(false) }
     var playVideo by remember { mutableStateOf<String?>(null) }
     val videoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
