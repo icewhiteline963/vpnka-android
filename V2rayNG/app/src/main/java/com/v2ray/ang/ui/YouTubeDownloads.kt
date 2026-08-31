@@ -90,13 +90,29 @@ object YouTubeDownloads {
     }
 
     /** Resolves the best quality for a bare video URL, then downloads it. */
-    fun enqueueVideoByUrl(context: Context, url: String, title: String) {
+    /**
+     * @param quality «480p» / «720p» / «1080p» / «♪» / пусто — максимум.
+     *
+     * Раньше всегда бралось максимальное: «Скачать всё» на плейлисте из
+     * тридцати роликов означало десятки гигабайт через наши ноды по одному
+     * тапу. Теперь качество выбирает человек, у каждой строки своё.
+     */
+    fun enqueueVideoByUrl(context: Context, url: String, title: String, quality: String = "") {
         val ctx = context.applicationContext
         val e = add(title, "video/mp4")
         e.job = scope.launch {
             val self = coroutineContext[Job]
             gate.withPermit {
-                val opt = runCatching { YouTubeService.videoStreams(url).firstOrNull() }.getOrNull()
+                val opt = runCatching {
+                    if (quality == "♪") {
+                        YouTubeService.audioDownload(url)
+                    } else {
+                        val all = YouTubeService.videoStreams(url)
+                        if (quality.isBlank()) all.firstOrNull()
+                        else all.firstOrNull { it.label.contains(quality, ignoreCase = true) }
+                            ?: all.firstOrNull()
+                    }
+                }.getOrNull()
                 if (opt == null) { e.error = "Нет форматов"; e.state = State.FAILED; return@withPermit }
                 e.label = "$title · ${opt.label}"
                 runCatching {

@@ -90,6 +90,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.foundation.shape.CircleShape
 import com.v2ray.ang.handler.SettingsManager
+import com.v2ray.ang.handler.DeviceStorage
 import com.v2ray.ang.handler.YouTubeLater
 import com.v2ray.ang.handler.YouTubeMarks
 import com.v2ray.ang.handler.YouTubeThumbs
@@ -369,6 +370,39 @@ fun YouTubeApp() {
                 // tab == 2: downloads
                 val dls = YouTubeDownloads.entries
                 val later = remember(laterTick) { YouTubeLater.all() }
+                var wifiOnly by remember { mutableStateOf(YouTubeLater.wifiOnly) }
+                val storage = remember(laterTick, dls.size) { DeviceStorage.read(context) }
+
+                // Блок памяти — первым, как в макете. Человек, который качает
+                // видео, упирается в место раньше всего остального, а узнаёт
+                // об этом обычно из невнятной ошибки посреди загрузки.
+                Column(modifier = Modifier.fillMaxWidth().padding(top = 10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "Память",
+                            fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp,
+                            color = VpnkaColors.TextStrong, modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            "свободно ${DeviceStorage.fmt(storage.freeBytes)} из " +
+                                DeviceStorage.fmt(storage.totalBytes),
+                            fontFamily = VpnkaFonts.manrope600, fontSize = 11.sp,
+                            color = VpnkaColors.TextMuted,
+                        )
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    val used = if (storage.totalBytes > 0) {
+                        ((storage.totalBytes - storage.freeBytes).toFloat() / storage.totalBytes)
+                            .coerceIn(0f, 1f)
+                    } else 0f
+                    LinearProgressIndicator(
+                        progress = { used },
+                        modifier = Modifier.fillMaxWidth().height(7.dp).clip(RoundedCornerShape(4.dp)),
+                        color = VpnkaColors.Accent,
+                        trackColor = VpnkaColors.CardServer,
+                    )
+                }
+                Spacer(Modifier.height(14.dp))
 
                 // Очередь «скачать позже» — над списком загрузок.
                 //
@@ -388,7 +422,9 @@ fun YouTubeApp() {
                         DlAction("Скачать всё") {
                             withStorage {
                                 later.forEach { i ->
-                                    YouTubeDownloads.enqueueVideoByUrl(context, i.url, i.title)
+                                    YouTubeDownloads.enqueueVideoByUrl(
+                                        context, i.url, i.title, i.quality,
+                                    )
                                 }
                                 YouTubeLater.clear()
                                 laterTick++
@@ -400,6 +436,28 @@ fun YouTubeApp() {
                         Spacer(Modifier.width(6.dp))
                         DlAction("Очистить") { YouTubeLater.clear(); laterTick++ }
                     }
+                    // Переключатель сети — рядом с очередью, а не в дальних
+                    // настройках: решение «качать сейчас или дождаться дома»
+                    // принимают именно здесь.
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        YtTabChip(
+                            if (wifiOnly) "Только Wi-Fi" else "Любая сеть",
+                            selected = wifiOnly,
+                        ) {
+                            wifiOnly = !wifiOnly
+                            YouTubeLater.wifiOnly = wifiOnly
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            if (wifiOnly) "Очередь дождётся домашней сети"
+                            else "Будет качать по мобильному — это ваш трафик",
+                            fontFamily = VpnkaFonts.manrope600, fontSize = 11.sp,
+                            color = VpnkaColors.TextMuted,
+                        )
+                    }
                     later.forEach { i ->
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
@@ -410,9 +468,27 @@ fun YouTubeApp() {
                                 color = VpnkaColors.TextMuted, maxLines = 1,
                                 overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
                             )
+                            listOf("480p", "720p", "1080p", "♪").forEach { q ->
+                                val on = i.quality == q
+                                Text(
+                                    q,
+                                    fontFamily = VpnkaFonts.manrope600, fontSize = 10.sp,
+                                    color = if (on) VpnkaColors.Accent else VpnkaColors.TextFaint,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(7.dp))
+                                        .clickable {
+                                            YouTubeLater.setQuality(i.url, if (on) "" else q)
+                                            laterTick++
+                                        }
+                                        .padding(horizontal = 5.dp, vertical = 3.dp),
+                                )
+                            }
+                            Spacer(Modifier.width(4.dp))
                             DlAction("⬇") {
                                 withStorage {
-                                    YouTubeDownloads.enqueueVideoByUrl(context, i.url, i.title)
+                                    YouTubeDownloads.enqueueVideoByUrl(
+                                        context, i.url, i.title, i.quality,
+                                    )
                                     YouTubeLater.remove(i.url)
                                     laterTick++
                                 }

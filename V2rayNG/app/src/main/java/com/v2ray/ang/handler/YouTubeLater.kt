@@ -16,6 +16,7 @@ import com.google.gson.reflect.TypeToken
  */
 object YouTubeLater {
     private const val KEY = "vpnka_youtube_later"
+    private const val KEY_WIFI = "vpnka_youtube_later_wifi"
     private val gson = Gson()
 
     data class Item(
@@ -23,6 +24,8 @@ object YouTubeLater {
         val title: String,
         val uploader: String = "",
         val addedAt: Long = 0L,
+        /** Качество, выбранное для ЭТОЙ строки: «720p», «1080p», «4K», «audio». */
+        var quality: String = "",
     )
 
     private fun load(): MutableList<Item> {
@@ -58,4 +61,17 @@ object YouTubeLater {
     }
 
     fun clear() = store(emptyList())
+
+    /** У каждой строки очереди своё качество — так в макете, и так честнее:
+     *  лекцию берут в 480p, а фильм в 1080p, и решают это по-разному. */
+    fun setQuality(url: String, quality: String) {
+        val list = load()
+        list.firstOrNull { it.url == url }?.quality = quality
+        store(list)
+    }
+
+    /** Только по Wi-Fi: очередь дождётся дома, а не съест мобильный трафик. */
+    var wifiOnly: Boolean
+        get() = MmkvManager.decodeSettingsBool(KEY_WIFI, true)
+        set(v) { MmkvManager.encodeSettings(KEY_WIFI, v) }
 }
