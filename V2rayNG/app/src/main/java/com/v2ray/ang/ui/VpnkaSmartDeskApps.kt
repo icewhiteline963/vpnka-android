@@ -439,7 +439,7 @@ private fun CalendarApp(syncTick: Int, onChanged: () -> Unit) {
                 .clip(CircleShape).background(VpnkaColors.Accent)
                 .clickable { editing = null; showEditor = true },
             contentAlignment = Alignment.Center,
-        ) { Text("+", fontSize = 30.sp, color = Color.White) }
+        ) { Text("+", fontSize = 30.sp, color = VpnkaColors.OnAccent) }
     }
 
     if (showEditor) {
@@ -550,7 +550,7 @@ private fun ContactsApp(syncTick: Int, onChanged: () -> Unit) {
                 .clip(CircleShape).background(VpnkaColors.Accent)
                 .clickable { editing = null; showEditor = true },
             contentAlignment = Alignment.Center,
-        ) { Text("+", fontSize = 30.sp, color = Color.White) }
+        ) { Text("+", fontSize = 30.sp, color = VpnkaColors.OnAccent) }
     }
 
     if (showEditor) {
