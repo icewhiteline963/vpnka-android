@@ -460,7 +460,6 @@ private fun ContactsApp(syncTick: Int, onChanged: () -> Unit) {
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
-        }
             Box(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
                 DeskField("Поиск", query) { query = it }
             }
@@ -1201,6 +1200,7 @@ private fun BrowserApp() {
                     modifier = Modifier.clip(CircleShape)
                         .clickable { findQuery = null; active.webView.clearMatches() }.padding(8.dp))
             }
+        }
 
         // Chrome-style top bar: omnibox (lock + domain) · tab count · menu.
         Row(
