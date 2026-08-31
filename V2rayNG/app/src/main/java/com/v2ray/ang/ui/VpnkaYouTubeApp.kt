@@ -1014,70 +1014,96 @@ private fun VideoRow(
     onRemove: (() -> Unit)? = null,
 ) {
     var fav by remember(v.url) { mutableStateOf(YouTubeFavorites.isFav(v.url)) }
-    Row(
-        modifier = Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(11.dp))
-            .clickable(onClick = onClick)
-            .padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(modifier = Modifier.size(112.dp, 63.dp).clip(RoundedCornerShape(9.dp))) {
+    var inLater by remember(v.url) { mutableStateOf(YouTubeLater.has(v.url)) }
+    val context = LocalContext.current
+
+    // Карточка по макету: широкая обложка, под ней аватар канала с названием,
+    // ещё ниже — действия. Прежняя строка с обложкой 112×63 слева умещала
+    // больше роликов на экран, но по такой ленте не выбирают глазами: кадр
+    // размером с ноготь ничего не показывает, и приходится читать заголовки.
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 9.dp)) {
+        Box(
+            modifier = Modifier.fillMaxWidth().height(198.dp)
+                .clip(RoundedCornerShape(13.dp))
+                .clickable(onClick = onClick),
+        ) {
             YtThumb(v.thumb, Modifier.matchParentSize())
             if (v.durationSec > 0) {
+                // У самой плашки уже есть свой отступ от края — второй тут
+                // отодвинул бы её на полтора сантиметра внутрь кадра.
                 Box(modifier = Modifier.align(Alignment.BottomEnd)) {
                     YtBadge(fmtDuration(v.durationSec))
                 }
             }
         }
-        Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(v.title, fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp, color = VpnkaColors.TextStrong,
-                maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Spacer(Modifier.height(3.dp))
-            Text(
-                buildString {
-                    if (v.uploader.isNotBlank()) append(v.uploader)
-                    if (v.durationSec > 0) {
-                        if (isNotEmpty()) append(" · ")
-                        append(fmtDuration(v.durationSec))
-                    }
-                },
-                fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp, color = VpnkaColors.TextMuted,
-                maxLines = 1, overflow = TextOverflow.Ellipsis,
-            )
+        Spacer(Modifier.height(9.dp))
+        Row(modifier = Modifier.fillMaxWidth()) {
+            // Кружок канала — в макете он есть, и по нему лента читается как
+            // лента авторов, а не как список ссылок.
+            Box(
+                modifier = Modifier.size(34.dp).clip(CircleShape)
+                    .background(
+                        Brush.linearGradient(
+                            listOf(VpnkaColors.AccentLight, VpnkaColors.Accent),
+                        ),
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    v.uploader.trim().take(1).uppercase().ifBlank { "•" },
+                    fontFamily = VpnkaFonts.nunito800, fontSize = 13.sp,
+                    color = VpnkaColors.OnAccent,
+                )
+            }
+            Spacer(Modifier.width(11.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    v.title, fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp,
+                    lineHeight = 19.sp, color = VpnkaColors.TextStrong,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    buildString {
+                        if (v.uploader.isNotBlank()) append(v.uploader)
+                        if (v.durationSec > 0) {
+                            if (isNotEmpty()) append(" · ")
+                            append(fmtDuration(v.durationSec))
+                        }
+                    },
+                    fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp,
+                    color = VpnkaColors.TextFaint, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
-        // «Позже» прямо в ленте — чтобы отложить, не открывая видео. По
-        // макету это одно из трёх действий карточки; из них два уже жили
-        // внутри плеера, а до плеера ещё надо дойти.
-        var inLater by remember(v.url) { mutableStateOf(YouTubeLater.has(v.url)) }
-        Text(
-            if (inLater) "⏱✓" else "⏱",
-            fontSize = 18.sp,
-            color = if (inLater) VpnkaColors.Amber else VpnkaColors.TextMuted,
-            modifier = Modifier.clip(CircleShape).clickable {
+        Spacer(Modifier.height(9.dp))
+        // Действия — с отступом под аватар, ровно как в макете.
+        Row(modifier = Modifier.fillMaxWidth().padding(start = 45.dp)) {
+            YtTabChip("↓ Скачать", selected = false) {
+                YouTubeDownloads.enqueueVideoByUrl(context, v.url, v.title)
+                SmartDeskToast.show("Добавлено в загрузки", "Открыть", "downloads")
+            }
+            Spacer(Modifier.width(7.dp))
+            YtTabChip(if (inLater) "⏱ В очереди" else "⏱ Позже", selected = inLater) {
                 if (inLater) YouTubeLater.remove(v.url)
                 else YouTubeLater.add(v.url, v.title, v.uploader)
                 inLater = !inLater
-            }.padding(8.dp),
-        )
-        if (onAdd != null) {
-            Text("＋", fontSize = 22.sp, color = VpnkaColors.TextStrong,
-                modifier = Modifier.clip(CircleShape).clickable { onAdd(v) }.padding(8.dp))
-        }
-        Text(
-            if (fav) "★" else "☆",
-            fontSize = 22.sp,
-            color = if (fav) VpnkaColors.Accent else VpnkaColors.TextMuted,
-            modifier = Modifier.clip(CircleShape).clickable {
+            }
+            Spacer(Modifier.width(7.dp))
+            YtTabChip(if (fav) "★" else "☆", selected = fav) {
                 fav = YouTubeFavorites.toggle(
                     YouTubeFavorites.Fav(v.url, v.title, v.uploader, v.durationSec)
                 )
                 onFavChanged?.invoke()
-            }.padding(8.dp),
-        )
-        if (onRemove != null) {
-            Text("🗑", fontSize = 18.sp, color = VpnkaColors.TextMuted,
-                modifier = Modifier.clip(CircleShape).clickable { onRemove() }.padding(8.dp))
+            }
+            if (onAdd != null) {
+                Spacer(Modifier.width(7.dp))
+                YtTabChip("＋", selected = false) { onAdd(v) }
+            }
+            if (onRemove != null) {
+                Spacer(Modifier.width(7.dp))
+                YtTabChip("🗑", selected = false) { onRemove() }
+            }
         }
     }
 }
