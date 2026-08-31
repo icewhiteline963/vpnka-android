@@ -153,7 +153,10 @@ fun VpnkaSmartDeskAppScreen(
     appGlyph: String,
     online: Boolean,
     onBack: () -> Unit,   // back to the SmartDesk desktop
-    onExit: () -> Unit,   // out to the vpnka home screen
+    // Выход на главный экран VPNka живёт в общей нижней панели, поэтому
+    // приложению он больше не нужен; параметр оставлен, чтобы не трогать
+    // вызовы, и намеренно не используется.
+    @Suppress("UNUSED_PARAMETER") onExit: () -> Unit,
 ) {
     Box(modifier = Modifier.fillMaxSize().background(VpnkaColors.BgOffMid)) {
     Column(
@@ -200,7 +203,9 @@ fun VpnkaSmartDeskAppScreen(
                 else -> EmptyHint("Приложение недоступно")
             }
         }
-        SmartDeskBottomBar(onBack = onBack, onExit = onExit)
+        // Своей нижней панели у приложения больше нет: обе кнопки —
+        // «Рабочий стол» и «На главный экран» — теперь в общей панели
+        // супер-приложения, и две панели друг над другом только мешали.
     }
         SmartDeskStatusScrim()
     }
@@ -220,39 +225,6 @@ fun SmartDeskStatusScrim() {
     }
 }
 
-/** Bottom bar shared by the app screens: back to desktop | exit to home. */
-@Composable
-private fun SmartDeskBottomBar(onBack: () -> Unit, onExit: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.Black.copy(alpha = 0.20f)),
-    ) {
-        Text(
-            text = "‹ Рабочий стол",
-            fontFamily = VpnkaFonts.nunito800,
-            fontSize = 14.sp,
-            color = VpnkaColors.TextStrong,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            modifier = Modifier
-                .weight(1f)
-                .clickable(onClick = onBack)
-                .padding(vertical = 12.dp),
-        )
-        Box(modifier = Modifier.width(1.dp).height(20.dp).background(Color.White.copy(alpha = 0.15f)))
-        Text(
-            text = "⌂ На главный экран",
-            fontFamily = VpnkaFonts.nunito800,
-            fontSize = 14.sp,
-            color = VpnkaColors.TextStrong,
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            modifier = Modifier
-                .weight(1f)
-                .clickable(onClick = onExit)
-                .padding(vertical = 12.dp),
-        )
-    }
-}
 
 @Composable
 private fun SmartDeskAppBar(
