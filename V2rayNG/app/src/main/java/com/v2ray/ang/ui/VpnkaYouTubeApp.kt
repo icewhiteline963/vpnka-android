@@ -222,24 +222,78 @@ fun YouTubeApp() {
 
             NowPlayingBar(onOpen = { pb -> playing = pb })
 
-            Row(modifier = Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                YtTabChip("Поиск", tab == 0) { tab = 0 }
-                Spacer(Modifier.width(8.dp))
-                YtTabChip("Плейлисты", tab == 1) { tab = 1; openPl = null; plTick++ }
-                Spacer(Modifier.width(8.dp))
-                val activeDls = YouTubeDownloads.entries.count {
-                    it.state == YouTubeDownloads.State.RUNNING ||
-                        it.state == YouTubeDownloads.State.QUEUED
+            // Шапка по макету: название, счётчик загрузок, лупа. Раньше верх
+            // экрана занимали четыре строки подряд — вкладки, поле с крупной
+            // кнопкой «Найти», ряд подсказок и сортировка, — и на содержимое
+            // оставалась половина экрана. Поиск нужен в начале и почти не
+            // нужен потом, поэтому он ПРЯЧЕТСЯ за лупу и раскрывается сам,
+            // пока искать ещё нечего.
+            val activeDls = YouTubeDownloads.entries.count {
+                it.state == YouTubeDownloads.State.RUNNING ||
+                    it.state == YouTubeDownloads.State.QUEUED
+            }
+            var searchOpen by remember { mutableStateOf(false) }
+            val showSearch = tab == 0 && (searchOpen || (results.isEmpty() && !loading))
+
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Видео", fontFamily = VpnkaFonts.nunito800, fontSize = 17.sp,
+                    color = VpnkaColors.TextStrong, modifier = Modifier.weight(1f),
+                )
+                if (activeDls > 0) {
+                    Row(
+                        modifier = Modifier.clip(RoundedCornerShape(9.dp))
+                            .background(VpnkaColors.CardServer)
+                            .clickable { tab = 2 }
+                            .padding(horizontal = 11.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("↓", fontSize = 12.sp, color = VpnkaColors.Accent)
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            activeDls.toString(), fontFamily = VpnkaFonts.manrope700,
+                            fontSize = 12.sp, color = VpnkaColors.TextStrong,
+                        )
+                    }
+                    Spacer(Modifier.width(7.dp))
                 }
-                YtTabChip(
-                    if (activeDls > 0) "Загрузки · $activeDls" else "Загрузки",
-                    tab == 2,
-                ) { tab = 2 }
+                Box(
+                    modifier = Modifier.size(32.dp).clip(RoundedCornerShape(9.dp))
+                        .background(if (showSearch) VpnkaColors.Accent else VpnkaColors.CardServer)
+                        .clickable { searchOpen = !showSearch; if (!showSearch) tab = 0 },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "⌕", fontSize = 15.sp,
+                        color = if (showSearch) VpnkaColors.OnAccent else VpnkaColors.TextStrong,
+                    )
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                YtTabChip("Поиск", tab == 0) { tab = 0 }
+                Spacer(Modifier.width(7.dp))
+                YtTabChip("Плейлисты", tab == 1) { tab = 1; openPl = null; plTick++ }
+                Spacer(Modifier.width(7.dp))
+                YtTabChip("Загрузки", tab == 2) { tab = 2 }
+                // Сортировка уехала сюда же: своя строка ради одного чипа —
+                // роскошь, которой на этом экране не осталось места.
+                if (tab == 0 && results.isNotEmpty()) {
+                    Spacer(Modifier.weight(1f))
+                    YtSortChip(searchSort, searchSortOptions) { searchSort = it }
+                }
             }
 
             if (tab == 0) {
+                if (showSearch) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     OutlinedTextField(
@@ -257,21 +311,25 @@ fun YouTubeApp() {
                             cursorColor = VpnkaColors.Accent, focusedBorderColor = VpnkaColors.Accent,
                             unfocusedBorderColor = VpnkaColors.CardServer,
                         ),
+                        // «Найти» переехала ВНУТРЬ поля: Enter и так ищет, а
+                        // отдельная крупная кнопка занимала треть строки.
+                        trailingIcon = {
+                            Text(
+                                "➤", fontSize = 16.sp, color = VpnkaColors.Accent,
+                                modifier = Modifier.clip(CircleShape)
+                                    .clickable { runSearch(); searchOpen = false }
+                                    .padding(10.dp),
+                            )
+                        },
                         modifier = Modifier.weight(1f),
                     )
-                    Spacer(Modifier.width(8.dp))
-                    Box(
-                        modifier = Modifier.clip(RoundedCornerShape(13.dp))
-                            .background(VpnkaColors.Accent)
-                            .clickable { runSearch() }
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                    ) { Text("Найти", fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp, color = Color.White) }
                 }
 
-                // Quick category presets — one tap runs a curated search.
+                // Подсказки живут вместе с полем: без него это просто ряд
+                // кнопок непонятно к чему.
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
                     // Недавние запросы — они полезнее выдуманных рубрик:
                     // человек возвращается к своему, а не к нашему.
@@ -287,10 +345,6 @@ fun YouTubeApp() {
                     }
                 }
 
-                if (results.isNotEmpty()) {
-                    Row(modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
-                        YtSortChip(searchSort, searchSortOptions) { searchSort = it }
-                    }
                 }
 
                 when {
