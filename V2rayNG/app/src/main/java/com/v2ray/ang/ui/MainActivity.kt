@@ -1607,6 +1607,11 @@ class MainActivity : HelperBaseComponentActivity() {
                     online = smartDeskOnline && uiState.isRunning,
                     onBack = { showSmartDesk = false },
                     onToggleVpn = { handleFabAction() },
+                    // Страна и задержка в шапке рабочего стола — как в макете.
+                    serverName = servers.firstOrNull { it.guid == uiState.selectedGuid }
+                        ?.profile?.remarks?.ifBlank { "" } ?: "",
+                    serverDelay = servers.firstOrNull { it.guid == uiState.selectedGuid }
+                        ?.testDelayString?.takeIf { it.isNotBlank() } ?: "",
                     setBackHandler = { smartDeskBack = it },
                 )
             }

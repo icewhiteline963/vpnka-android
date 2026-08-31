@@ -244,6 +244,9 @@ fun VpnkaSmartDeskScreen(
     online: Boolean,
     onBack: () -> Unit,
     onToggleVpn: () -> Unit = {},
+    /** Что показывать в шапке: страна и задержка, как в макете. */
+    serverName: String = "",
+    serverDelay: String = "",
     setBackHandler: ((() -> Boolean)?) -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -338,20 +341,31 @@ fun VpnkaSmartDeskScreen(
             Spacer(Modifier.weight(1f))
             SmartDeskCloudButton(online = online, ink = ink)
             Spacer(Modifier.width(8.dp))
+            // Шапка — ИНДИКАТОР, а не переключатель.
+            //
+            // Раньше одно касание этой пилюли отключало ВПН всему телефону,
+            // причём подписана она была состоянием («На связи»), а не
+            // действием. Человек трогал её, чтобы посмотреть статус, и рвал
+            // соединение — а SmartDesk без ВПН не работает вовсе.
+            // Переключатель теперь в центре управления, где ему и место.
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .clip(CircleShape)
                     .background(ink.copy(alpha = 0.16f))
-                    // Tap to toggle the VPN — offline → connect, online → disconnect.
-                    .clickable { onToggleVpn() }
                     .padding(horizontal = 11.dp, vertical = 6.dp),
             ) {
                 Box(Modifier.size(8.dp).clip(CircleShape).background(if (online) VpnkaColors.Green else VpnkaColors.Warning))
                 Spacer(Modifier.width(6.dp))
                 Text(
-                    text = if (online) "На связи" else "Подключить",
+                    text = when {
+                        !online -> "Выключен"
+                        serverName.isBlank() -> "На связи"
+                        serverDelay.isBlank() -> serverName
+                        else -> "$serverName · $serverDelay"
+                    },
                     fontFamily = VpnkaFonts.manrope700, fontSize = 12.sp, color = ink,
+                    maxLines = 1,
                 )
             }
         }
@@ -536,6 +550,7 @@ fun VpnkaSmartDeskScreen(
         ) {
             ControlCentre(
                 online = online,
+                onToggleVpn = onToggleVpn,
                 wallpaper = wallpaper,
                 onWallpaper = { choice ->
                     wallpaper = choice
@@ -694,6 +709,7 @@ private fun ShadeRow(glyph: String, title: String, body: String) {
 @Composable
 private fun ControlCentre(
     online: Boolean,
+    onToggleVpn: () -> Unit,
     wallpaper: String,
     onWallpaper: (String) -> Unit,
     onDesktopSettings: () -> Unit,
@@ -716,12 +732,39 @@ private fun ControlCentre(
         ) {
             Text("Центр управления", fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.TextStrong)
             Spacer(Modifier.height(12.dp))
-            // VPN status tile.
+            // Плитка ВПН — теперь ДЕЙСТВУЮЩАЯ.
+            //
+            // Она выглядела переключателем (зелёная подсветка, индикатор), но
+            // нажатие не делало ничего: настоящее переключение висело на
+            // пилюле в шапке, подписанной состоянием. Поменяли местами —
+            // действие туда, где оно выглядит действием.
+            //
+            // Отключение спрашивает подтверждение: SmartDesk без ВПН не
+            // работает, и рвать соединение случайным касанием нельзя.
+            var askDisconnect by remember { mutableStateOf(false) }
+            if (askDisconnect) {
+                AlertDialog(
+                    onDismissRequest = { askDisconnect = false },
+                    title = { Text("Отключить VPN?", fontFamily = VpnkaFonts.nunito800, color = VpnkaColors.TextStrong) },
+                    text = {
+                        Text(
+                            "Приложения рабочего стола ходят в сеть только через VPN — без него они перестанут работать.",
+                            fontFamily = VpnkaFonts.manrope600, color = VpnkaColors.TextMuted,
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { askDisconnect = false; onToggleVpn() }) { Text("Отключить") }
+                    },
+                    dismissButton = { TextButton(onClick = { askDisconnect = false }) { Text("Отмена") } },
+                    containerColor = VpnkaColors.BgOffCentre,
+                )
+            }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(14.dp))
                     .background(if (online) VpnkaColors.Green.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.10f))
+                    .clickable { if (online) askDisconnect = true else onToggleVpn() }
                     .padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
