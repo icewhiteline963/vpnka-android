@@ -66,11 +66,43 @@ object YouTubeHistory {
      */
     fun savePosition(url: String, posSec: Long, durationSec: Long) {
         val map = positions()
-        if (posSec < 30 || (durationSec > 0 && posSec > durationSec - 30)) {
+        val finished = durationSec > 0 && posSec > durationSec - 30
+        if (posSec < 30 || finished) {
             map.remove(url)
         } else {
             map[url] = posSec
         }
         MmkvManager.encodeSettings(KEY_POS, gson.toJson(map))
+        // Досмотренное отмечаем ОТДЕЛЬНО. В карте позиций «досмотрел» и
+        // «не открывал» — одно и то же значение 0, и отличить их потом
+        // невозможно; а уборке скачанного нужно именно это различие.
+        if (finished) markWatched(url)
     }
+
+    // ---- что досмотрено (для уборки скачанного) ----------------------
+
+    private const val KEY_WATCHED = "yt_watched_at"
+
+    private fun watched(): MutableMap<String, Long> {
+        val raw = MmkvManager.decodeSettingsString(KEY_WATCHED) ?: return mutableMapOf()
+        return try {
+            gson.fromJson<MutableMap<String, Long>>(
+                raw, object : TypeToken<MutableMap<String, Long>>() {}.type,
+            ) ?: mutableMapOf()
+        } catch (e: Exception) {
+            mutableMapOf()
+        }
+    }
+
+    fun markWatched(url: String) {
+        val m = watched()
+        m[url] = System.currentTimeMillis()
+        // Держим последние 300 — карта не должна расти вечно.
+        val trimmed = m.entries.sortedByDescending { it.value }.take(300)
+            .associate { it.key to it.value }
+        MmkvManager.encodeSettings(KEY_WATCHED, gson.toJson(trimmed))
+    }
+
+    /** Когда досмотрели. 0 — не досматривали. */
+    fun watchedAt(url: String): Long = watched()[url] ?: 0L
 }

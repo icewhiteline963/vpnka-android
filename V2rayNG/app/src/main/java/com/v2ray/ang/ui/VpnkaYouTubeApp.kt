@@ -93,6 +93,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.foundation.shape.CircleShape
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.handler.DeviceStorage
+import com.v2ray.ang.handler.DownloadRecords
 import com.v2ray.ang.handler.YouTubeHistory
 import com.v2ray.ang.handler.YouTubeLater
 import com.v2ray.ang.handler.YouTubeMarks
@@ -499,6 +500,56 @@ fun YouTubeApp() {
                     }
                     Spacer(Modifier.height(4.dp))
                     SpeedGraph(speeds)
+                }
+
+                // Уборка просмотренного. Автоматика выключена по умолчанию и
+                // трогает ТОЛЬКО то, что скачали мы сами и что человек
+                // досмотрел до конца: сама удалять чужие файлы программа не
+                // должна. Ручная кнопка есть всегда — она честнее таймера.
+                var recTick by remember { mutableStateOf(0) }
+                var autoDel by remember { mutableStateOf(DownloadRecords.autoDelete) }
+                val watchedRecs = remember(recTick, autoDel, dls.size) {
+                    DownloadRecords.watchedOlderThan(if (autoDel) DownloadRecords.AUTO_DAYS else 0)
+                }
+                LaunchedEffect(autoDel) {
+                    if (autoDel) {
+                        DownloadRecords.watchedOlderThan(DownloadRecords.AUTO_DAYS)
+                            .forEach { DownloadRecords.delete(context, it) }
+                        recTick++
+                    }
+                }
+                if (watchedRecs.isNotEmpty() || autoDel) {
+                    Spacer(Modifier.height(12.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        YtTabChip(
+                            if (autoDel) "Удалять просмотренное" else "Просмотренное не трогать",
+                            selected = autoDel,
+                        ) {
+                            autoDel = !autoDel
+                            DownloadRecords.autoDelete = autoDel
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        if (watchedRecs.isNotEmpty()) {
+                            val size = watchedRecs.sumOf { it.bytes }
+                            Text(
+                                "${watchedRecs.size} файл. · ${fmtBytes(size)}",
+                                fontFamily = VpnkaFonts.manrope600, fontSize = 11.sp,
+                                color = VpnkaColors.TextMuted, modifier = Modifier.weight(1f),
+                            )
+                            DlAction("Удалить") {
+                                var freed = 0L
+                                watchedRecs.forEach { freed += DownloadRecords.delete(context, it) }
+                                recTick++
+                                SmartDeskToast.show("Освободилось ${fmtBytes(freed)}")
+                            }
+                        } else {
+                            Text(
+                                "Через ${DownloadRecords.AUTO_DAYS} дн. после просмотра",
+                                fontFamily = VpnkaFonts.manrope600, fontSize = 11.sp,
+                                color = VpnkaColors.TextMuted,
+                            )
+                        }
+                    }
                 }
 
                 Spacer(Modifier.height(12.dp))

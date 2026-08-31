@@ -6,6 +6,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.v2ray.ang.handler.DownloadRecords
 import com.v2ray.ang.handler.YouTubeLater
 import com.v2ray.ang.handler.YouTubeService
 import kotlinx.coroutines.CoroutineScope
@@ -140,7 +141,12 @@ object YouTubeDownloads {
                         isCancelled = { self?.isActive != true },
                     ) { d, t, s -> e.done = d; e.total = t; e.speed = s }
                 }
-                    .onSuccess { e.uri = it; e.state = State.DONE }
+                    .onSuccess {
+                        e.uri = it; e.state = State.DONE
+                        // Помним, что скачали: список в памяти умрёт вместе с
+                        // процессом, а файл останется.
+                        DownloadRecords.add(it.toString(), e.label, e.sourceUrl, e.total)
+                    }
                     .onFailure { e.state = failureState(it, e) }
             }
         }
@@ -213,7 +219,12 @@ object YouTubeDownloads {
                 runCatching {
                     YouTubeService.download(ctx, opt, title) { d, t, s -> e.done = d; e.total = t; e.speed = s }
                 }
-                    .onSuccess { e.uri = it; e.state = State.DONE }
+                    .onSuccess {
+                        e.uri = it; e.state = State.DONE
+                        // Помним, что скачали: список в памяти умрёт вместе с
+                        // процессом, а файл останется.
+                        DownloadRecords.add(it.toString(), e.label, e.sourceUrl, e.total)
+                    }
                     .onFailure { e.error = it.message ?: it.javaClass.simpleName; e.state = State.FAILED }
             }
         }
@@ -241,7 +252,12 @@ object YouTubeDownloads {
                         isCancelled = { self?.isActive != true },
                     ) { d, t, s -> e.done = d; e.total = t; e.speed = s }
                 }
-                    .onSuccess { e.uri = it; e.state = State.DONE }
+                    .onSuccess {
+                        e.uri = it; e.state = State.DONE
+                        // Помним, что скачали: список в памяти умрёт вместе с
+                        // процессом, а файл останется.
+                        DownloadRecords.add(it.toString(), e.label, e.sourceUrl, e.total)
+                    }
                     .onFailure { e.state = failureState(it, e) }
             }
         }
@@ -254,7 +270,12 @@ object YouTubeDownloads {
         e.job = scope.launch {
             gate.withPermit {
                 runCatching { YouTubeService.downloadSubtitle(ctx, sub, title) }
-                    .onSuccess { e.uri = it; e.state = State.DONE }
+                    .onSuccess {
+                        e.uri = it; e.state = State.DONE
+                        // Помним, что скачали: список в памяти умрёт вместе с
+                        // процессом, а файл останется.
+                        DownloadRecords.add(it.toString(), e.label, e.sourceUrl, e.total)
+                    }
                     .onFailure { e.error = it.message ?: it.javaClass.simpleName; e.state = State.FAILED }
             }
         }
@@ -264,6 +285,7 @@ object YouTubeDownloads {
 
     /** Removes the entry AND deletes the saved file. */
     fun deleteFile(context: Context, e: Entry) {
+        e.uri?.let { u -> DownloadRecords.forget(u.toString()) }
         e.uri?.let { u ->
             runCatching {
                 if (u.scheme == "content") context.contentResolver.delete(u, null, null)
