@@ -72,6 +72,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import android.content.Context
 import android.content.Intent
@@ -706,7 +707,18 @@ fun VpnkaSmartDeskScreen(
         // Берём именно журнал браузера: это единственная вещь, которую человек
         // бросает на полпути и ищет потом. Инкогнито сюда не попадает — его
         // страницы в журнал не пишутся вовсе.
-        val recent = remember(deskTick) { BrowserHistory.all().take(3) }
+        // Сколько строк показать, зависит от высоты экрана: карточки, метка и
+        // «Продолжить» откусывают у сетки значков, и на невысоком телефоне
+        // три строки оставили бы от неё один ряд.
+        val screenH = LocalConfiguration.current.screenHeightDp
+        val recentMax = when {
+            screenH >= 760 -> 3
+            screenH >= 660 -> 2
+            else -> 0
+        }
+        val recent = remember(deskTick, recentMax) {
+            if (recentMax == 0) emptyList() else BrowserHistory.all().take(recentMax)
+        }
         if (recent.isNotEmpty()) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 18.dp, bottom = 6.dp),
