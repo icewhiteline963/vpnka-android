@@ -349,6 +349,15 @@ object Messenger {
     fun setSetting(key: String, on: Boolean) =
         MmkvManager.encodeSettings("msgr_$key", if (on) "1" else "0")
 
+    /** Стереть переписку с одним человеком, оставив его в списке контактов. */
+    fun clearChat(contactId: Long) = store.removeValueForKey("msg_$contactId")
+
+    /** Убрать человека из списка вместе с перепиской (только на этом устройстве). */
+    fun deleteChat(contactId: Long) {
+        store.removeValueForKey("msg_$contactId")
+        store.encode(KEY_CONTACTS, gson.toJson(contacts().filterNot { it.id == contactId }))
+    }
+
     /** Wipe local chat history on this device (server + peers unchanged). */
     fun clearHistory() {
         store.allKeys()?.filter { it.startsWith("msg_") }?.forEach { store.removeValueForKey(it) }

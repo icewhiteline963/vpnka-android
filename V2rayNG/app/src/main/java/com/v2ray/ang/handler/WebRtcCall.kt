@@ -401,7 +401,12 @@ object CallManager {
         PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
     )
 
+    /** Кто кому звонил: к моменту отбоя фаза уже ACTIVE и направление теряется. */
+    private var lastOutgoing = false
+
     private fun setState(p: Phase, id: Long, name: String) {
+        if (p == Phase.OUTGOING) lastOutgoing = true
+        if (p == Phase.INCOMING) lastOutgoing = false
         phase = p; peerId = id; peerName = name
         main.removeCallbacks(ringTimeout)
         if (p == Phase.OUTGOING || p == Phase.INCOMING) {
@@ -411,6 +416,26 @@ object CallManager {
 
     private fun cleanup(end: Phase) {
         onCallCleared?.invoke()
+        // Запись в журнал звонков — до того, как обнулим собеседника. Разговор,
+        // который не состоялся, и входящий, и исходящий: непринятым помечаем
+        // только входящий, иначе «пропущенный» появлялся бы у того, кто сам
+        // передумал звонить.
+        if (peerId != 0L) {
+            val talked = connectedAt > 0L
+            ChatPrefs.addCall(
+                ChatPrefs.Call(
+                    peerId = peerId,
+                    name = peerName,
+                    dir = when {
+                        phase == Phase.INCOMING && !talked -> "missed"
+                        lastOutgoing -> "outgoing"
+                        else -> "incoming"
+                    },
+                    ts = System.currentTimeMillis(),
+                    sec = if (talked) ((System.currentTimeMillis() - connectedAt) / 1000).toInt() else 0,
+                ),
+            )
+        }
         main.removeCallbacks(offerRetry)
         main.removeCallbacks(ringTimeout)
         offerJson = ""; offerTries = 0

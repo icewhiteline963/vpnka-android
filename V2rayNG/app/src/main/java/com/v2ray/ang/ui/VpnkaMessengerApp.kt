@@ -1,5 +1,9 @@
 package com.v2ray.ang.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -65,6 +69,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.v2ray.ang.handler.ChatPrefs
 import com.v2ray.ang.handler.CallManager
 import com.v2ray.ang.handler.Channels
 import com.v2ray.ang.handler.Messenger
@@ -99,7 +104,14 @@ private fun msgTime(ts: Long): String =
 
 /** Bottom tabs, Telegram-style. Nested screens (a chat, a channel) hide the bar
  *  and come back to whichever tab was open. */
-private enum class MsgTab { CHATS, CONTACTS, SETTINGS, PROFILE }
+private enum class MsgTab { CHATS, CALLS, CONTACTS, SETTINGS, PROFILE }
+
+/** Полки списка чатов. «Группы» из макета не заводим: групповых чатов у нас
+ *  нет, а фильтр, который всегда пуст, — обман. */
+private enum class ChatFilter(val label: String) {
+    ALL("Все"), PERSONAL("Личные"), CHANNELS("Каналы"),
+    UNREAD("Непрочитанные"), ARCHIVE("Архив"),
+}
 
 /** «Сообщения» — an E2E messenger in the Telegram mould. */
 @Composable
@@ -113,6 +125,12 @@ fun VpnkaMessengerApp() {
     var channelResults by remember { mutableStateOf<List<Channels.Channel>>(emptyList()) }
     var openChannel by remember { mutableStateOf<Channels.Channel?>(null) }
     var showCreate by remember { mutableStateOf(false) }
+    var filter by remember { mutableStateOf(ChatFilter.ALL) }
+    var sheetFor by remember { mutableStateOf<Messenger.Contact?>(null) }
+    var confirm by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
+    // Отдельный счётчик для локальных пометок (закрепить/без звука/архив):
+    // общий tick перечитывает и переписку, а тут меняется только полка.
+    var prefsTick by remember { mutableIntStateOf(0) }
     var myChannels by remember { mutableStateOf<List<Channels.Channel>>(emptyList()) }
     var typingFrom by remember { mutableStateOf(0L) }
     var typingUntil by remember { mutableStateOf(0L) }
@@ -234,6 +252,11 @@ fun VpnkaMessengerApp() {
         val c = contacts.firstOrNull { it.id == id }
         if (c != null) {
             val typing = typingFrom == c.id && System.currentTimeMillis() < typingUntil
+            // Вход в чат = «прочитано»: значок непрочитанного гаснет при
+            // выходе, а не в момент, когда сообщение только пришло на экран.
+            DisposableEffect(c.id, tick) {
+                onDispose { ChatPrefs.markSeen(c.id); prefsTick++ }
+            }
             ChatScreen(contact = c, tick = tick, typing = typing, onSent = { tick++ }, onBack = { openId = null })
             return
         }
@@ -341,53 +364,80 @@ fun VpnkaMessengerApp() {
                                 }
                             }
                         }
-                    } else if (contacts.isEmpty() && myChannels.isEmpty()) {
-                        Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-                            Text(
-                                "Чатов пока нет. Найдите человека по нику через поиск выше — переписка шифруется.",
-                                fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp, color = VpnkaColors.TextMuted,
-                            )
-                        }
                     } else {
-                        // Chats + subscribed channels.
-                        LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
-                            if (myChannels.isNotEmpty()) {
-                                item { SectionLabel("Каналы") }
-                                items(myChannels, key = { "ch" + it.id }) { ch ->
-                                    ResultRow(glyph = "📢", title = ch.title, sub = "@${ch.handle}") { openChannel = ch }
+                        // Список чатов. Порядок — закреплённые сверху, дальше по
+                        // свежести сообщения: чат, в котором только что ответили,
+                        // не должен уезжать вниз только потому, что он старый.
+                        val pinnedIds = remember(tick, prefsTick) { ChatPrefs.pinned() }
+                        val mutedIds = remember(tick, prefsTick) { ChatPrefs.muted() }
+                        val archivedIds = remember(tick, prefsTick) { ChatPrefs.archived() }
+                        val unreadOf = remember(tick, prefsTick) {
+                            contacts.associate { it.id to ChatPrefs.unread(it.id) }
+                        }
+                        val lastOf = remember(tick) {
+                            contacts.associate { it.id to Messenger.messages(it.id).lastOrNull() }
+                        }
+
+                        val visible = contacts
+                            .filter { c ->
+                                when (filter) {
+                                    ChatFilter.ARCHIVE -> archivedIds.contains(c.id)
+                                    ChatFilter.UNREAD -> !archivedIds.contains(c.id) && (unreadOf[c.id] ?: 0) > 0
+                                    ChatFilter.CHANNELS -> false
+                                    else -> !archivedIds.contains(c.id)
                                 }
-                                if (contacts.isNotEmpty()) item { SectionLabel("Чаты") }
                             }
-                            items(contacts, key = { it.id }) { c ->
-                                val last = Messenger.messages(c.id).lastOrNull()
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                                        .clip(RoundedCornerShape(18.dp)).background(VpnkaColors.CardServer)
-                                        .clickable { openId = c.id }.padding(horizontal = 12.dp, vertical = 11.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    MsgAvatar(c.name, size = 50)
-                                    Spacer(Modifier.width(12.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(
-                                                c.name, fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp,
-                                                color = VpnkaColors.TextStrong, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.weight(1f),
-                                            )
-                                            if (last != null) {
-                                                Text(msgTime(last.ts), fontFamily = VpnkaFonts.manrope600, fontSize = 11.sp, color = VpnkaColors.TextFaint)
-                                            }
-                                        }
-                                        Spacer(Modifier.height(2.dp))
-                                        val preview = when {
-                                            last == null -> "Нет сообщений"
-                                            last.k == "image" -> (if (last.mine) "Вы: " else "") + "📷 Фото"
-                                            else -> (if (last.mine) "Вы: " else "") + last.text
-                                        }
-                                        Text(
-                                            preview, fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp,
-                                            color = VpnkaColors.TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            .sortedWith(
+                                compareByDescending<Messenger.Contact> { pinnedIds.contains(it.id) }
+                                    .thenByDescending { lastOf[it.id]?.ts ?: 0L },
+                            )
+                        val showChannels =
+                            filter == ChatFilter.ALL || filter == ChatFilter.CHANNELS
+                        val pinnedShown = visible.filter { pinnedIds.contains(it.id) }
+                        val restShown = visible.filterNot { pinnedIds.contains(it.id) }
+
+                        if (visible.isEmpty() && (!showChannels || myChannels.isEmpty())) {
+                            Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+                                Text(
+                                    when (filter) {
+                                        ChatFilter.ALL ->
+                                            "Чатов пока нет. Найдите человека по нику через поиск выше — переписка шифруется."
+                                        ChatFilter.ARCHIVE -> "В архиве пусто."
+                                        ChatFilter.UNREAD -> "Непрочитанных нет."
+                                        ChatFilter.CHANNELS -> "Вы пока не подписаны ни на один канал."
+                                        ChatFilter.PERSONAL -> "Личных чатов пока нет."
+                                    },
+                                    fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp,
+                                    color = VpnkaColors.TextMuted, textAlign = TextAlign.Center,
+                                )
+                            }
+                        } else {
+                            LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+                                if (showChannels && myChannels.isNotEmpty()) {
+                                    item { SectionLabel("Каналы") }
+                                    items(myChannels, key = { "ch" + it.id }) { ch ->
+                                        ResultRow(glyph = "📢", title = ch.title, sub = "@${ch.handle}") { openChannel = ch }
+                                    }
+                                }
+                                if (pinnedShown.isNotEmpty()) {
+                                    item { SectionLabel("Закреплённые") }
+                                    items(pinnedShown, key = { "p" + it.id }) { c ->
+                                        ChatRow(
+                                            contact = c, last = lastOf[c.id], unread = unreadOf[c.id] ?: 0,
+                                            pinned = true, muted = mutedIds.contains(c.id),
+                                            onOpen = { openId = c.id }, onLong = { sheetFor = c },
+                                        )
+                                    }
+                                }
+                                if (restShown.isNotEmpty()) {
+                                    if (pinnedShown.isNotEmpty() || (showChannels && myChannels.isNotEmpty())) {
+                                        item { SectionLabel(if (filter == ChatFilter.ARCHIVE) "Архив" else "Все чаты") }
+                                    }
+                                    items(restShown, key = { it.id }) { c ->
+                                        ChatRow(
+                                            contact = c, last = lastOf[c.id], unread = unreadOf[c.id] ?: 0,
+                                            pinned = false, muted = mutedIds.contains(c.id),
+                                            onOpen = { openId = c.id }, onLong = { sheetFor = c },
                                         )
                                     }
                                 }
@@ -395,9 +445,78 @@ fun VpnkaMessengerApp() {
                         }
                     }
                 }
+                MsgTab.CALLS -> CallsTab(
+                    contacts = contacts,
+                    tick = prefsTick,
+                    onCall = { id, name -> CallManager.startCall(appCtx, id, name) },
+                    onOpen = { openId = it },
+                    onClear = { ChatPrefs.clearCalls(); prefsTick++ },
+                )
             }
         }
+
         MessengerTabBar(current = tab, onSelect = { tab = it })
+    }
+
+    // Долгое нажатие на чат — лист действий, как в макете. Разрушающие пункты
+    // (очистить, удалить) идут через подтверждение и трогают ТОЛЬКО это
+    // устройство: у собеседника переписка остаётся, и текст об этом прямо
+    // говорит, чтобы «удалить» не понимали как «удалить у обоих».
+    sheetFor?.let { c ->
+        val pinnedNow = ChatPrefs.isPinned(c.id)
+        val mutedNow = ChatPrefs.isMuted(c.id)
+        val archivedNow = ChatPrefs.isArchived(c.id)
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { sheetFor = null },
+            title = { Text(c.name, fontFamily = VpnkaFonts.nunito800, color = VpnkaColors.TextStrong) },
+            text = {
+                Column {
+                    SheetAction(if (pinnedNow) "📌  Открепить" else "📌  Закрепить") {
+                        ChatPrefs.setPinned(c.id, !pinnedNow); prefsTick++; sheetFor = null
+                    }
+                    SheetAction(if (mutedNow) "🔔  Со звуком" else "🔕  Без звука") {
+                        ChatPrefs.setMuted(c.id, !mutedNow); prefsTick++; sheetFor = null
+                    }
+                    SheetAction(if (archivedNow) "📤  Вернуть из архива" else "📥  В архив") {
+                        ChatPrefs.setArchived(c.id, !archivedNow); prefsTick++; sheetFor = null
+                    }
+                    SheetAction("🧹  Очистить историю", danger = true) {
+                        sheetFor = null
+                        confirm = "Очистить переписку с ${c.name}? Сообщения исчезнут только на этом устройстве." to {
+                            Messenger.clearChat(c.id); tick++; prefsTick++
+                        }
+                    }
+                    SheetAction("🗑  Удалить чат", danger = true) {
+                        sheetFor = null
+                        confirm = "Удалить чат с ${c.name}? Он пропадёт из списка вместе с перепиской — только на этом устройстве." to {
+                            Messenger.deleteChat(c.id); ChatPrefs.forget(c.id); tick++; prefsTick++
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { sheetFor = null }) { Text("Закрыть") }
+            },
+            containerColor = VpnkaColors.BgOffCentre,
+        )
+    }
+
+    confirm?.let { (text, action) ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirm = null },
+            title = { Text("Подтвердите", fontFamily = VpnkaFonts.nunito800, color = VpnkaColors.TextStrong) },
+            text = { Text(text, fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp, color = VpnkaColors.TextMuted, lineHeight = 18.sp) },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { action(); confirm = null }) {
+                    Text("Да", color = VpnkaColors.Warning)
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { confirm = null }) { Text("Отмена") }
+            },
+            containerColor = VpnkaColors.BgOffCentre,
+        )
     }
 
     if (showCreate) {
@@ -428,6 +547,161 @@ fun VpnkaMessengerApp() {
             dismissButton = { androidx.compose.material3.TextButton(onClick = { showCreate = false }) { Text("Отмена") } },
             containerColor = VpnkaColors.BgOffCentre,
         )
+    }
+}
+
+@Composable
+private fun SheetAction(label: String, danger: Boolean = false, onClick: () -> Unit) {
+    Text(
+        label,
+        fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp,
+        color = if (danger) VpnkaColors.Warning else VpnkaColors.TextStrong,
+        modifier = Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 12.dp),
+    )
+}
+
+/** Строка списка чатов: аватар, имя, время, предпросмотр, значки. */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ChatRow(
+    contact: Messenger.Contact,
+    last: Messenger.Msg?,
+    unread: Int,
+    pinned: Boolean,
+    muted: Boolean,
+    onOpen: () -> Unit,
+    onLong: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+            .clip(RoundedCornerShape(18.dp)).background(VpnkaColors.CardServer)
+            .combinedClickable(onClick = onOpen, onLongClick = onLong)
+            .padding(horizontal = 12.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        MsgAvatar(contact.name, size = 50)
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    contact.name, fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp,
+                    color = VpnkaColors.TextStrong, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (pinned) Text(" 📌", fontSize = 11.sp, color = VpnkaColors.TextFaint)
+                if (muted) Text(" 🔕", fontSize = 11.sp, color = VpnkaColors.TextFaint)
+                Spacer(Modifier.weight(1f))
+                if (last != null) {
+                    Text(msgTime(last.ts), fontFamily = VpnkaFonts.manrope600, fontSize = 11.sp, color = VpnkaColors.TextFaint)
+                }
+            }
+            Spacer(Modifier.height(2.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val preview = when {
+                    last == null -> "Нет сообщений"
+                    last.k == "image" -> (if (last.mine) "Вы: " else "") + "📷 Фото"
+                    last.k == "voice" -> (if (last.mine) "Вы: " else "") + "🎤 Голосовое"
+                    last.k == "video" -> (if (last.mine) "Вы: " else "") + "🎬 Видео"
+                    else -> (if (last.mine) "Вы: " else "") + last.text
+                }
+                Text(
+                    preview, fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp,
+                    color = VpnkaColors.TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                if (unread > 0) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        if (unread > 99) "99+" else unread.toString(),
+                        fontFamily = VpnkaFonts.nunito800, fontSize = 11.sp, color = Color.White,
+                        modifier = Modifier.clip(CircleShape)
+                            .background(if (muted) VpnkaColors.TextFaint else VpnkaColors.Accent)
+                            .padding(horizontal = 7.dp, vertical = 2.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Журнал звонков. Пишется на отбое (см. CallManager) и живёт только здесь. */
+@Composable
+private fun CallsTab(
+    contacts: List<Messenger.Contact>,
+    tick: Int,
+    onCall: (Long, String) -> Unit,
+    onOpen: (Long) -> Unit,
+    onClear: () -> Unit,
+) {
+    val calls = remember(tick) { ChatPrefs.calls() }
+    Column(modifier = Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Звонки", fontFamily = VpnkaFonts.nunito800, fontSize = 18.sp, color = VpnkaColors.TextStrong)
+            Spacer(Modifier.weight(1f))
+            if (calls.isNotEmpty()) {
+                Text(
+                    "Очистить", fontFamily = VpnkaFonts.nunito800, fontSize = 12.sp, color = VpnkaColors.TextMuted,
+                    modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = onClear)
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                )
+            }
+        }
+        if (calls.isEmpty()) {
+            Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+                Text(
+                    "Звонков пока не было. Позвонить можно из чата — кнопкой «Позвонить».",
+                    fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp,
+                    color = VpnkaColors.TextMuted, textAlign = TextAlign.Center,
+                )
+            }
+        } else {
+            LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+                items(calls.size, key = { calls[it].ts }) { i ->
+                    val c = calls[i]
+                    val known = contacts.any { it.id == c.peerId }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                            .clip(RoundedCornerShape(18.dp)).background(VpnkaColors.CardServer)
+                            .clickable { if (known) onOpen(c.peerId) }
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        MsgAvatar(c.name.ifBlank { "?" }, size = 42)
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                c.name.ifBlank { "Без имени" },
+                                fontFamily = VpnkaFonts.nunito800, fontSize = 15.sp,
+                                color = if (c.dir == "missed") VpnkaColors.Warning else VpnkaColors.TextStrong,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            val arrow = when (c.dir) {
+                                "outgoing" -> "↗ исходящий"
+                                "missed" -> "↙ пропущенный"
+                                else -> "↙ входящий"
+                            }
+                            val dur = if (c.sec > 0) " · ${c.sec / 60}:${"%02d".format(c.sec % 60)}" else ""
+                            Text(
+                                "$arrow · ${msgTime(c.ts)}$dur",
+                                fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp, color = VpnkaColors.TextMuted,
+                            )
+                        }
+                        Text(
+                            "☎", fontSize = 18.sp, color = VpnkaColors.Accent,
+                            modifier = Modifier.clip(CircleShape)
+                                .clickable { onCall(c.peerId, c.name) }.padding(10.dp),
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -1100,6 +1374,7 @@ private fun MessengerTabBar(current: MsgTab, onSelect: (MsgTab) -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         MsgTabItem("💬", "Чаты", current == MsgTab.CHATS, Modifier.weight(1f)) { onSelect(MsgTab.CHATS) }
+        MsgTabItem("☎", "Звонки", current == MsgTab.CALLS, Modifier.weight(1f)) { onSelect(MsgTab.CALLS) }
         MsgTabItem("👤", "Контакты", current == MsgTab.CONTACTS, Modifier.weight(1f)) { onSelect(MsgTab.CONTACTS) }
         MsgTabItem("⚙️", "Настройки", current == MsgTab.SETTINGS, Modifier.weight(1f)) { onSelect(MsgTab.SETTINGS) }
         MsgTabItem("🪪", "Профиль", current == MsgTab.PROFILE, Modifier.weight(1f)) { onSelect(MsgTab.PROFILE) }

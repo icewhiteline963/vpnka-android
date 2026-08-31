@@ -87,7 +87,11 @@ object MessengerNotifier {
 
             // One notification per sender. The content stays generic — we never
             // decrypt in the background — so the body is a fixed "Новое сообщение".
-            fresh.distinctBy { it.contactId }.forEach { it ->
+            // «Без звука» — это в первую очередь про уведомления: чат с
+            // поднятым флагом молчит, сообщения при этом приходят как обычно.
+            fresh.distinctBy { it.contactId }
+                .filterNot { ChatPrefs.isMuted(it.contactId) }
+                .forEach { it ->
                 postNotification(applicationContext, it.contactId, it.name, "Новое сообщение")
             }
             return Result.success()
