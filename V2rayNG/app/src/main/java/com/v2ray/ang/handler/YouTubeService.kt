@@ -202,6 +202,113 @@ object YouTubeService {
             }
     }
 
+    // ---- Главы и транскрипт -----------------------------------------
+
+    /** Глава ролика: с какой секунды и как называется. */
+    data class Chapter(val startSec: Long, val title: String)
+
+    /** Строка транскрипта: таймкод и текст. */
+    data class Cue(val atSec: Long, val text: String)
+
+    /**
+     * Главы, если автор их разметил. Пусто — значит их нет, это норма.
+     */
+    fun chapters(videoUrl: String): List<Chapter> {
+        ensureInit()
+        val si = StreamInfo.getInfo(ServiceList.YouTube, videoUrl)
+        return runCatching {
+            si.streamSegments.map { Chapter(it.startTimeSeconds.toLong(), it.title ?: "") }
+        }.getOrDefault(emptyList())
+    }
+
+    /**
+     * Транскрипт — это субтитры, разобранные на строки с таймкодами.
+     *
+     * Отдельного API транскриптов у нас нет и быть не может, но субтитры мы
+     * и так умеем качать. Берём первую дорожку (или предпочтённый язык),
+     * тянем её через прокси и разбираем.
+     */
+    fun transcript(videoUrl: String, preferLang: String? = null): List<Cue> {
+        val subs = subtitles(videoUrl)
+        if (subs.isEmpty()) return emptyList()
+        val pick = preferLang
+            ?.let { lang -> subs.firstOrNull { it.label.contains(lang, ignoreCase = true) } }
+            ?: subs.firstOrNull { it.label.contains("рус", true) || it.label.contains("rus", true) }
+            ?: subs.first()
+        val body = runCatching {
+            val req = okhttp3.Request.Builder()
+                .url(pick.url)
+                .header("User-Agent", USER_AGENT_DESKTOP)
+                .build()
+            proxiedClient().newCall(req).execute().use { r ->
+                if (!r.isSuccessful) null else r.body?.string()
+            }
+        }.getOrNull() ?: return emptyList()
+        return parseCues(body)
+    }
+
+    /**
+     * Разбор WebVTT и TTML — двух форматов, которые отдаёт YouTube.
+     *
+     * Намеренно снисходительный: чужой формат меняется без предупреждения, и
+     * пустой транскрипт лучше исключения посреди экрана.
+     */
+    fun parseCues(raw: String): List<Cue> {
+        val out = mutableListOf<Cue>()
+
+        // TTML: <p begin="12.5s" ...>текст</p>
+        if (raw.contains("<tt", ignoreCase = true) || raw.contains("<p ", ignoreCase = true)) {
+            val rx = Regex("""<p[^>]*begin="([^"]+)"[^>]*>(.*?)</p>""", RegexOption.DOT_MATCHES_ALL)
+            for (m in rx.findAll(raw)) {
+                val t = parseTime(m.groupValues[1])
+                val text = m.groupValues[2]
+                    .replace(Regex("<[^>]+>"), " ")
+                    .replace("&amp;", "&").replace("&quot;", "\"")
+                    .replace("&#39;", "'").replace("&lt;", "<").replace("&gt;", ">")
+                    .replace(Regex("\\s+"), " ").trim()
+                if (t >= 0 && text.isNotEmpty()) out.add(Cue(t, text))
+            }
+            if (out.isNotEmpty()) return out
+        }
+
+        // WebVTT: 00:00:12.500 --> 00:00:15.000
+        val lines = raw.lines()
+        var i = 0
+        while (i < lines.size) {
+            val line = lines[i].trim()
+            if (line.contains("-->")) {
+                val start = line.substringBefore("-->").trim()
+                val t = parseTime(start)
+                val text = buildString {
+                    var j = i + 1
+                    while (j < lines.size && lines[j].isNotBlank()) {
+                        if (isNotEmpty()) append(' ')
+                        append(lines[j].replace(Regex("<[^>]+>"), "").trim())
+                        j++
+                    }
+                    i = j
+                }.trim()
+                if (t >= 0 && text.isNotEmpty()) out.add(Cue(t, text))
+            }
+            i++
+        }
+        return out
+    }
+
+    /** «00:01:12.500», «12.5s», «72» → секунды. -1, если не разобрали. */
+    fun parseTime(v: String): Long {
+        val s = v.trim().removeSuffix("s")
+        if (s.contains(":")) {
+            val parts = s.split(":").map { it.replace(",", ".") }
+            val nums = parts.mapNotNull { it.toDoubleOrNull() }
+            if (nums.size != parts.size) return -1
+            var sec = 0.0
+            for (n in nums) sec = sec * 60 + n
+            return sec.toLong()
+        }
+        return s.replace(",", ".").toDoubleOrNull()?.toLong() ?: -1
+    }
+
     /** Saves a subtitle track (text) to Downloads THROUGH the VPN proxy. Off main. */
     fun downloadSubtitle(context: Context, sub: SubtitleOption, title: String): android.net.Uri {
         ensureInit()

@@ -91,6 +91,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.foundation.shape.CircleShape
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.handler.YouTubeLater
+import com.v2ray.ang.handler.YouTubeMarks
 import com.v2ray.ang.handler.YouTubeThumbs
 import com.v2ray.ang.handler.YouTubeNowPlaying
 import com.v2ray.ang.service.VpnkaMediaService
@@ -725,6 +726,16 @@ private fun YtTabChip(label: String, selected: Boolean, onClick: () -> Unit) {
  * выбирать глазами — приходится читать заголовки. Для видеоприложения это
  * первое, что бросается в глаза.
  */
+/** Пустое состояние вкладки — объяснение, а не пустота. */
+@Composable
+private fun YtHint(text: String) {
+    Text(
+        text,
+        fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp, color = VpnkaColors.TextMuted,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 18.dp),
+    )
+}
+
 @Composable
 private fun YtThumb(url: String?, modifier: Modifier) {
     var img by remember(url) { mutableStateOf(url?.let { YouTubeThumbs.cached(it) }) }
@@ -943,6 +954,28 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
     // трафик идёт через наши ноды и на мобильном стоит человеку денег.
     var laterTick by remember { mutableStateOf(0) }
     val inLater = remember(laterTick, pb.pageUrl) { YouTubeLater.has(pb.pageUrl) }
+    var speed by remember { mutableStateOf(1f) }
+    var ptab by remember { mutableStateOf(0) }
+    var chapters by remember(pb.pageUrl) { mutableStateOf<List<YouTubeService.Chapter>?>(null) }
+    var cues by remember(pb.pageUrl) { mutableStateOf<List<YouTubeService.Cue>?>(null) }
+    var marksTick by remember { mutableStateOf(0) }
+    var noteAt by remember { mutableStateOf<Long?>(null) }
+    val marks = remember(marksTick, pb.pageUrl) { YouTubeMarks.marks(pb.pageUrl) }
+    val notes = remember(marksTick, pb.pageUrl) { YouTubeMarks.notes(pb.pageUrl) }
+    var isPlaying by remember { mutableStateOf(true) }
+    var position by remember { mutableStateOf(0L) }
+
+    // Позиция нужна закладкам и заметкам, а подсветка строки транскрипта —
+    // каждую секунду. Опрашиваем раз в 500 мс: слушателя позиции у Media3
+    // нет, а чаще незачем.
+    LaunchedEffect(player) {
+        val c = player ?: return@LaunchedEffect
+        while (true) {
+            isPlaying = c.isPlaying
+            position = c.currentPosition
+            kotlinx.coroutines.delay(500)
+        }
+    }
     var qualities by remember { mutableStateOf<List<YouTubeService.DownloadOption>?>(null) }
     var subs by remember { mutableStateOf<List<YouTubeService.SubtitleOption>?>(null) }
     var busy by remember { mutableStateOf(false) }
@@ -1123,6 +1156,52 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                 fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.TextStrong,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
             )
+
+            // Транспорт: −10 · кадр назад · пауза · кадр вперёд · +10.
+            //
+            // Покадровый шаг по макету — 1/25 секунды и ОБЯЗАТЕЛЬНО с
+            // остановкой: шагать вперёд у идущего видео бессмысленно, кадр
+            // тут же уедет.
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                YtActionChip("−10", enabled = true) {
+                    player?.let { it.seekTo((it.currentPosition - 10_000).coerceAtLeast(0)) }
+                }
+                YtActionChip("⟨|", enabled = true) {
+                    player?.let { it.pause(); it.seekTo((it.currentPosition - 40).coerceAtLeast(0)) }
+                }
+                YtActionChip(if (isPlaying) "‖" else "▸", enabled = true) {
+                    player?.let { if (it.isPlaying) it.pause() else it.play() }
+                }
+                YtActionChip("|⟩", enabled = true) {
+                    player?.let { it.pause(); it.seekTo(it.currentPosition + 40) }
+                }
+                YtActionChip("+10", enabled = true) {
+                    player?.let { it.seekTo(it.currentPosition + 10_000) }
+                }
+            }
+
+            // Скорость воспроизведения — «до 4×» из макета, для лекций.
+            Row(
+                modifier = Modifier.fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 14.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                listOf(1f, 1.5f, 1.75f, 2f, 3f, 4f).forEach { sp ->
+                    val label = if (sp == 1f) "1×" else
+                        ("%.2f".format(sp).trimEnd('0').trimEnd('.').replace('.', ',') + "×")
+                    YtTabChip(label, kotlin.math.abs(speed - sp) < 0.01f) {
+                        speed = sp
+                        player?.setPlaybackSpeed(sp)
+                    }
+                }
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth()
                     .horizontalScroll(rememberScrollState())
@@ -1168,6 +1247,190 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                     Toast.makeText(context, if (fav) "Добавлено в избранное" else "Убрано из избранного", Toast.LENGTH_SHORT).show()
                 }
             }
+
+            // Закладка и заметка — на ТЕКУЩЕМ таймкоде, как в макете.
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                YtActionChip("◆  Закладка", enabled = true) {
+                    YouTubeMarks.addMark(pb.pageUrl, position / 1000, pb.title)
+                    marksTick++
+                    ptab = 3
+                    Toast.makeText(context, "Закладка на ${fmtDuration(position / 1000)}", Toast.LENGTH_SHORT).show()
+                }
+                YtActionChip("✎  Заметка", enabled = true) {
+                    noteAt = position / 1000
+                }
+            }
+
+            // Вкладки содержимого. Главы и транскрипт грузятся лениво —
+            // это ещё один поход в сеть, и делать его до того, как человек
+            // открыл вкладку, незачем.
+            Row(
+                modifier = Modifier.fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                YtTabChip("Главы" + (chapters?.size?.let { " $it" } ?: ""), ptab == 0) { ptab = 0 }
+                YtTabChip("Транскрипт", ptab == 1) { ptab = 1 }
+                YtTabChip("Заметки ${notes.size}", ptab == 2) { ptab = 2 }
+                YtTabChip("Закладки ${marks.size}", ptab == 3) { ptab = 3 }
+            }
+
+            when (ptab) {
+                0 -> {
+                    LaunchedEffect(pb.pageUrl) {
+                        if (chapters == null) {
+                            chapters = withContext(Dispatchers.IO) {
+                                runCatching { YouTubeService.chapters(pb.pageUrl) }.getOrDefault(emptyList())
+                            }
+                        }
+                    }
+                    val ch = chapters
+                    when {
+                        ch == null -> CenterBox { CircularProgressIndicator(color = VpnkaColors.Accent) }
+                        ch.isEmpty() -> YtHint("Автор не разметил главы у этого видео.")
+                        else -> LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                            items(ch) { c ->
+                                val now = position / 1000
+                                val idx = ch.indexOf(c)
+                                val until = ch.getOrNull(idx + 1)?.startSec ?: Long.MAX_VALUE
+                                val active = now >= c.startSec && now < until
+                                Row(
+                                    modifier = Modifier.fillMaxWidth()
+                                        .clickable { player?.seekTo(c.startSec * 1000) }
+                                        .background(
+                                            if (active) VpnkaColors.CardServer else Color.Transparent
+                                        )
+                                        .padding(horizontal = 14.dp, vertical = 9.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        fmtDuration(c.startSec),
+                                        fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp,
+                                        color = VpnkaColors.Accent,
+                                        modifier = Modifier.width(52.dp),
+                                    )
+                                    Text(
+                                        c.title + if (active) "  · сейчас" else "",
+                                        fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp,
+                                        color = if (active) VpnkaColors.TextStrong else VpnkaColors.TextMuted,
+                                        maxLines = 2, overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                1 -> {
+                    LaunchedEffect(pb.pageUrl) {
+                        if (cues == null) {
+                            cues = withContext(Dispatchers.IO) {
+                                runCatching { YouTubeService.transcript(pb.pageUrl) }.getOrDefault(emptyList())
+                            }
+                        }
+                    }
+                    val cs = cues
+                    when {
+                        cs == null -> CenterBox { CircularProgressIndicator(color = VpnkaColors.Accent) }
+                        cs.isEmpty() -> YtHint("У этого видео нет субтитров — транскрипт брать неоткуда.")
+                        else -> {
+                            var q by remember(pb.pageUrl) { mutableStateOf("") }
+                            OutlinedTextField(
+                                value = q, onValueChange = { q = it }, singleLine = true,
+                                placeholder = { Text("Искать в транскрипте", color = VpnkaColors.TextMuted) },
+                                textStyle = androidx.compose.material3.LocalTextStyle.current
+                                    .copy(color = VpnkaColors.TextStrong),
+                                shape = RoundedCornerShape(20.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = VpnkaColors.TextStrong,
+                                    unfocusedTextColor = VpnkaColors.TextStrong,
+                                    cursorColor = VpnkaColors.Accent,
+                                    focusedBorderColor = VpnkaColors.Accent,
+                                    unfocusedBorderColor = VpnkaColors.CardServer,
+                                ),
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
+                            )
+                            val shown = if (q.isBlank()) cs
+                                else cs.filter { it.text.contains(q, ignoreCase = true) }
+                            LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                                items(shown) { c ->
+                                    val now = position / 1000
+                                    val active = q.isBlank() && kotlin.math.abs(now - c.atSec) <= 14
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth()
+                                            .clickable { player?.seekTo(c.atSec * 1000) }
+                                            .padding(horizontal = 14.dp, vertical = 7.dp),
+                                    ) {
+                                        Text(
+                                            fmtDuration(c.atSec),
+                                            fontFamily = VpnkaFonts.manrope600, fontSize = 11.sp,
+                                            color = VpnkaColors.Accent, modifier = Modifier.width(48.dp),
+                                        )
+                                        Text(
+                                            c.text,
+                                            fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp,
+                                            color = if (active) VpnkaColors.TextStrong else VpnkaColors.TextFaint,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                2 -> {
+                    if (notes.isEmpty()) {
+                        YtHint("Заметок нет. Нажмите «✎ Заметка» на нужном моменте.")
+                    } else {
+                        LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                            items(notes, key = { it.id }) { n ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth()
+                                        .clickable { player?.seekTo(n.atSec * 1000) }
+                                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        fmtDuration(n.atSec),
+                                        fontFamily = VpnkaFonts.manrope600, fontSize = 11.sp,
+                                        color = VpnkaColors.Accent, modifier = Modifier.width(48.dp),
+                                    )
+                                    Text(
+                                        n.text, fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp,
+                                        color = VpnkaColors.TextStrong, modifier = Modifier.weight(1f),
+                                    )
+                                    DlAction("✕") { YouTubeMarks.removeNote(n.id); marksTick++ }
+                                }
+                            }
+                        }
+                    }
+                }
+                else -> {
+                    if (marks.isEmpty()) {
+                        YtHint("Закладок нет. Нажмите «◆ Закладка» на нужном моменте.")
+                    } else {
+                        LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f)) {
+                            items(marks) { m ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth()
+                                        .clickable { player?.seekTo(m.atSec * 1000) }
+                                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        fmtDuration(m.atSec),
+                                        fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp,
+                                        color = VpnkaColors.Amber, modifier = Modifier.weight(1f),
+                                    )
+                                    DlAction("✕") { YouTubeMarks.removeMark(m.url, m.atSec); marksTick++ }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -1193,6 +1456,47 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                     }
                 }
             },
+            containerColor = VpnkaColors.BgOffCentre,
+        )
+    }
+
+    noteAt?.let { at ->
+        var text by remember(at) { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { noteAt = null },
+            title = {
+                Text(
+                    "Заметка на ${fmtDuration(at)}",
+                    fontFamily = VpnkaFonts.nunito800, color = VpnkaColors.TextStrong,
+                )
+            },
+            text = {
+                OutlinedTextField(
+                    value = text, onValueChange = { text = it },
+                    placeholder = { Text("Что записать?", color = VpnkaColors.TextMuted) },
+                    textStyle = androidx.compose.material3.LocalTextStyle.current
+                        .copy(color = VpnkaColors.TextStrong),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = VpnkaColors.TextStrong,
+                        unfocusedTextColor = VpnkaColors.TextStrong,
+                        cursorColor = VpnkaColors.Accent,
+                        focusedBorderColor = VpnkaColors.Accent,
+                        unfocusedBorderColor = VpnkaColors.CardServer,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (text.isNotBlank()) {
+                        YouTubeMarks.addNote(pb.pageUrl, at, pb.title, text.trim())
+                        marksTick++
+                        ptab = 2
+                    }
+                    noteAt = null
+                }) { Text("Сохранить") }
+            },
+            dismissButton = { TextButton(onClick = { noteAt = null }) { Text("Отмена") } },
             containerColor = VpnkaColors.BgOffCentre,
         )
     }
