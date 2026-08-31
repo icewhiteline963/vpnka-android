@@ -416,7 +416,7 @@ fun VpnkaSmartDeskScreen(
                 },
                 textStyle = androidx.compose.material3.LocalTextStyle.current
                     .copy(color = VpnkaColors.TextStrong, fontSize = 14.sp),
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(14.dp),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedTextColor = VpnkaColors.TextStrong,
                     unfocusedTextColor = VpnkaColors.TextStrong,
@@ -577,8 +577,8 @@ fun VpnkaSmartDeskScreen(
                         Box(
                             modifier = Modifier
                                 .size(62.dp)
-                                .shadow(12.dp, RoundedCornerShape(20.dp), clip = false)
-                                .clip(RoundedCornerShape(20.dp))
+                                .shadow(12.dp, RoundedCornerShape(14.dp), clip = false)
+                                .clip(RoundedCornerShape(14.dp))
                                 .background(Brush.linearGradient(appTint(app.id))),
                             contentAlignment = Alignment.Center,
                         ) {
@@ -705,7 +705,7 @@ fun VpnkaSmartDeskScreen(
                     Row(
                         modifier = Modifier.fillMaxWidth()
                             .padding(horizontal = 10.dp, vertical = 4.dp)
-                            .clip(RoundedCornerShape(16.dp))
+                            .clip(RoundedCornerShape(12.dp))
                             .background(VpnkaColors.BgOffCentre)
                             .padding(horizontal = 14.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -800,7 +800,7 @@ private fun BarItem(
 ) {
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(11.dp))
             .background(if (selected) VpnkaColors.Accent.copy(alpha = 0.14f) else Color.Transparent)
             .clickable(onClick = onClick)
             .padding(vertical = 5.dp),
@@ -855,7 +855,7 @@ private fun SmartDeskCloudButton(online: Boolean, ink: Color) {
                 Column(
                     modifier = Modifier
                         .widthIn(max = 250.dp)
-                        .clip(RoundedCornerShape(14.dp))
+                        .clip(RoundedCornerShape(11.dp))
                         .background(VpnkaColors.BgOffCentre)
                         .padding(14.dp),
                 ) {
@@ -919,7 +919,7 @@ private fun ShadeRow(glyph: String, title: String, body: String) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 6.dp)
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(11.dp))
             .background(Color.White.copy(alpha = 0.10f))
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -989,7 +989,7 @@ private fun ControlCentre(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
+                    .clip(RoundedCornerShape(11.dp))
                     .background(if (online) VpnkaColors.Green.copy(alpha = 0.18f) else Color.White.copy(alpha = 0.10f))
                     .clickable { if (online) askDisconnect = true else onToggleVpn() }
                     .padding(12.dp),
@@ -1086,7 +1086,7 @@ private fun DesktopSettingsSheet(
                     Box(
                         modifier = Modifier
                             .size(52.dp)
-                            .clip(RoundedCornerShape(16.dp))
+                            .clip(RoundedCornerShape(12.dp))
                             .background(wallpaperBrush(id))
                             .pointerInput(id) { detectTapGestures { onPick(id) } },
                         contentAlignment = Alignment.Center,

@@ -1,6 +1,7 @@
 package com.v2ray.ang.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -97,7 +98,7 @@ fun VpnkaNotesApp(syncTick: Int, onChanged: () -> Unit) {
     Column(modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp)) {
         Box(
             modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp)
-                .clip(RoundedCornerShape(14.dp)).background(VpnkaColors.Accent)
+                .clip(RoundedCornerShape(11.dp)).background(VpnkaColors.Accent)
                 .clickable { creating = true }.padding(14.dp),
         ) { Text("＋ Новая заметка", fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp, color = Color.White) }
 
@@ -118,7 +119,7 @@ fun VpnkaNotesApp(syncTick: Int, onChanged: () -> Unit) {
                 items(notes, key = { it.id }) { n ->
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                            .clip(RoundedCornerShape(12.dp)).background(VpnkaColors.CardServer)
+                            .clip(RoundedCornerShape(12.dp)).background(VpnkaColors.CardServer).border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(12.dp))
                             .clickable { editing = n }.padding(14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -169,7 +170,8 @@ private fun NewNoteSheet(onPick: (String) -> Unit, onDismiss: () -> Unit) {
 private fun NoteTypeRow(title: String, sub: String, onClick: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
-            .background(VpnkaColors.CardServer).clickable(onClick = onClick).padding(14.dp),
+            .background(VpnkaColors.CardServer)
+            .border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(12.dp)).clickable(onClick = onClick).padding(14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column {
@@ -270,7 +272,7 @@ private fun TextNoteBody(note: SmartDeskStore.Note, title: String, onSave: (Smar
         StyleBtn("S", strike = true) { toggle("strike") }
         Spacer(Modifier.weight(1f))
         Box(
-            modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(VpnkaColors.Accent)
+            modifier = Modifier.clip(RoundedCornerShape(11.dp)).background(VpnkaColors.Accent)
                 .clickable {
                     onSave(note.copy(title = title, kind = "text", body = tfv.text, spans = spans,
                         updatedAt = System.currentTimeMillis()))
@@ -352,7 +354,7 @@ private fun ChecklistBody(note: SmartDeskStore.Note, title: String, onSave: (Sma
         }
         Spacer(Modifier.height(10.dp))
         Box(
-            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(VpnkaColors.Accent)
+            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(11.dp)).background(VpnkaColors.Accent)
                 .clickable { persist() }.padding(vertical = 12.dp),
             contentAlignment = Alignment.Center,
         ) { Text("Готово", fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp, color = Color.White) }
@@ -364,7 +366,8 @@ private fun ChecklistBody(note: SmartDeskStore.Note, title: String, onSave: (Sma
 private fun StyleBtn(label: String, bold: Boolean = false, italic: Boolean = false, underline: Boolean = false, strike: Boolean = false, onClick: () -> Unit) {
     Box(
         modifier = Modifier.size(40.dp).clip(RoundedCornerShape(10.dp))
-            .background(VpnkaColors.CardServer).clickable(onClick = onClick),
+            .background(VpnkaColors.CardServer)
+            .border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(10.dp)).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Text(

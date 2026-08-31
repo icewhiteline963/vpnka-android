@@ -5,6 +5,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
@@ -281,7 +282,7 @@ fun VpnkaMessengerApp() {
                         // Tap your own name/avatar → your profile (nick, key, settings).
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.clip(RoundedCornerShape(14.dp))
+                            modifier = Modifier.clip(RoundedCornerShape(11.dp))
                                 .clickable { tab = MsgTab.PROFILE }
                                 .padding(end = 8.dp, top = 2.dp, bottom = 2.dp),
                         ) {
@@ -577,7 +578,7 @@ private fun ChatRow(
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-            .clip(RoundedCornerShape(18.dp)).background(VpnkaColors.CardServer)
+            .clip(RoundedCornerShape(13.dp)).background(VpnkaColors.CardServer).border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(13.dp))
             .combinedClickable(onClick = onOpen, onLongClick = onLong)
             .padding(horizontal = 12.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -616,7 +617,8 @@ private fun ChatRow(
                     Spacer(Modifier.width(8.dp))
                     Text(
                         if (unread > 99) "99+" else unread.toString(),
-                        fontFamily = VpnkaFonts.nunito800, fontSize = 11.sp, color = Color.White,
+                        fontFamily = VpnkaFonts.nunito800, fontSize = 11.sp,
+                        color = VpnkaColors.OnAccent,
                         modifier = Modifier.clip(CircleShape)
                             .background(if (muted) VpnkaColors.TextFaint else VpnkaColors.Accent)
                             .padding(horizontal = 7.dp, vertical = 2.dp),
@@ -667,7 +669,7 @@ private fun CallsTab(
                     val known = contacts.any { it.id == c.peerId }
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                            .clip(RoundedCornerShape(18.dp)).background(VpnkaColors.CardServer)
+                            .clip(RoundedCornerShape(13.dp)).background(VpnkaColors.CardServer).border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(13.dp))
                             .clickable { if (known) onOpen(c.peerId) }
                             .padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -715,7 +717,7 @@ private fun SectionLabel(text: String) {
 private fun ResultRow(glyph: String?, title: String, sub: String?, onClick: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp)
-            .clip(RoundedCornerShape(16.dp)).background(VpnkaColors.CardServer)
+            .clip(RoundedCornerShape(12.dp)).background(VpnkaColors.CardServer).border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(12.dp))
             .clickable(onClick = onClick).padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -782,7 +784,7 @@ private fun ChannelScreen(channel: Channels.Channel, onBack: () -> Unit) {
                 }
                 items(posts, key = { it.id }) { p ->
                     Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                        .clip(RoundedCornerShape(14.dp)).background(VpnkaColors.CardServer).padding(12.dp)) {
+                        .clip(RoundedCornerShape(11.dp)).background(VpnkaColors.CardServer).border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(11.dp)).padding(12.dp)) {
                         Text(p.body, fontFamily = VpnkaFonts.manrope600, fontSize = 15.sp, color = VpnkaColors.TextStrong)
                     }
                 }
@@ -1058,7 +1060,7 @@ private fun ChatScreen(
                         horizontalArrangement = Arrangement.End,
                     ) {
                         Box(
-                            modifier = Modifier.clip(RoundedCornerShape(16.dp))
+                            modifier = Modifier.clip(RoundedCornerShape(12.dp))
                                 .background(VpnkaColors.Green.copy(alpha = 0.85f))
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                         ) {
@@ -1076,7 +1078,7 @@ private fun ChatScreen(
                         horizontalArrangement = Arrangement.End,
                     ) {
                         Box(
-                            modifier = Modifier.clip(RoundedCornerShape(16.dp))
+                            modifier = Modifier.clip(RoundedCornerShape(12.dp))
                                 .background(VpnkaColors.Green.copy(alpha = 0.85f))
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
                         ) {
@@ -1346,7 +1348,7 @@ private fun ContactsTab(
                 items(contacts.sortedBy { it.name.lowercase() }, key = { it.id }) { c ->
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                            .clip(RoundedCornerShape(18.dp)).background(VpnkaColors.CardServer)
+                            .clip(RoundedCornerShape(13.dp)).background(VpnkaColors.CardServer).border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(13.dp))
                             .clickable { onOpen(c.id) }.padding(horizontal = 12.dp, vertical = 11.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
@@ -1393,7 +1395,7 @@ private fun MsgTabItem(
 ) {
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(11.dp))
             .background(if (selected) VpnkaColors.Accent.copy(alpha = 0.14f) else Color.Transparent)
             .clickable(onClick = onClick)
             .padding(vertical = 6.dp),
@@ -1414,7 +1416,7 @@ private fun MsgTabItem(
 private fun ProfileCard(title: String, content: @Composable () -> Unit) {
     Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
-            .clip(RoundedCornerShape(16.dp)).background(VpnkaColors.CardServer).padding(16.dp),
+            .clip(RoundedCornerShape(12.dp)).background(VpnkaColors.CardServer).border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(12.dp)).padding(16.dp),
     ) {
         Text(title, fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp, color = VpnkaColors.TextStrong)
         Spacer(Modifier.height(10.dp))
@@ -1454,8 +1456,9 @@ private fun ContactProfileScreen(contact: Messenger.Contact, onBack: () -> Unit)
             Text(contact.name, fontFamily = VpnkaFonts.nunito800, fontSize = 22.sp, color = VpnkaColors.TextStrong)
             Spacer(Modifier.height(24.dp))
             Column(
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp))
-                    .background(VpnkaColors.CardServer).padding(16.dp),
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                    .background(VpnkaColors.CardServer)
+                    .border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(12.dp)).padding(16.dp),
             ) {
                 Text("🔒 Ключ шифрования собеседника", fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp, color = VpnkaColors.TextStrong)
                 Spacer(Modifier.height(8.dp))
@@ -1492,7 +1495,7 @@ private fun MsgField(label: String, value: String, onChange: (String) -> Unit) {
         onValueChange = onChange,
         label = { Text(label, color = VpnkaColors.TextMuted) },
         singleLine = true,
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(13.dp),
         textStyle = LocalTextStyle.current.copy(color = VpnkaColors.TextStrong, fontSize = 15.sp),
         colors = OutlinedTextFieldDefaults.colors(
             focusedTextColor = VpnkaColors.TextStrong,

@@ -21,6 +21,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.clickable
@@ -517,8 +518,9 @@ private fun ContactsApp(syncTick: Int, onChanged: () -> Unit) {
                     items(filtered, key = { it.id }) { c ->
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp)
-                                .clip(RoundedCornerShape(16.dp))
+                                .clip(RoundedCornerShape(12.dp))
                                 .background(VpnkaColors.CardServer)
+                                .border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(12.dp))
                                 .clickable { opened = c }
                                 .padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -608,7 +610,7 @@ private fun ContactDetail(
     ) {
         Column(
             modifier = Modifier.fillMaxWidth().padding(24.dp)
-                .clip(RoundedCornerShape(20.dp)).background(VpnkaColors.BgOffCentre)
+                .clip(RoundedCornerShape(14.dp)).background(VpnkaColors.BgOffCentre)
                 .clickable(enabled = false) {}
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -687,8 +689,9 @@ private fun Card(title: String, subtitle: String, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 5.dp)
-            .clip(RoundedCornerShape(16.dp))
+            .clip(RoundedCornerShape(12.dp))
             .background(VpnkaColors.CardServer)
+            .border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
@@ -775,8 +778,9 @@ private fun HelpCard(glyph: String, title: String, body: String) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 6.dp)
-            .clip(RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(13.dp))
             .background(VpnkaColors.CardServer)
+            .border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(13.dp))
             .padding(16.dp),
     ) {
         Text(glyph, fontSize = 26.sp)
@@ -980,7 +984,7 @@ private fun BrowserHistorySheet(onOpen: (String) -> Unit, onClose: () -> Unit) {
                     placeholder = { Text("Поиск по журналу", color = VpnkaColors.TextMuted) },
                     textStyle = androidx.compose.material3.LocalTextStyle.current
                         .copy(color = VpnkaColors.TextStrong),
-                    shape = RoundedCornerShape(18.dp),
+                    shape = RoundedCornerShape(13.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = VpnkaColors.TextStrong,
                         unfocusedTextColor = VpnkaColors.TextStrong,
@@ -1021,7 +1025,7 @@ private fun BrowserHistorySheet(onOpen: (String) -> Unit, onClose: () -> Unit) {
                             }
                             Row(
                                 modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
-                                    .clip(RoundedCornerShape(14.dp)).background(VpnkaColors.CardServer)
+                                    .clip(RoundedCornerShape(11.dp)).background(VpnkaColors.CardServer).border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(11.dp))
                                     .clickable { onOpen(e.url) }
                                     .padding(horizontal = 10.dp, vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -1386,7 +1390,7 @@ private fun BrowserApp() {
                     placeholder = { Text("Найти на странице", color = VpnkaColors.TextMuted) },
                     textStyle = androidx.compose.material3.LocalTextStyle.current
                         .copy(color = VpnkaColors.TextStrong),
-                    shape = RoundedCornerShape(18.dp),
+                    shape = RoundedCornerShape(13.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = VpnkaColors.TextStrong,
                         unfocusedTextColor = VpnkaColors.TextStrong,
@@ -1437,7 +1441,7 @@ private fun BrowserApp() {
                     textStyle = LocalTextStyle.current.copy(color = VpnkaColors.TextStrong, fontSize = 15.sp),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                     keyboardActions = KeyboardActions(onGo = { active.go(omni.text); editing = false }),
-                    shape = RoundedCornerShape(22.dp),
+                    shape = RoundedCornerShape(15.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = VpnkaColors.TextStrong, unfocusedTextColor = VpnkaColors.TextStrong,
                         cursorColor = VpnkaColors.Accent, focusedBorderColor = VpnkaColors.Accent,
@@ -1449,8 +1453,9 @@ private fun BrowserApp() {
                 )
             } else {
                 Row(
-                    modifier = Modifier.weight(1f).clip(RoundedCornerShape(22.dp))
+                    modifier = Modifier.weight(1f).clip(RoundedCornerShape(15.dp))
                         .background(VpnkaColors.CardServer)
+                        .border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(15.dp))
                         .clickable {
                             val u = active.url.value
                             // Select the whole URL so the first keystroke replaces it.
@@ -1475,7 +1480,8 @@ private fun BrowserApp() {
             Spacer(Modifier.width(6.dp))
             Box(
                 modifier = Modifier.size(30.dp).clip(RoundedCornerShape(7.dp))
-                    .background(VpnkaColors.CardServer).clickable { showTabs = true },
+                    .background(VpnkaColors.CardServer)
+                    .border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(7.dp)).clickable { showTabs = true },
                 contentAlignment = Alignment.Center,
             ) { Text("${tabs.size}", fontFamily = VpnkaFonts.nunito800, fontSize = 13.sp, color = VpnkaColors.TextStrong) }
             Spacer(Modifier.width(2.dp))
@@ -1682,7 +1688,7 @@ private fun VpnkaStoreApp() {
             val isIn = app.id in installed
             Row(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp)
-                    .clip(RoundedCornerShape(16.dp)).background(VpnkaColors.CardServer)
+                    .clip(RoundedCornerShape(12.dp)).background(VpnkaColors.CardServer).border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(12.dp))
                     .padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {

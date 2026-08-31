@@ -102,14 +102,27 @@ object VpnkaColors {
     // Cards sit on the wash rather than on a surface, so they are white with
     // alpha rather than a solid colour — the gradient shows through and the
     // card belongs to the page. Dark inverts the tint, not the idea.
-    // В «Потоке» карточки не полупрозрачные, а сплошные тона макета: там
-    // фон ровный, и белая плёнка поверх него давала бы грязь, а не глубину.
+    // В «Потоке» карточка — это тонкая плёнка цвета текста поверх тёмного
+    // полотна плюс волосяная рамка, ровно как в макете (rgba(fg,.05….08) +
+    // 1px rgba(fg,.09)). Сплошные #211b14/#2a231a — НЕ карточки: это тона
+    // штриховки-заглушки под картинку, и заливать ими блоки было ошибкой.
+    private val FlowFilm = Color(0xFFF8F1E6)
     val CardSpeed: Color get() =
-        pick(Color(0xFFFFFFFF).copy(alpha = 0.75f), Color(0xFFFFFFFF).copy(alpha = 0.07f), Color(0xFF211B14))
+        pick(Color(0xFFFFFFFF).copy(alpha = 0.75f), Color(0xFFFFFFFF).copy(alpha = 0.07f), FlowFilm.copy(alpha = 0.045f))
     val CardServer: Color get() =
-        pick(Color(0xFFFFFFFF).copy(alpha = 0.85f), Color(0xFFFFFFFF).copy(alpha = 0.10f), Color(0xFF2A231A))
+        pick(Color(0xFFFFFFFF).copy(alpha = 0.85f), Color(0xFFFFFFFF).copy(alpha = 0.10f), FlowFilm.copy(alpha = 0.07f))
     val CardSettings: Color get() =
-        pick(Color(0xFFFFFFFF).copy(alpha = 0.70f), Color(0xFFFFFFFF).copy(alpha = 0.06f), Color(0xFF1B160F))
+        pick(Color(0xFFFFFFFF).copy(alpha = 0.70f), Color(0xFFFFFFFF).copy(alpha = 0.06f), FlowFilm.copy(alpha = 0.05f))
+
+    /** Волосяная рамка карточек. В светлой теме её нет — там держит тень. */
+    val Hairline: Color get() =
+        if (flow) FlowFilm.copy(alpha = 0.09f) else Color(0x00000000)
+
+    /**
+     * Чем писать ПО акценту. В макете это почти чёрный #1d1204, а не белый:
+     * оранжевый там светлый, и белый текст на нём не читается.
+     */
+    val OnAccent: Color get() = if (flow) Color(0xFF1D1204) else Color(0xFFFFFFFF)
 
     // The warm shadow that ties the whole screen together.
     val Shadow: Color get() = pick(Color(0xFFB47814), Color(0xFF000000), Color(0xFF000000))

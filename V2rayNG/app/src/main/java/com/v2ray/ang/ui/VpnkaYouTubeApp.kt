@@ -1,6 +1,7 @@
 package com.v2ray.ang.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -250,7 +251,7 @@ fun YouTubeApp() {
                         textStyle = androidx.compose.material3.LocalTextStyle.current.copy(color = VpnkaColors.TextStrong),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                         keyboardActions = KeyboardActions(onSearch = { runSearch() }),
-                        shape = RoundedCornerShape(22.dp),
+                        shape = RoundedCornerShape(15.dp),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = VpnkaColors.TextStrong, unfocusedTextColor = VpnkaColors.TextStrong,
                             cursorColor = VpnkaColors.Accent, focusedBorderColor = VpnkaColors.Accent,
@@ -260,7 +261,7 @@ fun YouTubeApp() {
                     )
                     Spacer(Modifier.width(8.dp))
                     Box(
-                        modifier = Modifier.clip(RoundedCornerShape(18.dp))
+                        modifier = Modifier.clip(RoundedCornerShape(13.dp))
                             .background(VpnkaColors.Accent)
                             .clickable { runSearch() }
                             .padding(horizontal = 16.dp, vertical = 12.dp),
@@ -324,7 +325,7 @@ fun YouTubeApp() {
                     LazyColumn(modifier = Modifier.fillMaxSize().padding(top = 8.dp)) {
                         item {
                             Box(
-                                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(11.dp))
                                     .background(VpnkaColors.Accent).clickable { newPlDialog = true }.padding(14.dp),
                             ) { Text("＋ Новый плейлист", fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp, color = Color.White) }
                             Spacer(Modifier.height(10.dp))
@@ -776,8 +777,9 @@ internal fun NowPlayingBar(onOpen: (YouTubeService.Playback) -> Unit) {
 
     Row(
         modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(11.dp))
             .background(VpnkaColors.CardServer)
+            .border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(11.dp))
             .clickable { onOpen(current) }
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -839,7 +841,7 @@ private fun YtSortChip(current: YtSort, options: List<YtSort>, onPick: (YtSort) 
     var open by remember { mutableStateOf(false) }
     Box {
         Box(
-            modifier = Modifier.clip(RoundedCornerShape(16.dp)).background(VpnkaColors.CardServer)
+            modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(VpnkaColors.CardServer).border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(12.dp))
                 .clickable { open = true }.padding(horizontal = 12.dp, vertical = 8.dp),
         ) {
             Text("⇅  ${current.label}", fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp, color = VpnkaColors.TextStrong)
@@ -915,8 +917,9 @@ private fun AddToPlaylistDialog(item: YouTubePlaylists.Item, onClose: () -> Unit
 @Composable
 private fun YtPresetChip(label: String, onClick: () -> Unit) {
     Box(
-        modifier = Modifier.clip(RoundedCornerShape(16.dp))
+        modifier = Modifier.clip(RoundedCornerShape(12.dp))
             .background(VpnkaColors.CardServer)
+            .border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 8.dp),
     ) {
@@ -927,7 +930,7 @@ private fun YtPresetChip(label: String, onClick: () -> Unit) {
 @Composable
 private fun YtTabChip(label: String, selected: Boolean, onClick: () -> Unit) {
     Box(
-        modifier = Modifier.clip(RoundedCornerShape(16.dp))
+        modifier = Modifier.clip(RoundedCornerShape(12.dp))
             .background(if (selected) VpnkaColors.Accent else VpnkaColors.CardServer)
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 9.dp),
@@ -1010,7 +1013,7 @@ private fun VideoRow(
     var fav by remember(v.url) { mutableStateOf(YouTubeFavorites.isFav(v.url)) }
     Row(
         modifier = Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(11.dp))
             .clickable(onClick = onClick)
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -1580,7 +1583,7 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                                 placeholder = { Text("Искать в транскрипте", color = VpnkaColors.TextMuted) },
                                 textStyle = androidx.compose.material3.LocalTextStyle.current
                                     .copy(color = VpnkaColors.TextStrong),
-                                shape = RoundedCornerShape(20.dp),
+                                shape = RoundedCornerShape(14.dp),
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedTextColor = VpnkaColors.TextStrong,
                                     unfocusedTextColor = VpnkaColors.TextStrong,
@@ -1802,8 +1805,9 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
 private fun YtActionChip(label: String, enabled: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(13.dp))
             .background(VpnkaColors.CardServer)
+            .border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(13.dp))
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 11.dp),
     ) {
@@ -1827,6 +1831,7 @@ private fun SpeedGraph(samples: List<Long>) {
         modifier = Modifier.fillMaxWidth().height(38.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(VpnkaColors.CardServer)
+            .border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(8.dp))
             .padding(horizontal = 4.dp, vertical = 3.dp),
         verticalAlignment = Alignment.Bottom,
     ) {
@@ -1941,7 +1946,7 @@ private fun DownloadRow(e: YouTubeDownloads.Entry) {
 @Composable
 private fun DlAction(label: String, onClick: () -> Unit) {
     Box(
-        modifier = Modifier.clip(RoundedCornerShape(14.dp)).background(VpnkaColors.CardServer)
+        modifier = Modifier.clip(RoundedCornerShape(11.dp)).background(VpnkaColors.CardServer).border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(11.dp))
             .clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 7.dp),
     ) {
         Text(label, fontFamily = VpnkaFonts.nunito800, fontSize = 12.sp, color = VpnkaColors.TextStrong)
