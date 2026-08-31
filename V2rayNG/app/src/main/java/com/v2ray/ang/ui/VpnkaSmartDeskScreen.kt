@@ -815,6 +815,7 @@ fun VpnkaSmartDeskScreen(
                     wallpaper = choice
                     MmkvManager.encodeSettings("vpnka_smartdesk_wallpaper", choice)
                 },
+                onExit = { showControl = false; onBack() },
                 onDesktopSettings = { showControl = false; showSettings = true },
                 onDismiss = { showControl = false },
             )
@@ -945,12 +946,14 @@ private fun SmartDeskTabBar(
             .padding(horizontal = 4.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // РОВНО пять пунктов, как в эталоне. Шестым висел «Выход», из-за него
+        // подписи жались и панель читалась как свалка. Выход остался у
+        // системной кнопки «назад» с рабочего стола и в центре управления.
         BarItem("⌂", "Стол", current == null, Modifier.weight(1f)) { onDesk() }
         BarItem("▶", "Видео", current == "youtube", Modifier.weight(1f)) { onApp("youtube", null) }
-        BarItem("💬", "Чаты", current == "messages", Modifier.weight(1f)) { onApp("messages", null) }
-        BarItem("🌐", "Браузер", current == "browser", Modifier.weight(1f)) { onApp("browser", null) }
-        BarItem("⤓", "Загрузки", false, Modifier.weight(1f)) { onApp("youtube", 2) }
-        BarItem("↩", "Выход", false, Modifier.weight(1f)) { onExit() }
+        BarItem("✎", "Чаты", current == "messages", Modifier.weight(1f)) { onApp("messages", null) }
+        BarItem("◍", "Браузер", current == "browser", Modifier.weight(1f)) { onApp("browser", null) }
+        BarItem("↓", "Загрузки", false, Modifier.weight(1f)) { onApp("youtube", 2) }
     }
     }
 }
@@ -963,22 +966,24 @@ private fun BarItem(
     modifier: Modifier,
     onClick: () -> Unit,
 ) {
+    // Активный пункт — оранжевым ТЕКСТОМ, без заливки. Плашка другого оттенка
+    // выбивалась из панели и читалась как ошибка вёрстки.
+    val tint = if (selected) VpnkaColors.AccentLight else VpnkaColors.TextFaint
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(9.dp))
-            .background(if (selected) VpnkaColors.Accent.copy(alpha = 0.22f) else Color.Transparent)
             .clickable(onClick = onClick)
-            .padding(vertical = 5.dp),
+            .padding(vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(glyph, fontSize = 16.sp, color = VpnkaColors.TextStrong)
-        Spacer(Modifier.height(3.dp))
+        Text(glyph, fontSize = 16.sp, color = tint)
+        Spacer(Modifier.height(5.dp))
         Text(
             label,
-            fontFamily = VpnkaFonts.nunito800,
-            fontSize = 9.sp,
+            fontFamily = if (selected) VpnkaFonts.nunito800 else VpnkaFonts.manrope600,
+            fontSize = 10.sp,
             maxLines = 1,
-            color = if (selected) VpnkaColors.AccentLight else VpnkaColors.TextFaint,
+            color = tint,
         )
     }
 }
@@ -1104,6 +1109,7 @@ private fun ControlCentre(
     onToggleVpn: () -> Unit,
     wallpaper: String,
     onWallpaper: (String) -> Unit,
+    onExit: () -> Unit,
     onDesktopSettings: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -1195,6 +1201,19 @@ private fun ControlCentre(
                 modifier = Modifier
                     .clip(RoundedCornerShape(12.dp))
                     .pointerInput(Unit) { detectTapGestures { onDesktopSettings() } }
+                    .padding(vertical = 6.dp),
+            )
+            // Выход переехал сюда из нижней панели: в эталоне у неё ровно пять
+            // пунктов, а шестой ужимал подписи. С самого стола выход по-прежнему
+            // делает системная кнопка «назад».
+            Text(
+                text = "↩  На главный экран VPNka",
+                fontFamily = VpnkaFonts.nunito800,
+                fontSize = 14.sp,
+                color = VpnkaColors.TextStrong,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp))
+                    .pointerInput(Unit) { detectTapGestures { onExit() } }
                     .padding(vertical = 6.dp),
             )
         }
