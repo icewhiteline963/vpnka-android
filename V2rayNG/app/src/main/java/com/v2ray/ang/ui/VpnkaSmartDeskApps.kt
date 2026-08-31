@@ -460,6 +460,60 @@ private fun ContactsApp(syncTick: Int, onChanged: () -> Unit) {
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
+        // Поиск по странице — прямо над содержимым, с числом совпадений и
+        // переходом между ними. WebView умеет это сам, надо только дать
+        // человеку строку и кнопки.
+        findQuery?.let { fq ->
+            var matches by remember { mutableStateOf(0) }
+            LaunchedEffect(Unit) {
+                active.webView.setFindListener { active_, total, isDone ->
+                    if (isDone) matches = total
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedTextField(
+                    value = fq,
+                    onValueChange = {
+                        findQuery = it
+                        if (it.isBlank()) active.webView.clearMatches()
+                        else active.webView.findAllAsync(it)
+                    },
+                    singleLine = true,
+                    placeholder = { Text("Найти на странице", color = VpnkaColors.TextMuted) },
+                    textStyle = androidx.compose.material3.LocalTextStyle.current
+                        .copy(color = VpnkaColors.TextStrong),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = VpnkaColors.TextStrong,
+                        unfocusedTextColor = VpnkaColors.TextStrong,
+                        cursorColor = VpnkaColors.Accent,
+                        focusedBorderColor = VpnkaColors.Accent,
+                        unfocusedBorderColor = VpnkaColors.CardServer,
+                    ),
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(6.dp))
+                if (matches > 0) {
+                    Text(
+                        "$matches", fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp,
+                        color = VpnkaColors.TextMuted,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                }
+                Text("↑", fontSize = 18.sp, color = VpnkaColors.TextStrong,
+                    modifier = Modifier.clip(CircleShape)
+                        .clickable { active.webView.findNext(false) }.padding(8.dp))
+                Text("↓", fontSize = 18.sp, color = VpnkaColors.TextStrong,
+                    modifier = Modifier.clip(CircleShape)
+                        .clickable { active.webView.findNext(true) }.padding(8.dp))
+                Text("✕", fontSize = 16.sp, color = VpnkaColors.TextMuted,
+                    modifier = Modifier.clip(CircleShape)
+                        .clickable { findQuery = null; active.webView.clearMatches() }.padding(8.dp))
+            }
+        }
             Box(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
                 DeskField("Поиск", query) { query = it }
             }
@@ -858,11 +912,55 @@ private object AdBlocker {
 
 /** One browser tab: a live WebView plus the reactive state the chrome reads. */
 @SuppressLint("SetJavaScriptEnabled")
+/**
+ * Режим чтения: оставить на странице текст и убрать всё остальное.
+ *
+ * Намеренно простой и без библиотек — берём самый «текстовый» блок страницы
+ * и показываем только его. Это не сработает на всём, поэтому обратный путь
+ * — обычная перезагрузка, а не попытка вернуть разметку.
+ */
+private const val READER_JS = """
+(function(){
+  try {
+    var best=null, bestLen=0;
+    var cand=document.querySelectorAll('article,main,[role=main],.post,.article,#content,.content');
+    for (var i=0;i<cand.length;i++){
+      var len=(cand[i].innerText||'').length;
+      if(len>bestLen){bestLen=len;best=cand[i];}
+    }
+    if(!best||bestLen<400){
+      var ps=document.getElementsByTagName('p'), acc=null, accLen=0;
+      for(var j=0;j<ps.length;j++){
+        var pr=ps[j].parentElement; if(!pr) continue;
+        var l=(pr.innerText||'').length;
+        if(l>accLen){accLen=l;acc=pr;}
+      }
+      best=acc; bestLen=accLen;
+    }
+    if(!best) return 'no';
+    var html=best.innerHTML;
+    document.body.innerHTML='<div id="vpnka-reader">'+html+'</div>';
+    var st=document.createElement('style');
+    st.textContent='html,body{background:#15110c!important;margin:0!important;}'+
+      '#vpnka-reader{max-width:720px;margin:0 auto;padding:22px 18px 60px;'+
+      'color:#f8f1e6;font:400 17px/1.62 -apple-system,Roboto,sans-serif;}'+
+      '#vpnka-reader img,#vpnka-reader video{max-width:100%;height:auto;border-radius:10px;}'+
+      '#vpnka-reader a{color:#ffb655;}'+
+      '#vpnka-reader h1,#vpnka-reader h2,#vpnka-reader h3{line-height:1.25;}';
+    document.head.appendChild(st);
+    return 'ok';
+  } catch(e){ return 'err'; }
+})();
+"""
+
 private class BrowserTab(
     context: Context,
     val id: Int,
     startUrl: String,
     onOfferSave: (host: String, user: String, pass: String) -> Unit,
+    /** Инкогнито: не пишем историю и стираем следы при закрытии вкладки. */
+    val incognito: Boolean = false,
+    onDownload: ((url: String, name: String) -> Unit)? = null,
 ) {
     val url = mutableStateOf(startUrl)
     val title = mutableStateOf("")
@@ -879,7 +977,14 @@ private class BrowserTab(
 
     val webView: WebView = WebView(context).apply {
         settings.javaScriptEnabled = true
-        settings.domStorageEnabled = true
+        settings.domStorageEnabled = !incognito
+        // В инкогнито не оставляем ни кэша, ни форм, ни паролей. Полной
+        // изоляции WebView не даёт (куки живут общие), и обещать «невидимку»
+        // нельзя — но всё, что зависит от нас, здесь выключено.
+        if (incognito) {
+            settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
+            settings.saveFormData = false
+        }
         settings.useWideViewPort = true
         settings.loadWithOverviewMode = true
         settings.builtInZoomControls = true
@@ -894,6 +999,14 @@ private class BrowserTab(
                 mainHandler.post { onOfferSave(host, user, pass) }
             }
         }, "VpnkaPwd")
+        // Файл со страницы — в наши «Загрузки», а не в системный менеджер:
+        // тот пошёл бы в сеть НАПРЯМУЮ, мимо туннеля.
+        setDownloadListener { dUrl, _, contentDisposition, mime, _ ->
+            val name = runCatching {
+                android.webkit.URLUtil.guessFileName(dUrl, contentDisposition, mime)
+            }.getOrDefault("файл")
+            onDownload?.invoke(dUrl, name)
+        }
         webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView?, u: String?, favicon: android.graphics.Bitmap?) {
                 u?.let { this@BrowserTab.url.value = it }; this@BrowserTab.canBack.value = canGoBack(); this@BrowserTab.canFwd.value = canGoForward()
@@ -1029,7 +1142,15 @@ private fun BrowserApp() {
     }
 
     val home = "https://duckduckgo.com/"
-    val tabs = remember { mutableStateListOf(BrowserTab(context, 0, home, onOfferSave)) }
+    // Загрузка со страницы идёт нашим загрузчиком: системный менеджер пошёл
+    // бы в сеть напрямую, мимо туннеля.
+    val onPageDownload: (String, String) -> Unit = { u, name ->
+        YouTubeDownloads.enqueueFile(context, u, name)
+        Toast.makeText(context, "Файл добавлен в загрузки", Toast.LENGTH_SHORT).show()
+    }
+    val tabs = remember {
+        mutableStateListOf(BrowserTab(context, 0, home, onOfferSave, false, onPageDownload))
+    }
     var nextId by remember { mutableIntStateOf(1) }
     var activeId by remember { mutableIntStateOf(0) }
     val active = tabs.firstOrNull { it.id == activeId } ?: tabs.first()
@@ -1039,10 +1160,16 @@ private fun BrowserApp() {
     var menuOpen by remember { mutableStateOf(false) }
     var adblock by remember { mutableStateOf(AdBlocker.enabled) }
 
-    fun openTab(u: String) { tabs.add(BrowserTab(context, nextId, u, onOfferSave)); activeId = nextId; nextId++; showTabs = false }
+    fun openTab(u: String, incognito: Boolean = false) {
+        tabs.add(BrowserTab(context, nextId, u, onOfferSave, incognito, onPageDownload))
+        activeId = nextId; nextId++; showTabs = false
+    }
     fun closeTab(t: BrowserTab) {
         val i = tabs.indexOf(t); tabs.remove(t)
-        if (tabs.isEmpty()) { tabs.add(BrowserTab(context, nextId, home, onOfferSave)); activeId = nextId; nextId++ }
+        if (tabs.isEmpty()) {
+            tabs.add(BrowserTab(context, nextId, home, onOfferSave, false, onPageDownload))
+            activeId = nextId; nextId++
+        }
         else if (activeId == t.id) activeId = tabs[i.coerceAtMost(tabs.lastIndex)].id
         // Halt the closed tab so it stops running JS/media/network in the bg.
         runCatching { t.webView.loadUrl("about:blank"); t.webView.onPause() }
@@ -1054,8 +1181,12 @@ private fun BrowserApp() {
     // и уносил все вкладки: ниже они принудительно перезагружались. Пять
     // открытых вкладок исчезали от одного случайного движения. А переход по
     // истории лежал в меню «⋮» — самое частое действие стоило двух нажатий.
+    var findQuery by remember { mutableStateOf<String?>(null) }
+    var reading by remember { mutableStateOf(false) }
+
     SmartDeskBackHandler {
         when {
+            findQuery != null -> { findQuery = null; active.webView.clearMatches(); true }
             showTabs -> { showTabs = false; true }
             menuOpen -> { menuOpen = false; true }
             editing -> { editing = false; true }
@@ -1141,6 +1272,31 @@ private fun BrowserApp() {
                     DropdownMenuItem(text = { Text("→ Вперёд") }, enabled = active.canFwd.value, onClick = { menuOpen = false; active.webView.goForward() })
                     DropdownMenuItem(text = { Text("⟳ Обновить") }, onClick = { menuOpen = false; active.webView.reload() })
                     DropdownMenuItem(text = { Text("＋ Новая вкладка") }, onClick = { menuOpen = false; openTab(home) })
+                    DropdownMenuItem(
+                        text = { Text("🕶 Открыть инкогнито") },
+                        onClick = { menuOpen = false; openTab(home, incognito = true) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("⌕ Найти на странице") },
+                        onClick = { menuOpen = false; findQuery = "" },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(if (reading) "📄 Обычный вид" else "📄 Режим чтения") },
+                        onClick = {
+                            menuOpen = false
+                            reading = !reading
+                            // Режим чтения — не «загрузить AMP-версию», а
+                            // упрощение уже открытой страницы на месте:
+                            // убираем всё, кроме основного текста. Работает
+                            // не везде, поэтому обычный вид возвращается
+                            // перезагрузкой.
+                            if (reading) {
+                                active.webView.evaluateJavascript(READER_JS, null)
+                            } else {
+                                active.webView.reload()
+                            }
+                        },
+                    )
                     DropdownMenuItem(text = { Text("🏠 Домой") }, onClick = { menuOpen = false; active.webView.loadUrl(home) })
                     DropdownMenuItem(
                         text = { Text(if (adblock) "🛡 Блокировка рекламы: вкл" else "🛡 Блокировка рекламы: выкл") },

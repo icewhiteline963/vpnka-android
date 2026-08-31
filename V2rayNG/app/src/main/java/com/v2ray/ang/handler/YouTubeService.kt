@@ -309,6 +309,32 @@ object YouTubeService {
         return s.replace(",", ".").toDoubleOrNull()?.toLong() ?: -1
     }
 
+    /**
+     * Скачать произвольный файл со страницы — через прокси, как и всё
+     * остальное. Возвращает адрес в системных «Загрузках».
+     */
+    fun downloadFile(
+        context: Context,
+        url: String,
+        fileName: String,
+        isCancelled: () -> Boolean = { false },
+        onProgress: (done: Long, total: Long, speedBps: Long) -> Unit = { _, _, _ -> },
+    ): android.net.Uri {
+        val safe = fileName.replace(Regex("[^\\p{L}\\p{N} ._-]"), "_").trim().take(120)
+            .ifBlank { "file" }
+        val client = proxiedClient().newBuilder()
+            .readTimeout(0, TimeUnit.SECONDS)
+            .callTimeout(0, TimeUnit.SECONDS)
+            .build()
+        val tmp = File(context.cacheDir, "yt_f_${System.currentTimeMillis()}")
+        try {
+            downloadTo(client, url, tmp, isCancelled, onProgress)
+            return saveFileToDownloads(context, safe, "application/octet-stream", tmp)
+        } finally {
+            tmp.delete()
+        }
+    }
+
     /** Saves a subtitle track (text) to Downloads THROUGH the VPN proxy. Off main. */
     fun downloadSubtitle(context: Context, sub: SubtitleOption, title: String): android.net.Uri {
         ensureInit()

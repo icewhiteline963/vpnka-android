@@ -149,6 +149,32 @@ object YouTubeDownloads {
         }
     }
 
+    /**
+     * Файл со страницы браузера — тем же путём, что и видео.
+     *
+     * Системный менеджер загрузок Android пошёл бы в сеть НАПРЯМУЮ, мимо
+     * туннеля: для ВПН-приложения это утечка и адреса, и содержимого.
+     */
+    fun enqueueFile(context: Context, url: String, name: String) {
+        val ctx = context.applicationContext
+        val e = add(name, "application/octet-stream")
+        e.sourceUrl = url; e.sourceTitle = name
+        e.job = scope.launch {
+            val self = coroutineContext[Job]
+            gate.withPermit {
+                e.state = State.RUNNING
+                runCatching {
+                    YouTubeService.downloadFile(
+                        ctx, url, name,
+                        isCancelled = { self?.isActive != true },
+                    ) { d, t, s -> e.done = d; e.total = t; e.speed = s }
+                }
+                    .onSuccess { e.uri = it; e.state = State.DONE }
+                    .onFailure { e.state = failureState(it, e) }
+            }
+        }
+    }
+
     fun enqueueSubtitle(context: Context, sub: YouTubeService.SubtitleOption, title: String) {
         val ctx = context.applicationContext
         val e = add("$title · субтитры (${sub.label})", "text/plain")
