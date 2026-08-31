@@ -8,6 +8,7 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import com.v2ray.ang.handler.BrowserHistory
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.PasswordStore
 import androidx.compose.foundation.text.KeyboardActions
@@ -64,6 +65,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -900,6 +902,162 @@ private const val READER_JS = """
 })();
 """
 
+/** Журнал посещений: поиск, открыть, забыть строку, очистить всё. */
+@Composable
+private fun BrowserHistorySheet(onOpen: (String) -> Unit, onClose: () -> Unit) {
+    var q by remember { mutableStateOf("") }
+    var tick by remember { mutableIntStateOf(0) }
+    var confirmClear by remember { mutableStateOf(false) }
+    val items = remember(q, tick) { BrowserHistory.search(q) }
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onClose,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Журнал", fontFamily = VpnkaFonts.nunito800, color = VpnkaColors.TextStrong)
+                Spacer(Modifier.weight(1f))
+                if (BrowserHistory.all().isNotEmpty()) {
+                    Text(
+                        "Очистить", fontFamily = VpnkaFonts.nunito800, fontSize = 12.sp,
+                        color = VpnkaColors.Warning,
+                        modifier = Modifier.clip(RoundedCornerShape(12.dp))
+                            .clickable { confirmClear = true }
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                    )
+                }
+            }
+        },
+        text = {
+            Column(modifier = Modifier.heightIn(max = 420.dp)) {
+                OutlinedTextField(
+                    value = q,
+                    onValueChange = { q = it },
+                    singleLine = true,
+                    placeholder = { Text("Поиск по журналу", color = VpnkaColors.TextMuted) },
+                    textStyle = androidx.compose.material3.LocalTextStyle.current
+                        .copy(color = VpnkaColors.TextStrong),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = VpnkaColors.TextStrong,
+                        unfocusedTextColor = VpnkaColors.TextStrong,
+                        cursorColor = VpnkaColors.Accent,
+                        focusedBorderColor = VpnkaColors.Accent,
+                        unfocusedBorderColor = VpnkaColors.CardServer,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                if (items.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                        Text(
+                            if (q.isBlank())
+                                "Журнал пуст. Страницы, открытые в инкогнито, сюда не попадают."
+                            else "Ничего не найдено",
+                            fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp,
+                            color = VpnkaColors.TextMuted,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        )
+                    }
+                } else {
+                    LazyColumn {
+                        items(items.size, key = { items[it].url }) { i ->
+                            val e = items[i]
+                            val day = historyDay(e.ts)
+                            // Заголовок дня считаем от ПРЕДЫДУЩЕЙ строки, а не
+                            // накопительной переменной: ленивый список рисует
+                            // только видимое и в произвольном порядке, счётчик
+                            // в нём врёт при прокрутке.
+                            if (i == 0 || historyDay(items[i - 1].ts) != day) {
+                                Text(
+                                    day.uppercase(),
+                                    fontFamily = VpnkaFonts.nunito800, fontSize = 11.sp,
+                                    color = VpnkaColors.TextFaint,
+                                    modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
+                                    .clip(RoundedCornerShape(14.dp)).background(VpnkaColors.CardServer)
+                                    .clickable { onOpen(e.url) }
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        e.title.ifBlank { e.url },
+                                        fontFamily = VpnkaFonts.nunito800, fontSize = 13.sp,
+                                        color = VpnkaColors.TextStrong,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Text(
+                                        runCatching { android.net.Uri.parse(e.url).host }.getOrNull()
+                                            ?: e.url,
+                                        fontFamily = VpnkaFonts.manrope600, fontSize = 11.sp,
+                                        color = VpnkaColors.TextMuted,
+                                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                Text(
+                                    historyTime(e.ts), fontFamily = VpnkaFonts.manrope600,
+                                    fontSize = 11.sp, color = VpnkaColors.TextFaint,
+                                )
+                                Text(
+                                    "✕", fontSize = 13.sp, color = VpnkaColors.TextFaint,
+                                    modifier = Modifier.clip(CircleShape)
+                                        .clickable { BrowserHistory.remove(e.url); tick++ }
+                                        .padding(8.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onClose) { Text("Закрыть") }
+        },
+        containerColor = VpnkaColors.BgOffCentre,
+    )
+
+    if (confirmClear) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            title = { Text("Очистить журнал?", fontFamily = VpnkaFonts.nunito800, color = VpnkaColors.TextStrong) },
+            text = {
+                Text(
+                    "Список посещённых страниц будет стёрт. Сохранённые пароли и вкладки останутся.",
+                    fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp, color = VpnkaColors.TextMuted,
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    BrowserHistory.clear(); confirmClear = false; tick++
+                }) { Text("Очистить", color = VpnkaColors.Warning) }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { confirmClear = false }) { Text("Отмена") }
+            },
+            containerColor = VpnkaColors.BgOffCentre,
+        )
+    }
+}
+
+private fun historyDay(ts: Long): String {
+    val now = java.util.Calendar.getInstance()
+    val then = java.util.Calendar.getInstance().apply { timeInMillis = ts }
+    val sameYear = now.get(java.util.Calendar.YEAR) == then.get(java.util.Calendar.YEAR)
+    val dayDiff = now.get(java.util.Calendar.DAY_OF_YEAR) - then.get(java.util.Calendar.DAY_OF_YEAR)
+    return when {
+        sameYear && dayDiff == 0 -> "Сегодня"
+        sameYear && dayDiff == 1 -> "Вчера"
+        else -> java.text.SimpleDateFormat("d MMMM yyyy", java.util.Locale("ru")).format(java.util.Date(ts))
+    }
+}
+
+private fun historyTime(ts: Long): String =
+    java.text.SimpleDateFormat("HH:mm", java.util.Locale("ru")).format(java.util.Date(ts))
+
 private class BrowserTab(
     context: Context,
     val id: Int,
@@ -961,6 +1119,9 @@ private class BrowserTab(
             override fun onPageFinished(view: WebView?, u: String?) {
                 u?.let { this@BrowserTab.url.value = it }; this@BrowserTab.canBack.value = canGoBack(); this@BrowserTab.canFwd.value = canGoForward()
                 view?.evaluateJavascript(PWD_JS, null)
+                // Журнал посещений. Инкогнито молчит — иначе окно «без следов»
+                // оставляло бы главный след.
+                if (!incognito) u?.let { BrowserHistory.add(it, this@BrowserTab.title.value) }
             }
             override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
                 val u = request?.url?.toString()
@@ -969,7 +1130,13 @@ private class BrowserTab(
         }
         webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(view: WebView?, p: Int) { this@BrowserTab.progress.value = p }
-            override fun onReceivedTitle(view: WebView?, t: String?) { if (!t.isNullOrBlank()) this@BrowserTab.title.value = t }
+            override fun onReceivedTitle(view: WebView?, t: String?) {
+                if (t.isNullOrBlank()) return
+                this@BrowserTab.title.value = t
+                // Заголовок приходит после адреса, поэтому строку журнала
+                // дописываем задним числом.
+                if (!incognito) BrowserHistory.retitle(this@BrowserTab.url.value, t)
+            }
         }
         loadUrl(startUrl)
     }
@@ -1084,6 +1251,7 @@ private fun BrowserApp() {
     // Password manager: a page offer to save creds, and the manager sheet.
     var pendingSave by remember { mutableStateOf<Triple<String, String, String>?>(null) }
     var showPwds by remember { mutableStateOf(false) }
+    var showHistory by remember { mutableStateOf(false) }
     val onOfferSave = remember {
         { host: String, user: String, pass: String -> pendingSave = Triple(host, user, pass) }
     }
@@ -1133,6 +1301,7 @@ private fun BrowserApp() {
 
     SmartDeskBackHandler {
         when {
+            showHistory -> { showHistory = false; true }
             findQuery != null -> { findQuery = null; active.webView.clearMatches(); true }
             showTabs -> { showTabs = false; true }
             menuOpen -> { menuOpen = false; true }
@@ -1304,6 +1473,7 @@ private fun BrowserApp() {
                         text = { Text(if (adblock) "🛡 Блокировка рекламы: вкл" else "🛡 Блокировка рекламы: выкл") },
                         onClick = { menuOpen = false; AdBlocker.enabled = !adblock; adblock = !adblock; active.webView.reload() },
                     )
+                    DropdownMenuItem(text = { Text("🕘 Журнал") }, onClick = { menuOpen = false; showHistory = true })
                     DropdownMenuItem(text = { Text("🔑 Пароли") }, onClick = { menuOpen = false; showPwds = true })
                 }
             }
@@ -1385,6 +1555,13 @@ private fun BrowserApp() {
     }
 
     // Saved-password manager.
+    if (showHistory) {
+        BrowserHistorySheet(
+            onOpen = { u -> showHistory = false; active.go(u) },
+            onClose = { showHistory = false },
+        )
+    }
+
     if (showPwds) {
         var creds by remember { mutableStateOf(PasswordStore.all()) }
         androidx.compose.material3.AlertDialog(
