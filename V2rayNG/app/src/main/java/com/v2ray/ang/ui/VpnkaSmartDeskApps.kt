@@ -460,59 +460,6 @@ private fun ContactsApp(syncTick: Int, onChanged: () -> Unit) {
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.fillMaxSize()) {
-        // Поиск по странице — прямо над содержимым, с числом совпадений и
-        // переходом между ними. WebView умеет это сам, надо только дать
-        // человеку строку и кнопки.
-        findQuery?.let { fq ->
-            var matches by remember { mutableStateOf(0) }
-            LaunchedEffect(Unit) {
-                active.webView.setFindListener { active_, total, isDone ->
-                    if (isDone) matches = total
-                }
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                OutlinedTextField(
-                    value = fq,
-                    onValueChange = {
-                        findQuery = it
-                        if (it.isBlank()) active.webView.clearMatches()
-                        else active.webView.findAllAsync(it)
-                    },
-                    singleLine = true,
-                    placeholder = { Text("Найти на странице", color = VpnkaColors.TextMuted) },
-                    textStyle = androidx.compose.material3.LocalTextStyle.current
-                        .copy(color = VpnkaColors.TextStrong),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = VpnkaColors.TextStrong,
-                        unfocusedTextColor = VpnkaColors.TextStrong,
-                        cursorColor = VpnkaColors.Accent,
-                        focusedBorderColor = VpnkaColors.Accent,
-                        unfocusedBorderColor = VpnkaColors.CardServer,
-                    ),
-                    modifier = Modifier.weight(1f),
-                )
-                Spacer(Modifier.width(6.dp))
-                if (matches > 0) {
-                    Text(
-                        "$matches", fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp,
-                        color = VpnkaColors.TextMuted,
-                    )
-                    Spacer(Modifier.width(6.dp))
-                }
-                Text("↑", fontSize = 18.sp, color = VpnkaColors.TextStrong,
-                    modifier = Modifier.clip(CircleShape)
-                        .clickable { active.webView.findNext(false) }.padding(8.dp))
-                Text("↓", fontSize = 18.sp, color = VpnkaColors.TextStrong,
-                    modifier = Modifier.clip(CircleShape)
-                        .clickable { active.webView.findNext(true) }.padding(8.dp))
-                Text("✕", fontSize = 16.sp, color = VpnkaColors.TextMuted,
-                    modifier = Modifier.clip(CircleShape)
-                        .clickable { findQuery = null; active.webView.clearMatches() }.padding(8.dp))
-            }
         }
             Box(modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
                 DeskField("Поиск", query) { query = it }
@@ -1201,6 +1148,60 @@ private fun BrowserApp() {
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
+        // Поиск по странице — прямо над содержимым, с числом совпадений и
+        // переходом между ними. WebView умеет это сам, надо только дать
+        // человеку строку и кнопки.
+        findQuery?.let { fq ->
+            var matches by remember { mutableStateOf(0) }
+            LaunchedEffect(Unit) {
+                active.webView.setFindListener { active_, total, isDone ->
+                    if (isDone) matches = total
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedTextField(
+                    value = fq,
+                    onValueChange = {
+                        findQuery = it
+                        if (it.isBlank()) active.webView.clearMatches()
+                        else active.webView.findAllAsync(it)
+                    },
+                    singleLine = true,
+                    placeholder = { Text("Найти на странице", color = VpnkaColors.TextMuted) },
+                    textStyle = androidx.compose.material3.LocalTextStyle.current
+                        .copy(color = VpnkaColors.TextStrong),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = VpnkaColors.TextStrong,
+                        unfocusedTextColor = VpnkaColors.TextStrong,
+                        cursorColor = VpnkaColors.Accent,
+                        focusedBorderColor = VpnkaColors.Accent,
+                        unfocusedBorderColor = VpnkaColors.CardServer,
+                    ),
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(6.dp))
+                if (matches > 0) {
+                    Text(
+                        "$matches", fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp,
+                        color = VpnkaColors.TextMuted,
+                    )
+                    Spacer(Modifier.width(6.dp))
+                }
+                Text("↑", fontSize = 18.sp, color = VpnkaColors.TextStrong,
+                    modifier = Modifier.clip(CircleShape)
+                        .clickable { active.webView.findNext(false) }.padding(8.dp))
+                Text("↓", fontSize = 18.sp, color = VpnkaColors.TextStrong,
+                    modifier = Modifier.clip(CircleShape)
+                        .clickable { active.webView.findNext(true) }.padding(8.dp))
+                Text("✕", fontSize = 16.sp, color = VpnkaColors.TextMuted,
+                    modifier = Modifier.clip(CircleShape)
+                        .clickable { findQuery = null; active.webView.clearMatches() }.padding(8.dp))
+            }
+
         // Chrome-style top bar: omnibox (lock + domain) · tab count · menu.
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
