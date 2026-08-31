@@ -2,7 +2,6 @@ package com.v2ray.ang.ui
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.widget.Toast
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -85,6 +84,41 @@ import kotlinx.coroutines.launch
  */
 /** Lets a SmartDesk app hide the host app bar (back + icon) while a nested
  *  screen is open — set true on entering a chat/nested menu, false on leaving. */
+/**
+ * Подсказка внизу экрана с одним действием.
+ *
+ * Системный Toast сообщал «файл добавлен в загрузки» и на этом заканчивался:
+ * чтобы попасть в загрузки, надо было выйти, найти «Видео», открыть вкладку.
+ * Здесь у сообщения есть кнопка, ведущая туда, о чём оно сообщает.
+ *
+ * Действие описано СТРОКОЙ, а не лямбдой: рисует подсказку рабочий стол, и
+ * он же умеет открывать приложения — передавать ему замыкание из чужого
+ * экрана значило бы тащить его состояние наружу.
+ */
+object SmartDeskToast {
+    var text by mutableStateOf<String?>(null)
+        private set
+    var actionLabel by mutableStateOf<String?>(null)
+        private set
+
+    /** Что сделать по кнопке: "downloads" — открыть загрузки. null — нечего. */
+    var action by mutableStateOf<String?>(null)
+        private set
+
+    /** Растёт с каждым показом — по нему заводится таймер скрытия. */
+    var seq by mutableStateOf(0)
+        private set
+
+    fun show(message: String, label: String? = null, act: String? = null) {
+        text = message
+        actionLabel = if (act == null) null else label
+        action = act
+        seq++
+    }
+
+    fun dismiss() { text = null; actionLabel = null; action = null }
+}
+
 object SmartDeskChrome {
     var barHidden by mutableStateOf(false)
 
@@ -1271,7 +1305,7 @@ private fun BrowserApp() {
     // бы в сеть напрямую, мимо туннеля.
     val onPageDownload: (String, String) -> Unit = { u, name ->
         YouTubeDownloads.enqueueFile(context, u, name)
-        Toast.makeText(context, "Файл добавлен в загрузки", Toast.LENGTH_SHORT).show()
+        SmartDeskToast.show("Файл добавлен в загрузки", "Открыть", "downloads")
     }
     val tabs = remember {
         mutableStateListOf(BrowserTab(context, 0, home, onOfferSave, false, onPageDownload))

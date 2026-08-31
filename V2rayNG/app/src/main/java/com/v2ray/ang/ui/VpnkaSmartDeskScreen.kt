@@ -685,6 +685,43 @@ fun VpnkaSmartDeskScreen(
                         NowPlayingBar(onOpen = { CATALOG_BY_ID["youtube"]?.let { a -> openApp = a } })
                     }
                 }
+                // Подсказка с действием — над панелью, чтобы кнопка «Открыть»
+                // не спорила с ней за нижний край.
+                SmartDeskToast.text?.let { msg ->
+                    LaunchedEffect(SmartDeskToast.seq) {
+                        kotlinx.coroutines.delay(5000)
+                        SmartDeskToast.dismiss()
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(VpnkaColors.BgOffCentre)
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            msg, fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp,
+                            color = VpnkaColors.TextStrong, maxLines = 2,
+                            overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                        )
+                        SmartDeskToast.actionLabel?.let { label ->
+                            Text(
+                                label, fontFamily = VpnkaFonts.nunito800, fontSize = 13.sp,
+                                color = VpnkaColors.Accent,
+                                modifier = Modifier.clip(RoundedCornerShape(12.dp))
+                                    .clickable {
+                                        if (SmartDeskToast.action == "downloads") {
+                                            SmartDeskChrome.pendingYtTab = 2
+                                            CATALOG_BY_ID["youtube"]?.let { a -> openApp = a }
+                                        }
+                                        SmartDeskToast.dismiss()
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 4.dp),
+                            )
+                        }
+                    }
+                }
                 SmartDeskTabBar(
                     current = openApp?.id,
                     onDesk = { openApp = null; deskTick++ },

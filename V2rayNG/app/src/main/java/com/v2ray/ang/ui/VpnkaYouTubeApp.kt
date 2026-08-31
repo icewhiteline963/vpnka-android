@@ -186,7 +186,7 @@ fun YouTubeApp() {
     }
     fun downloadPlaylist(pl: YouTubePlaylists.Playlist) = withStorage {
         pl.videos.forEach { v -> YouTubeDownloads.enqueueVideoByUrl(context, v.url, v.title) }
-        Toast.makeText(context, "В загрузках: ${pl.videos.size}", Toast.LENGTH_SHORT).show()
+        SmartDeskToast.show("В загрузках: ${pl.videos.size}", "Открыть", "downloads")
     }
 
     // «Назад» внутри приложения: сначала закрываем открытое, и только когда
@@ -527,9 +527,9 @@ fun YouTubeApp() {
                                 }
                                 YouTubeLater.clear()
                                 laterTick++
-                                Toast.makeText(
-                                    context, "В загрузках: ${later.size}", Toast.LENGTH_SHORT,
-                                ).show()
+                                SmartDeskToast.show(
+                                    "В загрузках: ${later.size}", "Открыть", "downloads",
+                                )
                             }
                         }
                         Spacer(Modifier.width(6.dp))
@@ -1241,13 +1241,13 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
     fun runDownload(opt: YouTubeService.DownloadOption) {
         qualities = null
         YouTubeDownloads.enqueueVideo(context, opt, pb.title)
-        Toast.makeText(context, "Добавлено в загрузки", Toast.LENGTH_SHORT).show()
+        SmartDeskToast.show("Добавлено в загрузки", "Открыть", "downloads")
     }
 
     fun runSubtitle(sub: YouTubeService.SubtitleOption) {
         subs = null
         YouTubeDownloads.enqueueSubtitle(context, sub, pb.title)
-        Toast.makeText(context, "Добавлено в загрузки", Toast.LENGTH_SHORT).show()
+        SmartDeskToast.show("Добавлено в загрузки", "Открыть", "downloads")
     }
 
     fun openQualities() {
