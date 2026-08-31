@@ -33,6 +33,11 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Switch
@@ -369,6 +374,97 @@ fun VpnkaSmartDeskScreen(
                     fontFamily = VpnkaFonts.manrope700, fontSize = 12.sp, color = ink,
                     maxLines = 1,
                 )
+            }
+        }
+
+        // Общий поиск — «везде в приложении».
+        //
+        // Подпись супер-приложения из макета: человек не должен помнить, в
+        // каком приложении лежит нужное. Ищем только по локальному и НЕ
+        // ходим в сеть — поиск по чужим видео стоит трафика через наши ноды
+        // и остаётся отдельным действием.
+        var deskQuery by remember { mutableStateOf("") }
+        val deskHits = remember(deskQuery) { SmartDeskSearch.search(deskQuery) }
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp)) {
+            OutlinedTextField(
+                value = deskQuery,
+                onValueChange = { deskQuery = it },
+                singleLine = true,
+                placeholder = {
+                    Text("Заметки, контакты, чаты, файлы", color = VpnkaColors.TextMuted, fontSize = 13.sp)
+                },
+                leadingIcon = { Text("⌕", fontSize = 15.sp, color = VpnkaColors.TextMuted) },
+                trailingIcon = {
+                    if (deskQuery.isNotEmpty()) {
+                        Text(
+                            "✕", fontSize = 14.sp, color = VpnkaColors.TextMuted,
+                            modifier = Modifier.clip(CircleShape)
+                                .clickable { deskQuery = "" }.padding(8.dp),
+                        )
+                    }
+                },
+                textStyle = androidx.compose.material3.LocalTextStyle.current
+                    .copy(color = VpnkaColors.TextStrong, fontSize = 14.sp),
+                shape = RoundedCornerShape(20.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = VpnkaColors.TextStrong,
+                    unfocusedTextColor = VpnkaColors.TextStrong,
+                    cursorColor = VpnkaColors.Accent,
+                    focusedBorderColor = VpnkaColors.Accent,
+                    unfocusedBorderColor = ink.copy(alpha = 0.25f),
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (deskQuery.trim().length >= 2) {
+                if (deskHits.isEmpty()) {
+                    Text(
+                        "Ничего не нашлось. Поиск идёт по тому, что уже на устройстве.",
+                        fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp,
+                        color = VpnkaColors.TextMuted,
+                        modifier = Modifier.padding(vertical = 12.dp),
+                    )
+                } else {
+                    LazyColumn(modifier = Modifier.fillMaxWidth().heightIn(max = 320.dp)) {
+                        items(deskHits) { h ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable {
+                                        deskQuery = ""
+                                        openApp = when (h.target) {
+                                            SmartDeskSearch.Target.NOTES -> "notes"
+                                            SmartDeskSearch.Target.CONTACTS -> "contacts"
+                                            SmartDeskSearch.Target.CALENDAR -> "calendar"
+                                            SmartDeskSearch.Target.MESSENGER -> "messenger"
+                                            else -> "youtube"
+                                        }
+                                    }
+                                    .padding(horizontal = 6.dp, vertical = 9.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(h.icon, fontSize = 15.sp, color = VpnkaColors.Accent)
+                                Spacer(Modifier.width(10.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        h.title, fontFamily = VpnkaFonts.nunito800, fontSize = 13.sp,
+                                        color = ink, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    )
+                                    if (h.subtitle.isNotBlank()) {
+                                        Text(
+                                            h.subtitle, fontFamily = VpnkaFonts.manrope600,
+                                            fontSize = 11.sp, color = ink.copy(alpha = 0.6f),
+                                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                }
+                                Text(
+                                    h.tag, fontFamily = VpnkaFonts.manrope600, fontSize = 10.sp,
+                                    color = ink.copy(alpha = 0.45f),
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
 
