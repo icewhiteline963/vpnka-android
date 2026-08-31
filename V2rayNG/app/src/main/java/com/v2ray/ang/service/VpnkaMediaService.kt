@@ -82,9 +82,37 @@ class VpnkaMediaService : MediaSessionService() {
                 .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        // История просмотра пишется и тогда, когда экран плеера уже закрыт.
+        //
+        // Раньше позицию и отметку «досмотрел» сохранял только экран, а
+        // ролик, дослушанный в фоне, оставался «недосмотренным»: при
+        // следующем открытии видео отматывалось на старое место, а уборка
+        // скачанного его не видела.
+        player.addListener(object : androidx.media3.common.Player.Listener {
+            override fun onPlaybackStateChanged(state: Int) {
+                if (state == androidx.media3.common.Player.STATE_ENDED) {
+                    com.v2ray.ang.handler.YouTubeNowPlaying.current?.pageUrl?.let {
+                        com.v2ray.ang.handler.YouTubeHistory.markWatched(it)
+                    }
+                }
+            }
+        })
+
         session = MediaSession.Builder(this, player)
             .setSessionActivity(open)
             .build()
+    }
+
+    /** Запомнить, где остановились. Зовём, пока плеер ещё жив. */
+    private fun savePosition() {
+        val p = session?.player ?: return
+        val page = com.v2ray.ang.handler.YouTubeNowPlaying.current?.pageUrl ?: return
+        if (p.duration <= 0) return
+        runCatching {
+            com.v2ray.ang.handler.YouTubeHistory.savePosition(
+                page, p.currentPosition / 1000, p.duration / 1000,
+            )
+        }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
@@ -98,12 +126,14 @@ class VpnkaMediaService : MediaSessionService() {
      */
     override fun onTaskRemoved(rootIntent: Intent?) {
         val player = session?.player
+        savePosition()
         if (player == null || !player.playWhenReady || player.mediaItemCount == 0) {
             stopSelf()
         }
     }
 
     override fun onDestroy() {
+        savePosition()
         // Служба ушла — строки «сейчас играет» быть не должно, иначе она
         // предлагает остановить то, чего уже нет.
         com.v2ray.ang.handler.YouTubeNowPlaying.current = null

@@ -675,30 +675,6 @@ private fun openIntent(context: android.content.Context, uri: String) {
 
 // ----------------------------------------------------------- shared pieces ---
 
-@Composable
-private fun AppScaffold(
-    empty: Boolean,
-    emptyHint: String,
-    onAdd: () -> Unit,
-    list: @Composable () -> Unit,
-) {
-    Box(modifier = Modifier.fillMaxSize()) {
-        if (empty) EmptyHint(emptyHint) else list()
-        // Add button, bottom-right.
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(20.dp)
-                .size(56.dp)
-                .clip(CircleShape)
-                .background(VpnkaColors.Accent)
-                .clickable(onClick = onAdd),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(text = "+", fontSize = 30.sp, color = androidx.compose.ui.graphics.Color.White)
-        }
-    }
-}
 
 @Composable
 private fun Card(title: String, subtitle: String, onClick: () -> Unit) {

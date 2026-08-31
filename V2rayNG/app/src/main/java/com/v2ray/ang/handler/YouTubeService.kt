@@ -457,6 +457,28 @@ object YouTubeService {
      *   Папку выбирает не человек, а вид файла: выбор на каждую загрузку —
      *   лишний вопрос там, где ответ всегда один.
      */
+    /**
+     * Подмести времянки, оставшиеся от прерванных загрузок.
+     *
+     * `finally { tmp.delete() }` не выполняется, если процесс убили посреди
+     * скачивания, а времянка — это полный размер ролика (для раздельных
+     * дорожек вдвое больше). Зовём при открытии приложения.
+     */
+    fun sweepTemp(context: Context) {
+        runCatching {
+            val edge = System.currentTimeMillis() - 6 * 60 * 60 * 1000L
+            context.cacheDir.listFiles()?.forEach { f ->
+                val n = f.name
+                if ((n.startsWith("yt_v_") || n.startsWith("yt_a_") ||
+                        n.startsWith("yt_out_") || n.startsWith("yt_f_") ||
+                        n.startsWith("yt_sub_")) && f.lastModified() < edge
+                ) {
+                    f.delete()
+                }
+            }
+        }
+    }
+
     private fun saveFileToDownloads(
         context: Context,
         fileName: String,

@@ -137,6 +137,23 @@ object Messenger {
         store.encode(KEY_CONTACTS, gson.toJson(list))
     }
 
+    /**
+     * Дотянуть публичный ключ, если он не приехал в первый раз.
+     *
+     * Профиль тянется best-effort, и при сетевой заминке контакт сохранялся
+     * с ПУСТЫМ ключом. Вылечиться было неоткуда: шифрование падало, отправка
+     * возвращала false, а набранный текст к этому моменту уже стёрли —
+     * сообщение исчезало без единого слова. Теперь ключ дотягивается.
+     */
+    suspend fun ensureKey(contactId: Long): Boolean {
+        val c = contact(contactId) ?: return false
+        if (c.pubKey.isNotBlank()) return true
+        val found = getProfile(contactId) ?: return false
+        if (found.pubKey.isBlank()) return false
+        addContact(c.copy(pubKey = found.pubKey, name = c.name))
+        return true
+    }
+
     private fun contact(id: Long): Contact? = contacts().firstOrNull { it.id == id }
 
     // --- per-contact message log (local, plaintext, encrypted at rest) ---
@@ -311,6 +328,7 @@ object Messenger {
     /** Send a message. Stores our copy locally + a self-copy so our other
      *  devices sync the same history. */
     suspend fun send(contactId: Long, text: String): Boolean = withContext(Dispatchers.IO) {
+        ensureKey(contactId)
         val c = contact(contactId) ?: return@withContext false
         val u = java.util.UUID.randomUUID().toString()
         val ct = try { seal(gson.toJson(MsgPayload(u = u, k = "text", t = text)), c.pubKey) }
@@ -359,9 +377,16 @@ object Messenger {
     }
 
     /** Wipe local chat history on this device (server + peers unchanged). */
+    /**
+     * Стереть переписку на этом устройстве.
+     *
+     * Курсор опроса при этом НЕ сбрасываем. Сброс отправлял следующий запрос
+     * с `since=0`, а сервер сообщения не удаляет — и вся стёртая переписка
+     * возвращалась вместе с контактами через пару секунд. Кнопка обещала
+     * приватность и молча её не выполняла.
+     */
     fun clearHistory() {
         store.allKeys()?.filter { it.startsWith("msg_") }?.forEach { store.removeValueForKey(it) }
-        store.remove(KEY_CURSOR)
         store.remove(KEY_CONTACTS)
     }
 

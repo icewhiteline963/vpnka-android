@@ -573,11 +573,16 @@ fun VpnkaSmartDeskScreen(
         // ANYWHERE on the grid opens the shade (left half) or control centre
         // (right half) — it starts mid-screen, not at the top edge, so it
         // doesn't fight Android's own status-bar pull-down.
+        // Высота полосы значков — она нужна, чтобы не дать утащить значок в
+        // невидимый ряд. Внутри жеста `size` — это размер самого значка, а не
+        // сетки, поэтому меряем здесь.
+        var gridHPx by remember { mutableStateOf(0) }
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .weight(1f)
                 .padding(top = 14.dp, start = 12.dp, end = 12.dp)
+                .onSizeChanged { gridHPx = it.height }
                 .pointerInput(Unit) {
                     detectTapGestures(onLongPress = { showSettings = true })
                 }
@@ -640,8 +645,14 @@ fun VpnkaSmartDeskScreen(
                                     // Snap to the nearest cell; if occupied, swap.
                                     val newCol = ((baseX + drag.x) / cellWPx).roundToInt()
                                         .coerceIn(0, COLUMNS - 1)
+                                    // Сверху ограничение было, снизу — нет.
+                                    // После того как сетке осталось два-три
+                                    // ряда, значок можно было утащить в ряд
+                                    // ниже видимого: он сохранялся туда же и
+                                    // пропадал под карточками «Продолжить».
+                                    val maxRow = ((gridHPx / cellHPx).toInt() - 1).coerceAtLeast(0)
                                     val newRow = ((baseY + drag.y) / cellHPx).roundToInt()
-                                        .coerceAtLeast(0)
+                                        .coerceIn(0, maxRow)
                                     val target = newRow * COLUMNS + newCol
                                     val idx = order.indexOfFirst { it.first.id == app.id }
                                     val occupied = order.indexOfFirst { it.second == target }
@@ -924,7 +935,6 @@ fun VpnkaSmartDeskScreen(
                             SmartDeskChrome.pendingYtTab = ytTab
                             CATALOG_BY_ID[id]?.let { openApp = it }
                         },
-                        onExit = onBack,
                     )
                 }
         }
@@ -972,7 +982,6 @@ private fun SmartDeskTabBar(
     current: String?,
     onDesk: () -> Unit,
     onApp: (String, Int?) -> Unit,
-    onExit: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxWidth().background(VpnkaColors.BgOffCentre)) {
         // Волосяная черта сверху — в макете панель отделена от содержимого

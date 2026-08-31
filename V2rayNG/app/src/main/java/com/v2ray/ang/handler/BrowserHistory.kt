@@ -22,7 +22,8 @@ object BrowserHistory {
     fun all(): List<Entry> {
         val raw = MmkvManager.decodeSettingsString(KEY) ?: return emptyList()
         return try {
-            gson.fromJson<List<Entry>>(raw, object : TypeToken<List<Entry>>() {}.type) ?: emptyList()
+            gson.fromJson<List<Entry>>(raw, object : TypeToken<List<Entry>>() {}.type)
+                ?.filter { it.url != null && it.title != null } ?: emptyList()
         } catch (e: Exception) {
             emptyList()
         }
@@ -59,8 +60,13 @@ object BrowserHistory {
 
     fun search(q: String): List<Entry> {
         val needle = q.trim().lowercase()
-        if (needle.isEmpty()) return all()
-        return all().filter {
+        // Gson создаёт объекты в обход конструктора и кладёт null даже в
+        // непустые по типу поля, если ключа в JSON нет: на повреждённой
+        // записи обращение к title/url роняло весь экран журнала, и
+        // try/catch вокруг разбора от этого не спасал.
+        val safe = all().filter { it.url != null && it.title != null }
+        if (needle.isEmpty()) return safe
+        return safe.filter {
             it.title.lowercase().contains(needle) || it.url.lowercase().contains(needle)
         }
     }

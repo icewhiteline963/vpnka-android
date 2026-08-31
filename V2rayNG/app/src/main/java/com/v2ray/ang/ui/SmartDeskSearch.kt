@@ -26,7 +26,6 @@ object SmartDeskSearch {
         val subtitle: String,
         val tag: String,
         val target: Target,
-        val query: String = "",
         /** Для чата — с кем: без этого «перейти к переписке» вело в общий список. */
         val chatId: Long? = null,
     )

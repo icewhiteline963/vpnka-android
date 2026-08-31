@@ -3,4 +3,10 @@
     <cache-path
         name="cache"
         path="/" />
+    <!-- Скачанное на Android 8-9 лежит обычным файлом в общих «Загрузках»:
+         отдать его другому приложению по file:// нельзя (FileUriExposedException),
+         поэтому раздаём через провайдер. -->
+    <external-path
+        name="downloads"
+        path="Download/" />
 </paths>

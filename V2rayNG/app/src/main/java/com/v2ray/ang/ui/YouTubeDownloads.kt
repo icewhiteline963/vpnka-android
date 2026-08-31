@@ -116,10 +116,13 @@ object YouTubeDownloads {
     }
 
     private fun isNight(): Boolean {
-        val h = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
         val from = YouTubeLater.NIGHT_FROM
         val to = YouTubeLater.NIGHT_TO
-        return if (from <= to) h in from until to else h >= from || h < to
+        // Пустое окно (начало == конец) — это «когда угодно», а не «никогда»:
+        // иначе очередь встала бы намертво и без единого объяснения.
+        if (from == to) return true
+        val h = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        return if (from < to) h in from until to else h >= from || h < to
     }
 
     /**

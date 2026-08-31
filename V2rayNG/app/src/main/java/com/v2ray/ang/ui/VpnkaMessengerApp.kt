@@ -753,6 +753,11 @@ private fun CallsTab(
                 items(calls.size, key = { calls[it].ts }) { i ->
                     val c = calls[i]
                     val known = contacts.any { it.id == c.peerId }
+                    // Имя берём из контактов: исходящий писался как «@ник», а
+                    // входящий — как присланное имя без «@», и один человек
+                    // оказывался в журнале двумя строками с разными аватарами.
+                    val shown = contacts.firstOrNull { it.id == c.peerId }?.name
+                        ?: c.name.ifBlank { "Без имени" }
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
                             .clip(RoundedCornerShape(13.dp)).background(VpnkaColors.CardServer).border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(13.dp))
@@ -760,11 +765,11 @@ private fun CallsTab(
                             .padding(horizontal = 12.dp, vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        MsgAvatar(c.name.ifBlank { "?" }, size = 42)
+                        MsgAvatar(shown, size = 42)
                         Spacer(Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                c.name.ifBlank { "Без имени" },
+                                shown,
                                 fontFamily = VpnkaFonts.nunito800, fontSize = 15.sp,
                                 color = if (c.dir == "missed") VpnkaColors.Warning else VpnkaColors.TextStrong,
                                 maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -785,7 +790,7 @@ private fun CallsTab(
                         Text(
                             "☎", fontSize = 18.sp, color = VpnkaColors.Accent,
                             modifier = Modifier.clip(CircleShape)
-                                .clickable { onCall(c.peerId, c.name) }.padding(10.dp),
+                                .clickable { onCall(c.peerId, shown) }.padding(10.dp),
                         )
                     }
                 }
@@ -961,8 +966,8 @@ private fun ChatScreen(
     var showProfile by remember { mutableStateOf(false) }
     // Follow the conversation: when a message is sent OR arrives (msgs grows),
     // and while a photo uploads, keep the newest row on screen.
-    LaunchedEffect(msgs.size, sendPct) {
-        val total = msgs.size + (if (sendPct != null) 1 else 0)
+    LaunchedEffect(msgs.size, sendPct, compressing) {
+        val total = msgs.size + (if (sendPct != null) 1 else 0) + (if (compressing) 1 else 0)
         if (total > 0) listState.animateScrollToItem(total - 1)
     }
 
@@ -1316,7 +1321,19 @@ private fun ChatScreen(
                             val t = draft.trim()
                             if (t.isNotBlank()) {
                                 draft = ""
-                                scope.launch { if (Messenger.send(contact.id, t)) onSent() }
+                                scope.launch {
+                                    if (Messenger.send(contact.id, t)) onSent()
+                                    else {
+                                        // Не ушло — возвращаем текст в поле.
+                                        // Раньше он исчезал молча: человек был
+                                        // уверен, что отправил.
+                                        draft = t
+                                        android.widget.Toast.makeText(
+                                            context, "Не отправилось — попробуйте ещё раз",
+                                            android.widget.Toast.LENGTH_SHORT,
+                                        ).show()
+                                    }
+                                }
                             }
                         },
                     contentAlignment = Alignment.Center,

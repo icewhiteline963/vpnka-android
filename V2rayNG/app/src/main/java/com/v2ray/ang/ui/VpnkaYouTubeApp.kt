@@ -472,7 +472,12 @@ fun YouTubeApp() {
                 }
             } else {
                 // tab == 2: downloads
-                LaunchedEffect(Unit) { YouTubeDownloads.restore() }
+                LaunchedEffect(Unit) {
+                    YouTubeDownloads.restore()
+                    // Времянки прерванных загрузок — это полный размер ролика
+                    // каждая; после убитого процесса они остаются навсегда.
+                    withContext(Dispatchers.IO) { YouTubeService.sweepTemp(context) }
+                }
                 val dls = YouTubeDownloads.entries
                 val later = remember(laterTick) { YouTubeLater.all() }
                 var wifiOnly by remember { mutableStateOf(YouTubeLater.wifiOnly) }
@@ -2361,8 +2366,24 @@ private fun DlAction(label: String, onClick: () -> Unit) {
     }
 }
 
+/**
+ * Отдать файл другому приложению.
+ *
+ * На Android 8-9 скачанное сохраняется обычным файлом, и `file://` в чужом
+ * приложении роняет нас `FileUriExposedException` — исключение съедалось, а
+ * человек видел «нет приложения для открытия». Поэтому такие адреса
+ * переводим на наш провайдер.
+ */
+private fun shareableUri(ctx: android.content.Context, uri: android.net.Uri): android.net.Uri =
+    if (uri.scheme != "file") uri
+    else runCatching {
+        androidx.core.content.FileProvider.getUriForFile(
+            ctx, ctx.packageName + ".cache", java.io.File(uri.path!!),
+        )
+    }.getOrDefault(uri)
+
 private fun openDownload(ctx: android.content.Context, e: YouTubeDownloads.Entry) {
-    val uri = e.uri ?: return
+    val uri = e.uri?.let { shareableUri(ctx, it) } ?: return
     runCatching {
         val i = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
             setDataAndType(uri, e.mime)
@@ -2373,7 +2394,7 @@ private fun openDownload(ctx: android.content.Context, e: YouTubeDownloads.Entry
 }
 
 private fun shareDownload(ctx: android.content.Context, e: YouTubeDownloads.Entry) {
-    val uri = e.uri ?: return
+    val uri = e.uri?.let { shareableUri(ctx, it) } ?: return
     runCatching {
         val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
             type = e.mime
