@@ -105,6 +105,9 @@ private fun msgTime(ts: Long): String =
 
 /** Bottom tabs, Telegram-style. Nested screens (a chat, a channel) hide the bar
  *  and come back to whichever tab was open. */
+/** Высота липкой шапки чата/канала. */
+private val CHAT_BAR_HEIGHT = 52.dp
+
 private enum class MsgTab { CHATS, CALLS, CONTACTS, SETTINGS, PROFILE }
 
 /** Полки списка чатов. «Группы» из макета не заводим: групповых чатов у нас
@@ -811,8 +814,15 @@ private fun ChannelScreen(channel: Channels.Channel, onBack: () -> Unit) {
         if (subscribed) posts = Channels.feed(channel.id)
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    // Шапка канала — такая же липкая, как в чате.
+    val channelHeader: @Composable () -> Unit = {
+        Row(
+            modifier = Modifier.fillMaxWidth()
+                .height(CHAT_BAR_HEIGHT)
+                .background(VpnkaColors.BgOffMid.copy(alpha = 0.85f))
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Text("‹", fontSize = 24.sp, color = VpnkaColors.TextStrong,
                 modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onBack).padding(horizontal = 8.dp, vertical = 4.dp))
             Spacer(Modifier.width(6.dp))
@@ -823,7 +833,13 @@ private fun ChannelScreen(channel: Channels.Channel, onBack: () -> Unit) {
                 Text("@${channel.handle}", fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp, color = VpnkaColors.TextMuted)
             }
         }
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
         if (!subscribed) {
+            // Пока не подписан — шапка обычная: под ней ничего не прокручивается,
+            // и полупрозрачность здесь была бы украшением без причины.
+            channelHeader()
             Box(modifier = Modifier.fillMaxSize().weight(1f).padding(24.dp), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("Подпишитесь, чтобы читать канал", fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp, color = VpnkaColors.TextMuted)
@@ -836,7 +852,13 @@ private fun ChannelScreen(channel: Channels.Channel, onBack: () -> Unit) {
                 }
             }
         } else {
-            LazyColumn(modifier = Modifier.fillMaxSize().weight(1f).padding(horizontal = 12.dp)) {
+            Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                    top = CHAT_BAR_HEIGHT + 4.dp, bottom = 6.dp,
+                ),
+            ) {
                 if (posts.isEmpty()) item {
                     Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                         Text("Постов пока нет", fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp, color = VpnkaColors.TextMuted)
@@ -848,6 +870,8 @@ private fun ChannelScreen(channel: Channels.Channel, onBack: () -> Unit) {
                         Text(p.body, fontFamily = VpnkaFonts.manrope600, fontSize = 15.sp, color = VpnkaColors.TextStrong)
                     }
                 }
+            }
+            Box(modifier = Modifier.align(Alignment.TopCenter)) { channelHeader() }
             }
             if (channel.isOwner) {
                 Row(modifier = Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -978,9 +1002,15 @@ private fun ChatScreen(
         return
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    // Шапка чата — липкая: лежит поверх переписки на полупрозрачном полотне,
+    // сообщения уезжают под неё. Список получает верхний отступ, поэтому
+    // ни одно сообщение не оказывается спрятанным навсегда.
+    val chatHeader: @Composable () -> Unit = {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            modifier = Modifier.fillMaxWidth()
+                .height(CHAT_BAR_HEIGHT)
+                .background(VpnkaColors.BgOffMid.copy(alpha = 0.85f))
+                .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text("‹", fontSize = 24.sp, color = VpnkaColors.TextStrong,
@@ -1012,7 +1042,17 @@ private fun ChatScreen(
                 contentAlignment = Alignment.Center,
             ) { Text("📞", fontSize = 18.sp) }
         }
-        LazyColumn(state = listState, modifier = Modifier.fillMaxSize().weight(1f).padding(horizontal = 12.dp)) {
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                top = CHAT_BAR_HEIGHT + 4.dp, bottom = 6.dp,
+            ),
+        ) {
             // Outgoing messages all carry id=0 and can share a millisecond, so
             // the list index guarantees a unique key (Compose crashes on dupes).
             itemsIndexed(msgs, key = { i, m -> "$i:${m.id}:${m.ts}" }) { _, m ->
@@ -1156,6 +1196,8 @@ private fun ChatScreen(
                     }
                 }
             }
+        }
+        Box(modifier = Modifier.align(Alignment.TopCenter)) { chatHeader() }
         }
         Row(
             modifier = Modifier.fillMaxWidth().padding(8.dp),
