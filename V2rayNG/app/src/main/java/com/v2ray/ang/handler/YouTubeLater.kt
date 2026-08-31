@@ -74,4 +74,13 @@ object YouTubeLater {
     var wifiOnly: Boolean
         get() = MmkvManager.decodeSettingsBool(KEY_WIFI, true)
         set(v) { MmkvManager.encodeSettings(KEY_WIFI, v) }
+
+    /** Качать только ночью: 00:00–07:00. Полезно там, где днём канал занят. */
+    var nightOnly: Boolean
+        get() = MmkvManager.decodeSettingsBool("yt_night_only", false)
+        set(v) { MmkvManager.encodeSettings("yt_night_only", v) }
+
+    /** Ночное окно — час начала и час конца (конец не включительно). */
+    const val NIGHT_FROM = 0
+    const val NIGHT_TO = 7
 }

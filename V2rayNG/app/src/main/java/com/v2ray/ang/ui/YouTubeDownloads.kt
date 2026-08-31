@@ -6,6 +6,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.v2ray.ang.handler.YouTubeLater
 import com.v2ray.ang.handler.YouTubeService
 import kotlinx.coroutines.CoroutineScope
 import kotlin.coroutines.coroutineContext
@@ -34,6 +35,15 @@ object YouTubeDownloads {
         var uri by mutableStateOf<Uri?>(null)
         var error by mutableStateOf<String?>(null)
 
+        /** Почему стоим: «Ждёт Wi-Fi» / «Ждёт ночи». null — не ждём. */
+        var waitReason by mutableStateOf<String?>(null)
+
+        /** Человек нажал «Скачать сейчас» — правила очереди для этой строки сняты. */
+        var bypass by mutableStateOf(false)
+
+        /** «Видео» | «Файл» | «Субтитры» — для полок в списке загрузок. */
+        var kind: String = "Видео"
+
         /** Живая задача — чтобы начатую загрузку можно было прервать. */
         var job: Job? = null
 
@@ -48,6 +58,64 @@ object YouTubeDownloads {
     private val gate = Semaphore(2)
     private var nextId = 0L
 
+    /**
+     * Ворота очереди: «только по Wi-Fi» и «только ночью».
+     *
+     * Галка «только по Wi-Fi» существовала и раньше — но НИЧЕГО не делала:
+     * значение записывалось и нигде не читалось, а подпись обещала, что
+     * очередь дождётся дома. Теперь обещание выполняется.
+     *
+     * Из ожидания всегда есть выход: у строки появляется «Скачать сейчас».
+     * Правило, которое нельзя обойти, в нужный момент превращается в ловушку.
+     */
+    private suspend fun awaitWindow(ctx: Context, e: Entry) {
+        while (!e.bypass) {
+            val reason = blockReason(ctx) ?: break
+            e.waitReason = reason
+            e.state = State.QUEUED
+            kotlinx.coroutines.delay(30_000)
+        }
+        e.waitReason = null
+    }
+
+    private fun blockReason(ctx: Context): String? {
+        if (YouTubeLater.wifiOnly && !onWifi(ctx)) return "Ждёт Wi-Fi"
+        if (YouTubeLater.nightOnly && !isNight()) {
+            return "Ждёт ночи (%02d:00–%02d:00)".format(YouTubeLater.NIGHT_FROM, YouTubeLater.NIGHT_TO)
+        }
+        return null
+    }
+
+    private fun isNight(): Boolean {
+        val h = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
+        val from = YouTubeLater.NIGHT_FROM
+        val to = YouTubeLater.NIGHT_TO
+        return if (from <= to) h in from until to else h >= from || h < to
+    }
+
+    /**
+     * Wi-Fi ли сейчас. Тонкость нашего случая: при включённом ВПН активная
+     * сеть — это наш же tun, и спрашивать её о Wi-Fi бессмысленно. Поэтому
+     * при VPN-транспорте смотрим на сети ПОД ним.
+     */
+    private fun onWifi(ctx: Context): Boolean {
+        val cm = ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
+            ?: return false
+        val active = cm.activeNetwork ?: return false
+        val caps = cm.getNetworkCapabilities(active) ?: return false
+        if (!caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN)) {
+            return caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)
+        }
+        return cm.allNetworks.any { n ->
+            val c = cm.getNetworkCapabilities(n) ?: return@any false
+            !c.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN) &&
+                c.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)
+        }
+    }
+
+    /** Снять правила очереди для одной строки и качать немедленно. */
+    fun forceNow(e: Entry) { e.bypass = true; e.waitReason = null }
+
     private fun add(label: String, mime: String): Entry {
         val e = Entry(nextId++, label, mime)
         entries.add(0, e)
@@ -59,6 +127,7 @@ object YouTubeDownloads {
         val e = add("$title · ${option.label}", option.mime)
         e.job = scope.launch {
             val self = coroutineContext[Job]
+            awaitWindow(ctx, e)
             gate.withPermit {
                 // До этой точки задача ЖДАЛА очереди. Раньше она всё это
                 // время рисовала бегущую полосу: после «Скачать всё» на
@@ -126,6 +195,7 @@ object YouTubeDownloads {
         e.sourceUrl = url; e.sourceTitle = title; e.sourceQuality = quality
         e.job = scope.launch {
             val self = coroutineContext[Job]
+            awaitWindow(ctx, e)
             gate.withPermit {
                 e.state = State.RUNNING
                 val opt = runCatching {
@@ -158,9 +228,11 @@ object YouTubeDownloads {
     fun enqueueFile(context: Context, url: String, name: String) {
         val ctx = context.applicationContext
         val e = add(name, "application/octet-stream")
+        e.kind = "Файл"
         e.sourceUrl = url; e.sourceTitle = name
         e.job = scope.launch {
             val self = coroutineContext[Job]
+            awaitWindow(ctx, e)
             gate.withPermit {
                 e.state = State.RUNNING
                 runCatching {
@@ -178,6 +250,7 @@ object YouTubeDownloads {
     fun enqueueSubtitle(context: Context, sub: YouTubeService.SubtitleOption, title: String) {
         val ctx = context.applicationContext
         val e = add("$title · субтитры (${sub.label})", "text/plain")
+        e.kind = "Субтитры"
         e.job = scope.launch {
             gate.withPermit {
                 runCatching { YouTubeService.downloadSubtitle(ctx, sub, title) }

@@ -329,7 +329,7 @@ object YouTubeService {
         val tmp = File(context.cacheDir, "yt_f_${System.currentTimeMillis()}")
         try {
             downloadTo(client, url, tmp, isCancelled, onProgress)
-            return saveFileToDownloads(context, safe, "application/octet-stream", tmp)
+            return saveFileToDownloads(context, safe, "application/octet-stream", tmp, "VPNka/Файлы")
         } finally {
             tmp.delete()
         }
@@ -343,7 +343,7 @@ object YouTubeService {
         val tmp = File(context.cacheDir, "yt_sub_${System.currentTimeMillis()}.${sub.ext}")
         try {
             downloadTo(proxiedClient(), sub.url, tmp)
-            return saveFileToDownloads(context, fileName, "text/plain", tmp)
+            return saveFileToDownloads(context, fileName, "text/plain", tmp, "VPNka/Субтитры")
         } finally {
             tmp.delete()
         }
@@ -392,14 +392,14 @@ object YouTubeService {
         try {
             downloadTo(client, option.videoUrl, tmpV, isCancelled, onProgress)
             return if (option.audioUrl == null) {
-                saveFileToDownloads(context, fileName, option.mime, tmpV)
+                saveFileToDownloads(context, fileName, option.mime, tmpV, "VPNka/Видео")
             } else {
                 val tmpA = File(context.cacheDir, "yt_a_$ts.m4a")
                 val tmpOut = File(context.cacheDir, "yt_out_$ts.mp4")
                 try {
                     downloadTo(client, option.audioUrl, tmpA, isCancelled, onProgress)
                     remux(tmpV, tmpA, tmpOut)
-                    saveFileToDownloads(context, fileName, "video/mp4", tmpOut)
+                    saveFileToDownloads(context, fileName, "video/mp4", tmpOut, "VPNka/Видео")
                 } finally {
                     tmpA.delete(); tmpOut.delete()
                 }
@@ -450,11 +450,25 @@ object YouTubeService {
         }
     }
 
-    private fun saveFileToDownloads(context: Context, fileName: String, mime: String, file: File): android.net.Uri {
+    /**
+     * @param folder подпапка внутри «Загрузок»: `VPNka/Видео`, `VPNka/Файлы`,
+     *   `VPNka/Субтитры`. Раньше всё валилось в общую кучу вперемешку с
+     *   загрузками других приложений — найти вчерашний ролик было нечем.
+     *   Папку выбирает не человек, а вид файла: выбор на каждую загрузку —
+     *   лишний вопрос там, где ответ всегда один.
+     */
+    private fun saveFileToDownloads(
+        context: Context,
+        fileName: String,
+        mime: String,
+        file: File,
+        folder: String = "VPNka",
+    ): android.net.Uri {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val values = ContentValues().apply {
                 put(MediaStore.Downloads.DISPLAY_NAME, fileName)
                 put(MediaStore.Downloads.MIME_TYPE, mime)
+                put(MediaStore.Downloads.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/$folder")
                 put(MediaStore.Downloads.IS_PENDING, 1)
             }
             val resolver = context.contentResolver
@@ -467,7 +481,10 @@ object YouTubeService {
             resolver.update(uri, values, null, null)
             return uri
         } else {
-            val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val dir = File(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+                folder,
+            )
             if (!dir.exists()) dir.mkdirs()
             val out = File(dir, fileName)
             out.outputStream().use { o -> file.inputStream().use { it.copyTo(o) } }

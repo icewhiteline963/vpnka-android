@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -399,6 +400,8 @@ fun YouTubeApp() {
                 val dls = YouTubeDownloads.entries
                 val later = remember(laterTick) { YouTubeLater.all() }
                 var wifiOnly by remember { mutableStateOf(YouTubeLater.wifiOnly) }
+                var nightOnly by remember { mutableStateOf(YouTubeLater.nightOnly) }
+                var dlFilter by remember { mutableStateOf("Все") }
                 val storage = remember(laterTick, dls.size) { DeviceStorage.read(context) }
 
                 // Блок памяти — первым, как в макете. Человек, который качает
@@ -430,7 +433,73 @@ fun YouTubeApp() {
                         trackColor = VpnkaColors.CardServer,
                     )
                 }
-                Spacer(Modifier.height(14.dp))
+                Spacer(Modifier.height(10.dp))
+
+                // Правила очереди — здесь, а не в дальних настройках: решение
+                // «качать сейчас или дождаться» принимают ровно на этом экране.
+                // Оба правила теперь ДЕЙСТВУЮТ: галка «только по Wi-Fi» раньше
+                // записывалась и нигде не читалась.
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    YtTabChip(
+                        if (wifiOnly) "Только Wi-Fi" else "Любая сеть",
+                        selected = wifiOnly,
+                    ) {
+                        wifiOnly = !wifiOnly
+                        YouTubeLater.wifiOnly = wifiOnly
+                    }
+                    Spacer(Modifier.width(6.dp))
+                    YtTabChip(
+                        if (nightOnly) "Только ночью" else "В любое время",
+                        selected = nightOnly,
+                    ) {
+                        nightOnly = !nightOnly
+                        YouTubeLater.nightOnly = nightOnly
+                    }
+                }
+                Text(
+                    buildString {
+                        append(if (wifiOnly) "Очередь дождётся домашней сети" else "Будет качать по мобильному — это ваш трафик")
+                        if (nightOnly) append(" · старт с 00:00 до 07:00")
+                    },
+                    fontFamily = VpnkaFonts.manrope600, fontSize = 11.sp,
+                    color = VpnkaColors.TextMuted,
+                )
+
+                // График скорости — суммарной по идущим загрузкам.
+                val running = dls.filter { it.state == YouTubeDownloads.State.RUNNING }
+                if (running.isNotEmpty()) {
+                    val speeds = remember { mutableStateListOf<Long>() }
+                    val nowSpeed = running.sumOf { it.speed }
+                    LaunchedEffect(Unit) {
+                        while (true) {
+                            speeds.add(
+                                YouTubeDownloads.entries
+                                    .filter { it.state == YouTubeDownloads.State.RUNNING }
+                                    .sumOf { it.speed },
+                            )
+                            if (speeds.size > 60) speeds.removeAt(0)
+                            delay(1000)
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "Скорость", fontFamily = VpnkaFonts.nunito800, fontSize = 13.sp,
+                            color = VpnkaColors.TextStrong, modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            fmtSpeed(nowSpeed), fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp,
+                            color = VpnkaColors.TextMuted,
+                        )
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    SpeedGraph(speeds)
+                }
+
+                Spacer(Modifier.height(12.dp))
 
                 // Очередь «скачать позже» — над списком загрузок.
                 //
@@ -463,28 +532,6 @@ fun YouTubeApp() {
                         }
                         Spacer(Modifier.width(6.dp))
                         DlAction("Очистить") { YouTubeLater.clear(); laterTick++ }
-                    }
-                    // Переключатель сети — рядом с очередью, а не в дальних
-                    // настройках: решение «качать сейчас или дождаться дома»
-                    // принимают именно здесь.
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        YtTabChip(
-                            if (wifiOnly) "Только Wi-Fi" else "Любая сеть",
-                            selected = wifiOnly,
-                        ) {
-                            wifiOnly = !wifiOnly
-                            YouTubeLater.wifiOnly = wifiOnly
-                        }
-                        Spacer(Modifier.width(10.dp))
-                        Text(
-                            if (wifiOnly) "Очередь дождётся домашней сети"
-                            else "Будет качать по мобильному — это ваш трафик",
-                            fontFamily = VpnkaFonts.manrope600, fontSize = 11.sp,
-                            color = VpnkaColors.TextMuted,
-                        )
                     }
                     later.forEach { i ->
                         Row(
@@ -542,8 +589,23 @@ fun YouTubeApp() {
                         }
                     }
                 } else if (dls.isNotEmpty()) {
+                    // Полки по виду файла — они же папки на диске:
+                    // Загрузки/VPNka/Видео, /Файлы, /Субтитры.
+                    val kinds = listOf("Все") + dls.map { it.kind }.distinct()
+                    if (kinds.size > 2) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            kinds.forEach { k ->
+                                YtTabChip(k, selected = dlFilter == k) { dlFilter = k }
+                                Spacer(Modifier.width(6.dp))
+                            }
+                        }
+                    }
+                    val shown = if (dlFilter == "Все") dls else dls.filter { it.kind == dlFilter }
                     LazyColumn(modifier = Modifier.fillMaxSize().padding(top = 6.dp)) {
-                        items(dls, key = { it.id }) { e -> DownloadRow(e) }
+                        items(shown, key = { it.id }) { e -> DownloadRow(e) }
                     }
                 }
             }
@@ -1703,6 +1765,32 @@ private fun fmtDuration(sec: Long): String {
     return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
 }
 
+/** Скорость за последнюю минуту — столбиками, без осей и подписей:
+ *  здесь важна форма (ровно/рвано), а не точные числа. */
+@Composable
+private fun SpeedGraph(samples: List<Long>) {
+    val peak = (samples.maxOrNull() ?: 0L).coerceAtLeast(1L)
+    Row(
+        modifier = Modifier.fillMaxWidth().height(38.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(VpnkaColors.CardServer)
+            .padding(horizontal = 4.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.Bottom,
+    ) {
+        samples.takeLast(60).forEach { v ->
+            val frac = (v.toFloat() / peak).coerceIn(0.02f, 1f)
+            Box(
+                modifier = Modifier.weight(1f).padding(horizontal = 0.5.dp)
+                    .fillMaxHeight(frac)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(VpnkaColors.Accent.copy(alpha = 0.75f)),
+            )
+        }
+    }
+}
+
+private fun fmtSpeed(bps: Long): String = if (bps <= 0) "—" else "${fmtBytes(bps)}/с"
+
 @Composable
 private fun DownloadRow(e: YouTubeDownloads.Entry) {
     val ctx = LocalContext.current
@@ -1718,9 +1806,16 @@ private fun DownloadRow(e: YouTubeDownloads.Entry) {
                 // одинаковых полос, из которых работали две.
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "В очереди", fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp,
+                        e.waitReason ?: "В очереди",
+                        fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp,
                         color = VpnkaColors.TextMuted, modifier = Modifier.weight(1f),
                     )
+                    // Из ожидания всегда есть выход: правило, которое нельзя
+                    // обойти, в нужный момент становится ловушкой.
+                    if (e.waitReason != null) {
+                        DlAction("Сейчас") { YouTubeDownloads.forceNow(e) }
+                        Spacer(Modifier.width(6.dp))
+                    }
                     DlAction("Отменить") { YouTubeDownloads.cancel(e) }
                 }
             }
