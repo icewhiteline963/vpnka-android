@@ -158,7 +158,9 @@ fun YouTubeApp() {
         }
     }
 
-    var tab by remember { mutableStateOf(0) } // 0 = поиск, 1 = плейлисты
+    // 0 = поиск, 1 = плейлисты, 2 = загрузки, 3 = позже. Нижняя панель
+    // рабочего стола умеет открыть «Видео» сразу на загрузках.
+    var tab by remember { mutableStateOf(SmartDeskChrome.consumePendingYtTab() ?: 0) }
     var laterTick by remember { mutableStateOf(0) }
     var plTick by remember { mutableStateOf(0) }
     var openPl by remember { mutableStateOf<String?>(null) }
@@ -627,7 +629,7 @@ fun YouTubeApp() {
  * шторка Android. Получилось «Vanced наоборот»: фон есть, управления нет.
  */
 @Composable
-private fun NowPlayingBar(onOpen: (YouTubeService.Playback) -> Unit) {
+internal fun NowPlayingBar(onOpen: (YouTubeService.Playback) -> Unit) {
     val current = YouTubeNowPlaying.current ?: return
     val context = LocalContext.current
     var ctl by remember { mutableStateOf<MediaController?>(null) }

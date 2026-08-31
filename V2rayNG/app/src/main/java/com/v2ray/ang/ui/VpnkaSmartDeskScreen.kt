@@ -83,6 +83,7 @@ import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import com.v2ray.ang.handler.YouTubeNowPlaying
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -619,24 +620,8 @@ fun VpnkaSmartDeskScreen(
             }
         }
 
-        // Floating home dock — a translucent pill, launcher-style.
-        Box(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp, top = 6.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Row(
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .background(ink.copy(alpha = 0.18f))
-                    .clickable { onBack() }
-                    .padding(horizontal = 24.dp, vertical = 13.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("⌂", fontSize = 18.sp, color = ink)
-                Spacer(Modifier.width(8.dp))
-                Text("На главный экран", fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp, color = ink)
-            }
-        }
+        // Место под нижнюю панель — она рисуется поверх, у самого низа окна.
+        Spacer(Modifier.height(BAR_HEIGHT))
     }
 
         AnimatedVisibility(
@@ -670,12 +655,43 @@ fun VpnkaSmartDeskScreen(
             exit = scaleOut(tween(200), targetScale = 0.90f) + fadeOut(tween(160)),
         ) {
             lastApp?.let { app ->
+              // Приложение рисуется НАД панелью, поэтому оставляем ей место:
+              // иначе нижняя строка приложения уходила бы под панель.
+              Box(modifier = Modifier.padding(bottom = if (SmartDeskChrome.barHidden) 0.dp else BAR_HEIGHT)) {
                 VpnkaSmartDeskAppScreen(
                     appId = app.id,
                     appLabel = app.label,
                     appGlyph = app.glyph,
                     online = online,
                     onBack = { openApp = null; deskTick++ },
+                    onExit = onBack,
+                )
+              }
+            }
+        }
+        // Нижняя панель супер-приложения: одно касание вместо «назад → значок».
+        // Прячется на вложенных экранах (чат, канал) — там своя шапка и свои
+        // жесты, вторая панель внизу только мешает.
+        if (!SmartDeskChrome.barHidden) {
+            Column(
+                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+            ) {
+                // Мини-плеер: фоновый звук продолжает играть, когда «Видео»
+                // закрыто, и до сих пор остановить его можно было, только
+                // вернувшись в приложение. Строка та же, что внутри «Видео», —
+                // с настоящими паузой и стопом через MediaController.
+                if (YouTubeNowPlaying.current != null && openApp?.id != "youtube") {
+                    Box(modifier = Modifier.padding(horizontal = 10.dp)) {
+                        NowPlayingBar(onOpen = { CATALOG_BY_ID["youtube"]?.let { a -> openApp = a } })
+                    }
+                }
+                SmartDeskTabBar(
+                    current = openApp?.id,
+                    onDesk = { openApp = null; deskTick++ },
+                    onApp = { id, ytTab ->
+                        SmartDeskChrome.pendingYtTab = ytTab
+                        CATALOG_BY_ID[id]?.let { openApp = it }
+                    },
                     onExit = onBack,
                 )
             }
@@ -694,6 +710,67 @@ fun VpnkaSmartDeskScreen(
  * wiped after each sync and lives only in the encrypted cloud. Tapping also
  * forces a sync if anything is still pending.
  */
+/** Высота нижней панели — под неё отводится место и на столе, и в приложении. */
+private val BAR_HEIGHT = 58.dp
+
+/**
+ * Нижняя панель супер-приложения по макету: Стол · Видео · Чаты · Браузер ·
+ * Загрузки, и отдельно выход на главный экран VPNka.
+ *
+ * «Загрузки» ведут в то же приложение «Видео», сразу на нужную вкладку —
+ * отдельного приложения загрузок у нас нет, и заводить его ради одной кнопки
+ * незачем.
+ */
+@Composable
+private fun SmartDeskTabBar(
+    current: String?,
+    onDesk: () -> Unit,
+    onApp: (String, Int?) -> Unit,
+    onExit: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .background(VpnkaColors.BgOffCentre)
+            .padding(horizontal = 4.dp, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        BarItem("⌂", "Стол", current == null, Modifier.weight(1f)) { onDesk() }
+        BarItem("▶", "Видео", current == "youtube", Modifier.weight(1f)) { onApp("youtube", null) }
+        BarItem("💬", "Чаты", current == "messages", Modifier.weight(1f)) { onApp("messages", null) }
+        BarItem("🌐", "Браузер", current == "browser", Modifier.weight(1f)) { onApp("browser", null) }
+        BarItem("⤓", "Загрузки", false, Modifier.weight(1f)) { onApp("youtube", 2) }
+        BarItem("↩", "Выход", false, Modifier.weight(1f)) { onExit() }
+    }
+}
+
+@Composable
+private fun BarItem(
+    glyph: String,
+    label: String,
+    selected: Boolean,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (selected) VpnkaColors.Accent.copy(alpha = 0.14f) else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(vertical = 5.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(glyph, fontSize = 16.sp, color = VpnkaColors.TextStrong)
+        Spacer(Modifier.height(2.dp))
+        Text(
+            label,
+            fontFamily = VpnkaFonts.nunito800,
+            fontSize = 9.sp,
+            maxLines = 1,
+            color = if (selected) VpnkaColors.Accent else VpnkaColors.TextMuted,
+        )
+    }
+}
+
 @Composable
 private fun SmartDeskCloudButton(online: Boolean, ink: Color) {
     val scope = rememberCoroutineScope()

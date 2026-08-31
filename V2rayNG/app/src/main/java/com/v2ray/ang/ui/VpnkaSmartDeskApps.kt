@@ -94,6 +94,16 @@ object SmartDeskChrome {
     @Volatile
     var pendingAppId: String? = null
 
+    /** Куда открыть «Видео»: 2 — сразу на вкладку загрузок (нижняя панель). */
+    @Volatile
+    var pendingYtTab: Int? = null
+
+    fun consumePendingYtTab(): Int? {
+        val t = pendingYtTab
+        pendingYtTab = null
+        return t
+    }
+
     fun consumePendingApp(): String? {
         val a = pendingAppId
         pendingAppId = null
