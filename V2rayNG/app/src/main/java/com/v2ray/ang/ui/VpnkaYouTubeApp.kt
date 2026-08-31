@@ -210,7 +210,14 @@ fun YouTubeApp() {
                 Spacer(Modifier.width(8.dp))
                 YtTabChip("Плейлисты", tab == 1) { tab = 1; openPl = null; plTick++ }
                 Spacer(Modifier.width(8.dp))
-                YtTabChip("Загрузки", tab == 2) { tab = 2 }
+                val activeDls = YouTubeDownloads.entries.count {
+                    it.state == YouTubeDownloads.State.RUNNING ||
+                        it.state == YouTubeDownloads.State.QUEUED
+                }
+                YtTabChip(
+                    if (activeDls > 0) "Загрузки · $activeDls" else "Загрузки",
+                    tab == 2,
+                ) { tab = 2 }
             }
 
             if (tab == 0) {
@@ -1665,6 +1672,19 @@ private fun DownloadRow(e: YouTubeDownloads.Entry) {
             maxLines = 2, overflow = TextOverflow.Ellipsis)
         Spacer(Modifier.height(6.dp))
         when (e.state) {
+            YouTubeDownloads.State.QUEUED -> {
+                // «Ждёт» и «качается» — разные вещи. Одновременно работают
+                // две загрузки, а бегущую полосу рисовали все: после
+                // «Скачать всё» на тридцати роликах человек видел тридцать
+                // одинаковых полос, из которых работали две.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "В очереди", fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp,
+                        color = VpnkaColors.TextMuted, modifier = Modifier.weight(1f),
+                    )
+                    DlAction("Отменить") { YouTubeDownloads.cancel(e) }
+                }
+            }
             YouTubeDownloads.State.RUNNING -> {
                 if (e.total > 0) {
                     val frac = (e.done.toFloat() / e.total).coerceIn(0f, 1f)
@@ -1694,6 +1714,10 @@ private fun DownloadRow(e: YouTubeDownloads.Entry) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Отменено", fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp,
                         color = VpnkaColors.TextMuted, modifier = Modifier.weight(1f))
+                    if (e.sourceUrl != null) {
+                        DlAction("Повторить") { YouTubeDownloads.retry(ctx, e) }
+                        Spacer(Modifier.width(6.dp))
+                    }
                     DlAction("🗑") { YouTubeDownloads.removeFromList(e) }
                 }
             }
@@ -1713,6 +1737,13 @@ private fun DownloadRow(e: YouTubeDownloads.Entry) {
                     Text("Ошибка: ${e.error ?: ""}", fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp,
                         color = VpnkaColors.Warning, modifier = Modifier.weight(1f),
                         maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    // Перекачать сорвавшийся файл не должно значить «найди
+                    // видео заново и выбери качество снова» — и адрес, и
+                    // качество у нас уже записаны.
+                    if (e.sourceUrl != null) {
+                        DlAction("Повторить") { YouTubeDownloads.retry(ctx, e) }
+                        Spacer(Modifier.width(6.dp))
+                    }
                     DlAction("🗑") { YouTubeDownloads.removeFromList(e) }
                 }
             }
