@@ -186,9 +186,6 @@ fun VpnkaSmartDeskAppScreen(
         // SmartDeskChrome, so its own header isn't stacked under ours. Reset on
         // every app open so a fresh app always starts with the bar shown.
         LaunchedEffect(appId) { SmartDeskChrome.barHidden = false }
-        if (!SmartDeskChrome.barHidden) {
-            SmartDeskAppBar(appId = appId, glyph = appGlyph, online = online, onBack = onBack)
-        }
         // Sync on open (through the VPN) and after every edit; syncTick keys
         // each app's list so it re-reads once the server's view is merged in.
         val scope = rememberCoroutineScope()
@@ -200,7 +197,14 @@ fun VpnkaSmartDeskAppScreen(
         LaunchedEffect(Unit) {
             if (online && appId != "browser") { SmartDeskSync.sync(); syncTick++ }
         }
+        // Шапка ЛИПКАЯ: она лежит поверх содержимого, а содержимое уезжает
+        // под неё — так в макете (полупрозрачное полотно rgba(bg,.85)).
+        // Раньше шапка занимала свою полосу и просто отталкивала список вниз.
         Box(modifier = Modifier.fillMaxSize().weight(1f)) {
+            Box(
+                modifier = Modifier.fillMaxSize()
+                    .padding(top = if (SmartDeskChrome.barHidden) 0.dp else APP_BAR_HEIGHT),
+            ) {
             when (appId) {
                 "calendar" -> CalendarApp(syncTick, onChanged)
                 "contacts" -> ContactsApp(syncTick, onChanged)
@@ -211,6 +215,13 @@ fun VpnkaSmartDeskAppScreen(
                 "store" -> VpnkaStoreApp()
                 "help" -> HelpApp()
                 else -> EmptyHint("Приложение недоступно")
+            }
+            }
+            if (!SmartDeskChrome.barHidden) {
+                SmartDeskAppBar(
+                    appId = appId, glyph = appGlyph, online = online, onBack = onBack,
+                    modifier = Modifier.align(Alignment.TopCenter),
+                )
             }
         }
         // Своей нижней панели у приложения больше нет: обе кнопки —
@@ -236,17 +247,25 @@ fun SmartDeskStatusScrim() {
 }
 
 
+/** Высота липкой шапки приложения — под неё отводится отступ содержимому. */
+private val APP_BAR_HEIGHT = 50.dp
+
 @Composable
 private fun SmartDeskAppBar(
     appId: String,
     glyph: String,
     online: Boolean,
     onBack: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .height(APP_BAR_HEIGHT)
+            // Полупрозрачное полотно: под шапкой видно, что список продолжается,
+            // — сплошная полоса выглядела бы обрезом страницы.
+            .background(VpnkaColors.BgOffMid.copy(alpha = 0.85f))
+            .padding(horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // Back to the desktop — top-left, no title (the icon speaks for itself).

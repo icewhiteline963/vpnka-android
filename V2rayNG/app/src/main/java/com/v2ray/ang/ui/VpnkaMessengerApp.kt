@@ -1608,69 +1608,101 @@ private fun CallScreen() {
         CallManager.Phase.IDLE -> ""
     }
 
+    // Экран звонка по макету: полотно, вверху крупный аватар с именем и
+    // состоянием акцентом, внизу — ряд круглых кнопок. Никаких подписей под
+    // кнопками: в макете их нет, и на экране, где всё решается одним касанием,
+    // они только шумят. Исключение — входящий: «принять» и «отклонить»
+    // отличаются не только цветом, и ошибиться тут дороже.
     Column(
-        modifier = Modifier.fillMaxSize().background(VpnkaColors.CardServer),
+        modifier = Modifier.fillMaxSize().background(VpnkaColors.BgOffMid)
+            .padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.SpaceBetween,
     ) {
-        Spacer(Modifier.height(72.dp))
-        MsgAvatar(name, size = 120)
-        Spacer(Modifier.height(18.dp))
-        Text(name, fontFamily = VpnkaFonts.nunito800, fontSize = 24.sp, color = VpnkaColors.TextStrong)
-        Spacer(Modifier.height(8.dp))
-        Text("🔒 $status", fontFamily = VpnkaFonts.manrope600, fontSize = 15.sp, color = VpnkaColors.TextMuted)
-        Spacer(Modifier.weight(1f))
-
-        if (phase == CallManager.Phase.ACTIVE) {
-            Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
-                CallToggle(if (CallManager.muted) "🔇" else "🎙", if (CallManager.muted) "Вкл. звук" else "Выкл. звук") { CallManager.toggleMute() }
-                CallToggle(if (CallManager.speaker) "🔊" else "📢", "Динамик") { CallManager.toggleSpeaker() }
-            }
-            Spacer(Modifier.height(28.dp))
+        Column(
+            modifier = Modifier.padding(top = 70.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            MsgAvatar(name, size = 84)
+            Spacer(Modifier.height(14.dp))
+            Text(
+                name, fontFamily = VpnkaFonts.nunito800, fontSize = 20.sp,
+                color = VpnkaColors.TextStrong, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(14.dp))
+            Text(
+                status, fontFamily = VpnkaFonts.manrope700, fontSize = 12.sp,
+                color = VpnkaColors.Accent,
+            )
+            Spacer(Modifier.height(10.dp))
+            // Замок оставлен: разговор идёт через наш сервер вслепую, и это
+            // единственное место, где об этом можно сказать человеку.
+            Text(
+                "🔒 сквозное шифрование", fontFamily = VpnkaFonts.manrope600, fontSize = 11.sp,
+                color = VpnkaColors.TextFaint,
+            )
         }
 
         Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 56.dp),
-            horizontalArrangement = if (phase == CallManager.Phase.INCOMING) Arrangement.SpaceEvenly else Arrangement.Center,
+            modifier = Modifier.padding(bottom = 40.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (phase == CallManager.Phase.INCOMING) {
-                CallButton("✕", VpnkaColors.Warning, "Отклонить") { CallManager.decline() }
-                CallButton("📞", VpnkaColors.Green, "Принять") {
-                    if (ContextCompat.checkSelfPermission(
-                            context, android.Manifest.permission.RECORD_AUDIO
-                        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                    ) {
-                        CallManager.accept(context)
-                    } else {
-                        acceptMicLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+            when (phase) {
+                CallManager.Phase.INCOMING -> {
+                    CallCircle("✕", 64.dp, VpnkaColors.Warning, Color.White, "Отклонить") {
+                        CallManager.decline()
+                    }
+                    CallCircle("📞", 64.dp, VpnkaColors.Green, Color.White, "Принять") {
+                        if (ContextCompat.checkSelfPermission(
+                                context, android.Manifest.permission.RECORD_AUDIO
+                            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                        ) {
+                            CallManager.accept(context)
+                        } else {
+                            acceptMicLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                        }
                     }
                 }
-            } else if (phase != CallManager.Phase.ENDED) {
-                CallButton("✕", VpnkaColors.Warning, "Завершить") { CallManager.hangup() }
+                CallManager.Phase.ENDED -> Unit
+                else -> {
+                    CallCircle(
+                        if (CallManager.muted) "🔇" else "🎙", 52.dp,
+                        VpnkaColors.CardServer, VpnkaColors.TextStrong, null,
+                    ) { CallManager.toggleMute() }
+                    CallCircle("✕", 64.dp, VpnkaColors.Warning, Color.White, null) {
+                        CallManager.hangup()
+                    }
+                    CallCircle(
+                        if (CallManager.speaker) "🔊" else "📢", 52.dp,
+                        VpnkaColors.CardServer, VpnkaColors.TextStrong, null,
+                    ) { CallManager.toggleSpeaker() }
+                }
             }
         }
     }
 }
 
+/** Круглая кнопка звонка. Подпись — только там, где промах дорого стоит. */
 @Composable
-private fun CallButton(glyph: String, color: Color, label: String, onClick: () -> Unit) {
+private fun CallCircle(
+    glyph: String,
+    size: androidx.compose.ui.unit.Dp,
+    bg: Color,
+    fg: Color,
+    label: String?,
+    onClick: () -> Unit,
+) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
-            modifier = Modifier.size(72.dp).clip(CircleShape).background(color).clickable(onClick = onClick),
+            modifier = Modifier.size(size).clip(CircleShape).background(bg).clickable(onClick = onClick),
             contentAlignment = Alignment.Center,
-        ) { Text(glyph, fontSize = 30.sp, color = Color.White) }
-        Spacer(Modifier.height(8.dp))
-        Text(label, fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp, color = VpnkaColors.TextMuted)
+        ) { Text(glyph, fontSize = 18.sp, color = fg) }
+        if (label != null) {
+            Spacer(Modifier.height(8.dp))
+            Text(label, fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp, color = VpnkaColors.TextMuted)
+        }
     }
 }
 
-@Composable
-private fun CallToggle(glyph: String, label: String, onClick: () -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(
-            modifier = Modifier.size(60.dp).clip(CircleShape).background(VpnkaColors.CardSettings).clickable(onClick = onClick),
-            contentAlignment = Alignment.Center,
-        ) { Text(glyph, fontSize = 24.sp) }
-        Spacer(Modifier.height(6.dp))
-        Text(label, fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp, color = VpnkaColors.TextMuted)
-    }
-}
+
