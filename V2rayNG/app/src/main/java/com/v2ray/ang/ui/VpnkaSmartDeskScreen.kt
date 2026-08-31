@@ -431,13 +431,18 @@ fun VpnkaSmartDeskScreen(
                                     .clip(RoundedCornerShape(12.dp))
                                     .clickable {
                                         deskQuery = ""
-                                        openApp = when (h.target) {
+                                        // Идентификаторы — из каталога стола,
+                                        // а не выдуманные: мессенджер там
+                                        // зовётся «messages», и промах именем
+                                        // молча ничего бы не открыл.
+                                        val id = when (h.target) {
                                             SmartDeskSearch.Target.NOTES -> "notes"
                                             SmartDeskSearch.Target.CONTACTS -> "contacts"
                                             SmartDeskSearch.Target.CALENDAR -> "calendar"
-                                            SmartDeskSearch.Target.MESSENGER -> "messenger"
+                                            SmartDeskSearch.Target.MESSENGER -> "messages"
                                             else -> "youtube"
                                         }
+                                        openApp = SMARTDESK_CATALOG.firstOrNull { it.id == id }
                                     }
                                     .padding(horizontal = 6.dp, vertical = 9.dp),
                                 verticalAlignment = Alignment.CenterVertically,
