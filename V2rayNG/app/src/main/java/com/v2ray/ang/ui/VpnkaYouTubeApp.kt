@@ -1,6 +1,7 @@
 package com.v2ray.ang.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -36,6 +37,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.window.Dialog
@@ -88,6 +91,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.foundation.shape.CircleShape
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.handler.YouTubeLater
+import com.v2ray.ang.handler.YouTubeThumbs
 import com.v2ray.ang.handler.YouTubeNowPlaying
 import com.v2ray.ang.service.VpnkaMediaService
 import kotlinx.coroutines.Dispatchers
@@ -713,6 +717,58 @@ private fun YtTabChip(label: String, selected: Boolean, onClick: () -> Unit) {
     }
 }
 
+/**
+ * Обложка видео. Пока грузится — штриховка, как в макете.
+ *
+ * Адрес обложки извлекался и раньше, но нигде не использовался: лента была
+ * стеной одинаковых серых прямоугольников с «▶». По такой ленте нельзя
+ * выбирать глазами — приходится читать заголовки. Для видеоприложения это
+ * первое, что бросается в глаза.
+ */
+@Composable
+private fun YtThumb(url: String?, modifier: Modifier) {
+    var img by remember(url) { mutableStateOf(url?.let { YouTubeThumbs.cached(it) }) }
+    LaunchedEffect(url) {
+        if (img == null && url != null) img = YouTubeThumbs.load(url)
+    }
+    Box(
+        modifier = modifier.background(
+            Brush.linearGradient(
+                0f to VpnkaColors.CardServer,
+                0.5f to VpnkaColors.CardSettings,
+                1f to VpnkaColors.CardServer,
+            )
+        ),
+        contentAlignment = Alignment.Center,
+    ) {
+        val bmp = img
+        if (bmp != null) {
+            Image(
+                bitmap = bmp,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.matchParentSize(),
+            )
+        } else {
+            Text("▶", fontSize = 20.sp, color = VpnkaColors.TextFaint)
+        }
+    }
+}
+
+/** Бейдж поверх обложки — длительность, качество. */
+@Composable
+private fun YtBadge(text: String, color: Color = VpnkaColors.TextStrong) {
+    Text(
+        text,
+        fontFamily = VpnkaFonts.manrope600, fontSize = 11.sp, color = color,
+        modifier = Modifier
+            .padding(6.dp)
+            .clip(RoundedCornerShape(5.dp))
+            .background(VpnkaColors.BgOffEdge.copy(alpha = 0.85f))
+            .padding(horizontal = 5.dp, vertical = 2.dp),
+    )
+}
+
 @Composable
 private fun VideoRow(
     v: YouTubeService.Video,
@@ -729,10 +785,14 @@ private fun VideoRow(
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier.size(88.dp, 56.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xFF1F2937)),
-            contentAlignment = Alignment.Center,
-        ) { Text("▶", fontSize = 22.sp, color = Color.White) }
+        Box(modifier = Modifier.size(112.dp, 63.dp).clip(RoundedCornerShape(9.dp))) {
+            YtThumb(v.thumb, Modifier.matchParentSize())
+            if (v.durationSec > 0) {
+                Box(modifier = Modifier.align(Alignment.BottomEnd)) {
+                    YtBadge(fmtDuration(v.durationSec))
+                }
+            }
+        }
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(v.title, fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp, color = VpnkaColors.TextStrong,
@@ -750,6 +810,20 @@ private fun VideoRow(
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
         }
+        // «Позже» прямо в ленте — чтобы отложить, не открывая видео. По
+        // макету это одно из трёх действий карточки; из них два уже жили
+        // внутри плеера, а до плеера ещё надо дойти.
+        var inLater by remember(v.url) { mutableStateOf(YouTubeLater.has(v.url)) }
+        Text(
+            if (inLater) "⏱✓" else "⏱",
+            fontSize = 18.sp,
+            color = if (inLater) VpnkaColors.Amber else VpnkaColors.TextMuted,
+            modifier = Modifier.clip(CircleShape).clickable {
+                if (inLater) YouTubeLater.remove(v.url)
+                else YouTubeLater.add(v.url, v.title, v.uploader)
+                inLater = !inLater
+            }.padding(8.dp),
+        )
         if (onAdd != null) {
             Text("＋", fontSize = 22.sp, color = VpnkaColors.TextStrong,
                 modifier = Modifier.clip(CircleShape).clickable { onAdd(v) }.padding(8.dp))
