@@ -129,6 +129,16 @@ object SmartDeskChrome {
     @Volatile
     var pendingAppId: String? = null
 
+    /** Адрес, который браузер должен открыть первым (с домашнего экрана). */
+    @Volatile
+    var pendingUrl: String? = null
+
+    fun consumePendingUrl(): String? {
+        val u = pendingUrl
+        pendingUrl = null
+        return u
+    }
+
     /** Куда открыть «Видео»: 2 — сразу на вкладку загрузок (нижняя панель). */
     @Volatile
     var pendingYtTab: Int? = null
@@ -830,8 +840,32 @@ private fun DeskField(label: String, value: String, minLines: Int = 1, onChange:
 /** Lightweight ad/tracker blocker for the SmartDesk browser: drops WebView
  *  resource requests to known ad/analytics domains (and their subdomains).
  *  On by default; toggled from the browser menu. */
-private object AdBlocker {
+internal object AdBlocker {
     private const val KEY = "vpnka_browser_adblock"
+    private const val KEY_COUNT = "vpnka_browser_adblock_count"
+
+    // Счётчик держим в памяти и сбрасываем на диск пачками: запись в MMKV на
+    // каждый заблокированный запрос — это сотни записей на одну страницу.
+    private var pending = 0
+
+    var blocked: Long = -1
+        get() {
+            if (field < 0) {
+                field = MmkvManager.decodeSettingsString(KEY_COUNT)?.toLongOrNull() ?: 0L
+            }
+            return field + pending
+        }
+        private set
+
+    private fun countOne() {
+        pending++
+        if (pending >= 20) {
+            val total = blocked
+            MmkvManager.encodeSettings(KEY_COUNT, total.toString())
+            blocked = total
+            pending = 0
+        }
+    }
     var enabled: Boolean
         get() = MmkvManager.decodeSettingsString(KEY) != "0"
         set(v) { MmkvManager.encodeSettings(KEY, if (v) "1" else "0") }
@@ -865,11 +899,13 @@ private object AdBlocker {
         val host = try { android.net.Uri.parse(url).host?.lowercase() } catch (e: Exception) { null } ?: return null
         var h = host
         while (h.contains('.')) {
-            if (h in BLOCKED) return blank()
+            if (h in BLOCKED) { countOne(); return blank() }
             h = h.substringAfter('.')
         }
         // Path-based trackers on otherwise-legit hosts.
-        if (url.contains("facebook.com/tr") || url.contains("vk.com/rtrg")) return blank()
+        if (url.contains("facebook.com/tr") || url.contains("vk.com/rtrg")) {
+            countOne(); return blank()
+        }
         return null
     }
 
@@ -1277,6 +1313,8 @@ private fun BrowserApp() {
     }
 
     val home = "https://duckduckgo.com/"
+    // С домашнего экрана могли попросить конкретную страницу («Продолжить»).
+    val firstUrl = remember { SmartDeskChrome.consumePendingUrl() ?: home }
     // Загрузка со страницы идёт нашим загрузчиком: системный менеджер пошёл
     // бы в сеть напрямую, мимо туннеля.
     val onPageDownload: (String, String) -> Unit = { u, name ->
@@ -1284,7 +1322,7 @@ private fun BrowserApp() {
         SmartDeskToast.show("Файл добавлен в загрузки", "Открыть", "downloads")
     }
     val tabs = remember {
-        mutableStateListOf(BrowserTab(context, 0, home, onOfferSave, false, onPageDownload))
+        mutableStateListOf(BrowserTab(context, 0, firstUrl, onOfferSave, false, onPageDownload))
     }
     var nextId by remember { mutableIntStateOf(1) }
     var activeId by remember { mutableIntStateOf(0) }

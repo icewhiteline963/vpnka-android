@@ -9,6 +9,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -42,6 +43,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import com.v2ray.ang.handler.BrowserHistory
 import com.v2ray.ang.handler.Messenger
 import com.v2ray.ang.handler.SmartDeskSync
 import com.v2ray.ang.handler.SmartDeskStore
@@ -422,7 +424,9 @@ fun VpnkaSmartDeskScreen(
                     unfocusedTextColor = VpnkaColors.TextStrong,
                     cursorColor = VpnkaColors.Accent,
                     focusedBorderColor = VpnkaColors.Accent,
-                    unfocusedBorderColor = ink.copy(alpha = 0.25f),
+                    // В макете строка поиска обведена акцентом и в покое — она
+                    // тут главный вход, а не рядовое поле.
+                    unfocusedBorderColor = VpnkaColors.Accent.copy(alpha = 0.45f),
                 ),
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -483,6 +487,73 @@ fun VpnkaSmartDeskScreen(
                 }
             }
         }
+
+        // Две карточки состояния и метка полки — как в макете.
+        //
+        // Карточка ВПН ОТКРЫВАЕТ центр управления, а не переключает туннель:
+        // мы уже наступали на это шапкой-пилюлей, где касание «посмотреть
+        // статус» рвало соединение всему телефону.
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(VpnkaColors.CardServer)
+                    .border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(14.dp))
+                    .clickable { showControl = true }
+                    .padding(13.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "ВПН", fontFamily = VpnkaFonts.nunito800, fontSize = 12.sp,
+                        color = VpnkaColors.TextStrong, modifier = Modifier.weight(1f),
+                    )
+                    Box(
+                        Modifier.size(8.dp).clip(CircleShape)
+                            .background(if (online) VpnkaColors.Green else VpnkaColors.Warning),
+                    )
+                }
+                Spacer(Modifier.height(7.dp))
+                Text(
+                    when {
+                        !online -> "Выключен"
+                        serverName.isBlank() -> "На связи"
+                        serverDelay.isBlank() -> serverName
+                        else -> "$serverName · $serverDelay"
+                    },
+                    fontFamily = VpnkaFonts.manrope600, fontSize = 10.sp,
+                    color = VpnkaColors.TextMuted, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Column(
+                modifier = Modifier.weight(1f)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(VpnkaColors.CardSpeed)
+                    .border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(14.dp))
+                    .padding(13.dp),
+            ) {
+                Text(
+                    "Заблокировано", fontFamily = VpnkaFonts.nunito800, fontSize = 12.sp,
+                    color = VpnkaColors.TextStrong, maxLines = 1,
+                )
+                Spacer(Modifier.height(7.dp))
+                // Число настоящее: счётчик ведёт сам блокировщик браузера.
+                Text(
+                    AdBlocker.blocked.toString(),
+                    fontFamily = VpnkaFonts.nunito900, fontSize = 17.sp, color = VpnkaColors.Accent,
+                )
+            }
+        }
+
+        Text(
+            "БЫСТРЫЙ ДОСТУП",
+            fontFamily = VpnkaFonts.nunito800, fontSize = 10.sp, letterSpacing = 1.0.sp,
+            color = ink.copy(alpha = 0.45f),
+            modifier = Modifier.padding(start = 20.dp, bottom = 2.dp),
+        )
 
         // The desktop grid. Long-press empty → settings. A downward swipe
         // ANYWHERE on the grid opens the shade (left half) or control centre
@@ -627,6 +698,84 @@ fun VpnkaSmartDeskScreen(
                     },
                     onDismiss = { showSettings = false },
                 )
+            }
+        }
+
+        // «Продолжить» — последние страницы браузера, как в макете.
+        //
+        // Берём именно журнал браузера: это единственная вещь, которую человек
+        // бросает на полпути и ищет потом. Инкогнито сюда не попадает — его
+        // страницы в журнал не пишутся вовсе.
+        val recent = remember(deskTick) { BrowserHistory.all().take(3) }
+        if (recent.isNotEmpty()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 18.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                Text(
+                    "ПРОДОЛЖИТЬ",
+                    fontFamily = VpnkaFonts.nunito800, fontSize = 10.sp, letterSpacing = 1.0.sp,
+                    color = ink.copy(alpha = 0.45f), modifier = Modifier.weight(1f),
+                )
+                Text(
+                    "Все", fontFamily = VpnkaFonts.nunito800, fontSize = 11.sp,
+                    color = VpnkaColors.Accent,
+                    modifier = Modifier.clip(RoundedCornerShape(9.dp))
+                        .clickable { CATALOG_BY_ID["browser"]?.let { openApp = it } }
+                        .padding(horizontal = 8.dp, vertical = 2.dp),
+                )
+            }
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp)) {
+                recent.forEach { e ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 7.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(VpnkaColors.CardSpeed)
+                            .border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(12.dp))
+                            .clickable {
+                                SmartDeskChrome.pendingUrl = e.url
+                                CATALOG_BY_ID["browser"]?.let { openApp = it }
+                            }
+                            .padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        val host = remember(e.url) {
+                            runCatching { android.net.Uri.parse(e.url).host.orEmpty() }
+                                .getOrDefault("").removePrefix("www.")
+                        }
+                        Box(
+                            modifier = Modifier.size(30.dp)
+                                .clip(RoundedCornerShape(9.dp))
+                                .background(
+                                    Brush.linearGradient(
+                                        listOf(VpnkaColors.AccentLight, VpnkaColors.Accent),
+                                    ),
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                host.take(1).uppercase().ifBlank { "•" },
+                                fontFamily = VpnkaFonts.nunito800, fontSize = 13.sp,
+                                color = VpnkaColors.OnAccent,
+                            )
+                        }
+                        Spacer(Modifier.width(11.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                e.title.ifBlank { host.ifBlank { e.url } },
+                                fontFamily = VpnkaFonts.nunito800, fontSize = 12.sp,
+                                color = VpnkaColors.TextStrong,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                host, fontFamily = VpnkaFonts.manrope600, fontSize = 10.sp,
+                                color = VpnkaColors.TextFaint,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
             }
         }
 
