@@ -91,6 +91,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.foundation.shape.CircleShape
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.handler.DeviceStorage
+import com.v2ray.ang.handler.YouTubeHistory
 import com.v2ray.ang.handler.YouTubeLater
 import com.v2ray.ang.handler.YouTubeMarks
 import com.v2ray.ang.handler.YouTubeThumbs
@@ -121,6 +122,7 @@ fun YouTubeApp() {
     fun runSearchFor(q0: String) {
         val q = q0.trim()
         if (q.isEmpty()) return
+        YouTubeHistory.rememberQuery(q)
         scope.launch {
             loading = true; error = null
             val r = withContext(Dispatchers.IO) { runCatching { YouTubeService.search(q) } }
@@ -131,11 +133,19 @@ fun YouTubeApp() {
     }
     fun runSearch() = runSearchFor(query)
 
-    // Home feed: open on an "electronic music" search so the first screen is a
-    // living wall of videos, not an empty box. Only on a cold open (no query,
-    // no results yet) — a manual search or a preset won't be overwritten.
+    // Главная открывается ПОСЛЕДНИМ запросом человека, а не «electronic
+    // music».
+    //
+    // Зашитая строка означала, что русскоязычный человек, открыв наш
+    // YouTube, видел стену англоязычной электроники — приложение начинало
+    // разговор с того, что ему неинтересно. Первый запуск, когда истории
+    // ещё нет, открывается нейтральной подборкой.
     LaunchedEffect(Unit) {
-        if (query.isBlank() && results.isEmpty()) runSearchFor("electronic music")
+        if (query.isBlank() && results.isEmpty()) {
+            val last = YouTubeHistory.lastQuery()
+            query = last ?: ""
+            runSearchFor(last ?: "популярное")
+        }
     }
 
     fun open(videoUrl: String) {
@@ -256,9 +266,18 @@ fun YouTubeApp() {
                     modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    YtPresetChip("🎵 Музыка") { query = "музыка"; runSearch() }
-                    YtPresetChip("📰 Новости") { query = "новости"; runSearch() }
-                    YtPresetChip("💻 Технологии") { query = "технологии"; runSearch() }
+                    // Недавние запросы — они полезнее выдуманных рубрик:
+                    // человек возвращается к своему, а не к нашему.
+                    val recent = remember(results) { YouTubeHistory.recentQueries() }
+                    if (recent.isEmpty()) {
+                        YtPresetChip("🎵 Музыка") { query = "музыка"; runSearch() }
+                        YtPresetChip("📰 Новости") { query = "новости"; runSearch() }
+                        YtPresetChip("💻 Технологии") { query = "технологии"; runSearch() }
+                    } else {
+                        recent.forEach { r ->
+                            YtPresetChip(r) { query = r; runSearch() }
+                        }
+                    }
                 }
 
                 if (results.isNotEmpty()) {
@@ -1007,8 +1026,26 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
             .build()
         c.setMediaItem(item)
         c.prepare()
+        // Продолжаем с места, где остановились. Первые и последние полминуты
+        // не в счёт — заглянул и закрыл это не «смотрел», а досмотренное
+        // должно начинаться сначала, а не с титров.
+        val saved = YouTubeHistory.position(pb.pageUrl)
+        if (saved > 0) c.seekTo(saved * 1000)
         c.playWhenReady = true
         YouTubeNowPlaying.current = pbState
+    }
+
+    // Запоминаем позицию при уходе с экрана — и только её, без досылки на
+    // сервер: где человек остановился, знать никому, кроме него, не нужно.
+    DisposableEffect(pb.pageUrl) {
+        onDispose {
+            val c = player
+            if (c != null && c.duration > 0) {
+                YouTubeHistory.savePosition(
+                    pb.pageUrl, c.currentPosition / 1000, c.duration / 1000,
+                )
+            }
+        }
     }
     var playQual by remember { mutableStateOf<List<YouTubeService.DownloadOption>?>(null) }
 
