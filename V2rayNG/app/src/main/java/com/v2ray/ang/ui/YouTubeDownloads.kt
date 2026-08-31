@@ -23,11 +23,11 @@ import kotlinx.coroutines.sync.withPermit
  * State is lost on process death — the files stay in the public Downloads folder.
  */
 object YouTubeDownloads {
-    enum class State { RUNNING, DONE, FAILED, CANCELLED }
+    enum class State { QUEUED, RUNNING, DONE, FAILED, CANCELLED }
 
     class Entry(val id: Long, label: String, val mime: String) {
         var label by mutableStateOf(label)
-        var state by mutableStateOf(State.RUNNING)
+        var state by mutableStateOf(State.QUEUED)
         var done by mutableStateOf(0L)
         var total by mutableStateOf(0L)
         var speed by mutableStateOf(0L)
@@ -36,6 +36,11 @@ object YouTubeDownloads {
 
         /** Живая задача — чтобы начатую загрузку можно было прервать. */
         var job: Job? = null
+
+        /** Из чего собиралась — чтобы «Повторить» не требовало искать заново. */
+        var sourceUrl: String? = null
+        var sourceTitle: String? = null
+        var sourceQuality: String = ""
     }
 
     val entries = mutableStateListOf<Entry>()
@@ -55,6 +60,11 @@ object YouTubeDownloads {
         e.job = scope.launch {
             val self = coroutineContext[Job]
             gate.withPermit {
+                // До этой точки задача ЖДАЛА очереди. Раньше она всё это
+                // время рисовала бегущую полосу: после «Скачать всё» на
+                // тридцати роликах человек видел тридцать одинаковых полос,
+                // из которых работали две.
+                e.state = State.RUNNING
                 runCatching {
                     YouTubeService.download(
                         ctx, option, title,
@@ -81,6 +91,19 @@ object YouTubeDownloads {
             State.FAILED
         }
 
+    /**
+     * Повторить упавшую загрузку.
+     *
+     * Без этого перекачать сорвавшийся файл значило найти видео заново и
+     * заново выбрать качество — при том что всё нужное у нас уже записано.
+     */
+    fun retry(context: Context, e: Entry) {
+        if (e.state != State.FAILED && e.state != State.CANCELLED) return
+        val src = e.sourceUrl ?: return
+        entries.remove(e)
+        enqueueVideoByUrl(context, src, e.sourceTitle ?: e.label, e.sourceQuality)
+    }
+
     /** Прервать начатую загрузку. Времянки чистит сам YouTubeService. */
     fun cancel(e: Entry) {
         if (e.state != State.RUNNING) return
@@ -100,9 +123,11 @@ object YouTubeDownloads {
     fun enqueueVideoByUrl(context: Context, url: String, title: String, quality: String = "") {
         val ctx = context.applicationContext
         val e = add(title, "video/mp4")
+        e.sourceUrl = url; e.sourceTitle = title; e.sourceQuality = quality
         e.job = scope.launch {
             val self = coroutineContext[Job]
             gate.withPermit {
+                e.state = State.RUNNING
                 val opt = runCatching {
                     if (quality == "♪") {
                         YouTubeService.audioDownload(url)
