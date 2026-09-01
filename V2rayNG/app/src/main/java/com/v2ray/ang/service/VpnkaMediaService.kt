@@ -90,12 +90,21 @@ class VpnkaMediaService : MediaSessionService() {
         // скачанного его не видела.
         player.addListener(object : androidx.media3.common.Player.Listener {
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                // Ссылки на потоки привязаны ко времени и к адресу выхода:
-                // пауза на час, смена ноды или переподключение туннеля делают
-                // их недействительными. Раньше плеер просто замирал —
-                // картинка стоит, кнопка показывает «играет», сообщения нет.
-                // Одна попытка пересобрать, дальше отдаём состояние экрану.
-                runCatching { session?.player?.prepare() }
+                // РОВНО ОДНА попытка пересобрать, дальше сдаёмся.
+                //
+                // Без счётчика это был вечный цикл: протухшая ссылка отвечает
+                // отказом сразу, prepare() ведёт к новой ошибке — и так по
+                // кругу, причём плеер живёт в службе и продолжает долбить наши
+                // же ноды после закрытия экрана. Ни следа в интерфейсе, зато
+                // батарея и трафик.
+                if (retriedFor != nowPageUrl()) {
+                    retriedFor = nowPageUrl()
+                    runCatching { session?.player?.prepare() }
+                    return
+                }
+                // Сдались — говорим экрану прямо, а не через угадывание
+                // состояния плеера.
+                com.v2ray.ang.handler.YouTubeNowPlaying.stalled = true
             }
 
             override fun onPlaybackStateChanged(state: Int) {
@@ -119,6 +128,12 @@ class VpnkaMediaService : MediaSessionService() {
     }
 
     /** Запомнить, где остановились. Зовём, пока плеер ещё жив. */
+    /** Для какого ролика уже пробовали пересобрать поток. */
+    private var retriedFor: String? = null
+
+    private fun nowPageUrl(): String? =
+        com.v2ray.ang.handler.YouTubeNowPlaying.current?.pageUrl
+
     private fun savePosition() {
         val p = session?.player ?: return
         val page = com.v2ray.ang.handler.YouTubeNowPlaying.current?.pageUrl ?: return

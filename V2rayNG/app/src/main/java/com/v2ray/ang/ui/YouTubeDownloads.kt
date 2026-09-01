@@ -94,6 +94,20 @@ object YouTubeDownloads {
      * Из ожидания всегда есть выход: у строки появляется «Скачать сейчас».
      * Правило, которое нельзя обойти, в нужный момент превращается в ловушку.
      */
+    /**
+     * Хватает ли места. Проверяем ПЕРЕД началом, а не посреди записи.
+     *
+     * Кончившееся место давало исключение где-то в середине — «невнятную
+     * ошибку посреди загрузки», как и говорилось на экране памяти. Экран
+     * показывал свободное место, но гейтом оно нигде не было.
+     */
+    private fun noRoom(ctx: Context, e: Entry): Boolean {
+        if (YouTubeService.freeWorkBytes(ctx) >= YouTubeService.MIN_FREE_BYTES) return false
+        e.error = "Мало места на устройстве"
+        e.state = State.FAILED
+        return true
+    }
+
     private suspend fun awaitWindow(ctx: Context, e: Entry) {
         while (!e.bypass) {
             val reason = blockReason(ctx) ?: break
@@ -174,9 +188,14 @@ object YouTubeDownloads {
         e.sourceUrl = pageUrl; e.sourceTitle = title
         // Без качества «Повторить» тянуло максимум: человек выбирал 480p,
         // сорвалось — и повтор качал 2160p через наши ноды.
-        e.sourceQuality = option.label
+        // «Аудио» приводим к тому же знаку, что понимает очередь «позже»:
+        // иначе повтор звуковой загрузки не находил совпадений по названию и
+        // скатывался к максимальному качеству — то есть к видео.
+        e.sourceQuality = if (option.audioUrl == null && option.label.contains("Аудио")) "♪"
+        else option.label
         e.job = scope.launch {
             val self = coroutineContext[Job]
+            if (noRoom(ctx, e)) return@launch
             awaitWindow(ctx, e)
             gate.withPermit {
                 // До этой точки задача ЖДАЛА очереди. Раньше она всё это
@@ -196,7 +215,13 @@ object YouTubeDownloads {
                         // этот блок перетирал «Отменено» на «Готово» — файл
                         // оставался, хотя человек нажал «отменить».
                         if (self?.isActive != true || e.state == State.CANCELLED) {
-                            runCatching { it.let { u -> ctx.contentResolver.delete(u, null, null) } }
+                            // И content://, и file:// — до Android 10 путь
+                            // файловый, и contentResolver.delete там бросает:
+                            // отменённая загрузка оставалась в «Загрузках».
+                            runCatching {
+                                if (it.scheme == "content") ctx.contentResolver.delete(it, null, null)
+                                else it.path?.let { p -> java.io.File(p).delete() }
+                            }
                             e.state = State.CANCELLED
                             return@onSuccess
                         }
@@ -287,6 +312,7 @@ object YouTubeDownloads {
         e.sourceUrl = url; e.sourceTitle = title; e.sourceQuality = quality
         e.job = scope.launch {
             val self = coroutineContext[Job]
+            if (noRoom(ctx, e)) return@launch
             awaitWindow(ctx, e)
             gate.withPermit {
                 e.state = State.RUNNING
@@ -318,7 +344,13 @@ object YouTubeDownloads {
                         // этот блок перетирал «Отменено» на «Готово» — файл
                         // оставался, хотя человек нажал «отменить».
                         if (self?.isActive != true || e.state == State.CANCELLED) {
-                            runCatching { it.let { u -> ctx.contentResolver.delete(u, null, null) } }
+                            // И content://, и file:// — до Android 10 путь
+                            // файловый, и contentResolver.delete там бросает:
+                            // отменённая загрузка оставалась в «Загрузках».
+                            runCatching {
+                                if (it.scheme == "content") ctx.contentResolver.delete(it, null, null)
+                                else it.path?.let { p -> java.io.File(p).delete() }
+                            }
                             e.state = State.CANCELLED
                             return@onSuccess
                         }
@@ -347,6 +379,7 @@ object YouTubeDownloads {
         e.sourceUrl = url; e.sourceTitle = name
         e.job = scope.launch {
             val self = coroutineContext[Job]
+            if (noRoom(ctx, e)) return@launch
             awaitWindow(ctx, e)
             gate.withPermit {
                 e.state = State.RUNNING
@@ -362,7 +395,13 @@ object YouTubeDownloads {
                         // этот блок перетирал «Отменено» на «Готово» — файл
                         // оставался, хотя человек нажал «отменить».
                         if (self?.isActive != true || e.state == State.CANCELLED) {
-                            runCatching { it.let { u -> ctx.contentResolver.delete(u, null, null) } }
+                            // И content://, и file:// — до Android 10 путь
+                            // файловый, и contentResolver.delete там бросает:
+                            // отменённая загрузка оставалась в «Загрузках».
+                            runCatching {
+                                if (it.scheme == "content") ctx.contentResolver.delete(it, null, null)
+                                else it.path?.let { p -> java.io.File(p).delete() }
+                            }
                             e.state = State.CANCELLED
                             return@onSuccess
                         }
@@ -395,7 +434,13 @@ object YouTubeDownloads {
                         // этот блок перетирал «Отменено» на «Готово» — файл
                         // оставался, хотя человек нажал «отменить».
                         if (e.state == State.CANCELLED) {
-                            runCatching { it.let { u -> ctx.contentResolver.delete(u, null, null) } }
+                            // И content://, и file:// — до Android 10 путь
+                            // файловый, и contentResolver.delete там бросает:
+                            // отменённая загрузка оставалась в «Загрузках».
+                            runCatching {
+                                if (it.scheme == "content") ctx.contentResolver.delete(it, null, null)
+                                else it.path?.let { p -> java.io.File(p).delete() }
+                            }
                             e.state = State.CANCELLED
                             return@onSuccess
                         }

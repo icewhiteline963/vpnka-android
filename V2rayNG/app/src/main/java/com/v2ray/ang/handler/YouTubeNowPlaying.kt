@@ -15,4 +15,14 @@ import androidx.compose.runtime.setValue
  */
 object YouTubeNowPlaying {
     var current by mutableStateOf<YouTubeService.Playback?>(null)
+
+    /**
+     * Воспроизведение встало и служба уже пробовала пересобрать поток.
+     *
+     * Экран не может определить это сам: он опрашивает состояние раз в
+     * полсекунды, а служба выбивает плеер из «простоя» в том же колбэке —
+     * окно длится доли миллисекунды, и признак почти никогда не попадался.
+     * Поэтому о сдаче сообщает тот, кто о ней знает.
+     */
+    var stalled by mutableStateOf(false)
 }

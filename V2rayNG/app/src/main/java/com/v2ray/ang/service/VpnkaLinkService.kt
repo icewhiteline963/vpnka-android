@@ -158,6 +158,8 @@ class VpnkaLinkService : Service() {
     /** Звонок и вибрация — пока идёт вызов. */
     private var ringtone: android.media.Ringtone? = null
     private var vibrator: android.os.Vibrator? = null
+    private val loopHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var legacyLoop: Runnable? = null
 
     /**
      * Позвонить по-настоящему.
@@ -171,6 +173,9 @@ class VpnkaLinkService : Service() {
      * только вибрируем. Своей громкости не навязываем.
      */
     private fun startRinging() {
+        // Повторный вызов не должен плодить второй рингтон: ссылка на первый
+        // терялась, и он звонил до смерти процесса.
+        stopRingingSound()
         val am = getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager
         val mode = am?.ringerMode ?: android.media.AudioManager.RINGER_MODE_NORMAL
         if (mode == android.media.AudioManager.RINGER_MODE_NORMAL) {
@@ -184,8 +189,22 @@ class VpnkaLinkService : Service() {
                         .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
                         .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
                         .build()
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) isLooping = true
-                    play()
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                        isLooping = true
+                        play()
+                    } else {
+                        // До Android 9 зацикливания у Ringtone нет: заводим
+                        // повтор сами, иначе на старых телефонах звонок звучал
+                        // один раз на всё минутное окно дозвона.
+                        play()
+                        legacyLoop = object : Runnable {
+                            override fun run() {
+                                val r = ringtone ?: return
+                                if (!r.isPlaying) runCatching { r.play() }
+                                loopHandler.postDelayed(this, 1500)
+                            }
+                        }.also { loopHandler.postDelayed(it, 1500) }
+                    }
                 }
             }
         }
@@ -200,14 +219,19 @@ class VpnkaLinkService : Service() {
                 }
                 vibrator = v
                 val pattern = longArrayOf(0, 800, 900)
-                v?.vibrate(
-                    android.os.VibrationEffect.createWaveform(pattern, 0),
-                )
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    v?.vibrate(android.os.VibrationEffect.createWaveform(pattern, 0))
+                } else {
+                    @Suppress("DEPRECATION")
+                    v?.vibrate(pattern, 0)
+                }
             }
         }
     }
 
     private fun stopRingingSound() {
+        legacyLoop?.let { loopHandler.removeCallbacks(it) }
+        legacyLoop = null
         runCatching { ringtone?.stop() }
         ringtone = null
         runCatching { vibrator?.cancel() }
@@ -240,6 +264,10 @@ class VpnkaLinkService : Service() {
             // Wakes the screen where the system allows it; degrades to a
             // heads-up banner where it does not.
             .setFullScreenIntent(answer, true)
+            // «Ответить» открывает экран звонка; сам приём трубки делает
+            // человек там же. Молча принимать вызов по нажатию из шторки
+            // нельзя: слишком легко ответить случайно, а микрофон откроется
+            // сразу.
             .addAction(0, "Ответить", answer)
             .addAction(0, "Отклонить", decline)
             .build()

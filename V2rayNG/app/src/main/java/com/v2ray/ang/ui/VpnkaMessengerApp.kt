@@ -503,7 +503,12 @@ fun VpnkaMessengerApp() {
                             contacts.associate { it.id to ChatPrefs.unread(it.id) }
                         }
                         val lastOf = remember(tick) {
-                            contacts.associate { it.id to Messenger.messages(it.id).lastOrNull() }
+                            contacts.associate { it.id to Messenger.messages(it.id).maxByOrNull { m -> m.ts } }
+                        }
+                        val maxTs = remember(tick) {
+                            contacts.associate { c ->
+                                c.id to (Messenger.messages(c.id).maxOfOrNull { it.ts } ?: 0L)
+                            }
                         }
 
                         val visible = contacts
@@ -517,7 +522,11 @@ fun VpnkaMessengerApp() {
                             }
                             .sortedWith(
                                 compareByDescending<Messenger.Contact> { pinnedIds.contains(it.id) }
-                                    .thenByDescending { lastOf[it.id]?.ts ?: 0L },
+                                    // По САМОМУ ПОЗДНЕМУ времени, а не по последнему
+                            // пришедшему: время теперь отправительское, и у
+                            // собеседника с отставшими часами чат прыгал бы
+                            // вниз при новом сообщении.
+                            .thenByDescending { maxTs[it.id] ?: 0L },
                             )
                         val showChannels =
                             filter == ChatFilter.ALL || filter == ChatFilter.CHANNELS
@@ -1030,7 +1039,10 @@ private fun ChatScreen(
 ) {
     val scope = rememberCoroutineScope()
     var draft by remember { mutableStateOf("") }
-    val msgs = remember(tick, contact.id) { Messenger.messages(contact.id) }
+    // Сортируем по времени отправки: сообщения складываются в порядке
+    // ПРИХОДА, а время теперь ставит отправитель — при задержке пачки 14:31
+    // оказывалось выше 14:28.
+    val msgs = remember(tick, contact.id) { Messenger.messages(contact.id).sortedBy { it.ts } }
     val receipt = remember(tick, contact.id) { Messenger.receiptFor(contact.id) }
     // null = no photo being sent; 0..100 = upload progress; -1 = failed.
     var sendPct by remember { mutableStateOf<Int?>(null) }
@@ -1041,6 +1053,47 @@ private fun ChatScreen(
     // Отчёт о прочтении — только когда экран РЕАЛЬНО на переднем плане.
     // Свёрнутое приложение с открытым чатом продолжало слать собеседнику ✓✓
     // на сообщения, которых никто не читал.
+    var showKeyWarning by remember { mutableStateOf(false) }
+    if (showKeyWarning) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showKeyWarning = false },
+            title = {
+                Text("Ключ изменился", fontFamily = VpnkaFonts.nunito800, color = VpnkaColors.TextStrong)
+            },
+            text = {
+                Column {
+                    Text(
+                        "Так бывает, когда человек переустановил приложение или сменил " +
+                            "телефон. Но так же выглядит и подмена: тогда переписку сможет " +
+                            "прочитать тот, кто подставил ключ.\n\n" +
+                            "Сверьте отпечаток другим способом — голосом или при встрече.",
+                        fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp,
+                        color = VpnkaColors.TextMuted, lineHeight = 18.sp,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        keyFingerprint(contact.pubKey),
+                        fontFamily = VpnkaFonts.manrope700, fontSize = 14.sp,
+                        color = VpnkaColors.TextStrong,
+                    )
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    Messenger.acceptKeyChange(contact.id)
+                    showKeyWarning = false
+                    onSent()
+                }) { Text("Я сверил — всё верно") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showKeyWarning = false }) {
+                    Text("Позже")
+                }
+            },
+            containerColor = VpnkaColors.BgOffCentre,
+        )
+    }
+
     val readLifecycle = LocalLifecycleOwner.current
     var chatResumed by remember { mutableStateOf(true) }
     DisposableEffect(readLifecycle) {
@@ -1289,6 +1342,29 @@ private fun ChatScreen(
             }
         }
         }
+        // Ключ собеседника сменился — говорим прямо.
+        //
+        // Ключи приходят из нашего же справочника: молчаливая замена означала
+        // бы, что подставленный ключ читает переписку, а человек не знает.
+        // Эта часть была объявлена в прошлой версии и в код не попала —
+        // патч оборвался на ошибке до записи файла.
+        if (contact.keyChanged) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp)
+                    .clip(RoundedCornerShape(11.dp))
+                    .background(VpnkaColors.Warning.copy(alpha = 0.16f))
+                    .clickable { showKeyWarning = true }
+                    .padding(horizontal = 12.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Ключ собеседника изменился — нажмите, чтобы проверить",
+                    fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp,
+                    color = VpnkaColors.TextStrong,
+                )
+            }
+        }
+
         // «Печатает…» — строкой над полем ввода.
         //
         // Раньше она жила под именем в шапке; шапки не стало, а само событие

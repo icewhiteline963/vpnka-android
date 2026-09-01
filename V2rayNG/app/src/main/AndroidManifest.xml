@@ -60,6 +60,10 @@
         android:minSdkVersion="34" />
     <!-- <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" /> -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Вибрация при входящем звонке. Без этого разрешения Vibrator молча
+         ничего не делает: половина «звонка» не работала ни на одном
+         устройстве. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Ringing call: wakes the screen where the system grants it, and falls
          back to a heads-up banner where it does not. -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />

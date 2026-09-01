@@ -204,8 +204,12 @@ fun YouTubeApp() {
     // диске времянки размером с ролик неограниченно долго, а счётчик в шапке
     // не знал о восстановленных строках.
     LaunchedEffect(Unit) {
-        YouTubeDownloads.restore()
-        withContext(Dispatchers.IO) { YouTubeService.sweepTemp(context) }
+        // Оба действия — на фоне: восстановление читает MMKV и разбирает до
+        // трёхсот записей, а это теперь на пути открытия приложения.
+        withContext(Dispatchers.IO) {
+            YouTubeDownloads.restore()
+            YouTubeService.sweepTemp(context)
+        }
     }
 
     // Storage permission for a playlist «Скачать всё» on pre-Android-10.
@@ -1295,13 +1299,21 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                 MediaItem.RequestMetadata.Builder().setExtras(extras).build()
             )
             .build()
+        // Снимаем позицию до пересборки: setMediaItem её обнуляет.
+        val resumeFrom = if (already) 0L else c.currentPosition
         c.setMediaItem(item)
         c.prepare()
-        // Продолжаем с места, где остановились. Первые и последние полминуты
-        // не в счёт — заглянул и закрыл это не «смотрел», а досмотренное
-        // должно начинаться сначала, а не с титров.
+        // Продолжаем с ТЕКУЩЕГО места, если оно есть, иначе с сохранённого.
+        //
+        // При смене качества и при пересборке протухшего потока плеер
+        // строится заново, а позиция бралась только из истории — её при
+        // первом просмотре нет вовсе, и лекция начиналась с начала. Текущую
+        // снимаем ДО setMediaItem: после него она уже ноль.
         val saved = YouTubeHistory.position(pb.pageUrl)
-        if (saved > 0) c.seekTo(saved * 1000)
+        when {
+            resumeFrom > 1000L -> c.seekTo(resumeFrom)
+            saved > 0 -> c.seekTo(saved * 1000)
+        }
         c.playWhenReady = true
         YouTubeNowPlaying.current = pbState
     }
@@ -1445,8 +1457,9 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
             // Плеер встал: ссылка на поток протухла (они привязаны ко времени
             // и к адресу выхода) или оборвалась сеть. Раньше об этом не
             // говорилось никак — кадр замирал, кнопка рисовала «играет».
-            stalled = c.playbackState == androidx.media3.common.Player.STATE_IDLE &&
-                c.playWhenReady
+            // Признак приходит от службы: сама она о стопоре знает точно, а
+            // экран мог бы разве что угадать по мгновенному состоянию.
+            stalled = YouTubeNowPlaying.stalled
             kotlinx.coroutines.delay(500)
         }
     }
@@ -1854,6 +1867,7 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                         .background(VpnkaColors.Warning.copy(alpha = 0.16f))
                         .clickable {
                             stalled = false
+                            YouTubeNowPlaying.stalled = false
                             scope.launch {
                                 val r = withContext(Dispatchers.IO) {
                                     runCatching { YouTubeService.resolve(pb.pageUrl) }

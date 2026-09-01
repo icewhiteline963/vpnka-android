@@ -55,14 +55,23 @@ object ChatPrefs {
 
     private fun seenKey(id: Long) = "chat_seen_$id"
 
+    /**
+     * Отметка «прочитано» — по НОМЕРУ сообщения, а не по времени.
+     *
+     * Время теперь ставит отправитель. С отставшими часами его сообщения
+     * оказывались «старее» отметки и не считались непрочитанными вовсе; с
+     * убежавшими вперёд отметка уезжала в будущее и глушила счётчик до тех
+     * пор, пока настоящее время её не догонит. Номера у входящих выдаёт
+     * сервер, и они строго растут.
+     */
     fun markSeen(contactId: Long) {
-        val last = Messenger.messages(contactId).maxOfOrNull { it.ts } ?: return
+        val last = Messenger.messages(contactId).filter { !it.mine }.maxOfOrNull { it.id } ?: return
         MmkvManager.encodeSettings(seenKey(contactId), last.toString())
     }
 
     fun unread(contactId: Long): Int {
         val seen = MmkvManager.decodeSettingsString(seenKey(contactId))?.toLongOrNull() ?: 0L
-        return Messenger.messages(contactId).count { !it.mine && it.ts > seen }
+        return Messenger.messages(contactId).count { !it.mine && it.id > seen }
     }
 
     // --- журнал звонков ---

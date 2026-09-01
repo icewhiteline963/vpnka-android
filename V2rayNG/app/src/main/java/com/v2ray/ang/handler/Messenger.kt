@@ -84,7 +84,14 @@ object Messenger {
         val keyChanged: Boolean = false,
     )
     data class Msg(
-        val id: Long, val mine: Boolean, val text: String, val ts: Long,
+        // У ВСЕХ полей значения по умолчанию — намеренно.
+        //
+        // Без этого Kotlin не создаёт беспараметрический конструктор, Gson
+        // собирает объект в обход конструктора, и отсутствующие в старых
+        // записях поля получают НЕ котлиновский умолчание, а нулевое
+        // значение JVM. Для `verified` это false — и вся прежняя переписка
+        // после обновления пометилась бы «не подтверждено».
+        val id: Long = 0, val mine: Boolean = false, val text: String = "", val ts: Long = 0,
         val u: String = "", val k: String = "text", val img: String = "", val dur: Int = 0,
         /**
          * Доказано ли авторство подписью отправителя.
@@ -273,12 +280,19 @@ object Messenger {
 
     /** Собрать подписанный JSON пакета: сначала тело, потом подпись рядом. */
     private fun signedJson(payload: MsgPayload): String {
-        val body = gson.toJson(payload)
-        val sig = signPayload(body)
-        // Подпись кладём отдельным полем поверх тела — так проверяющему не
-        // нужно гадать, что именно подписано: ровно тело без `sig`.
-        val obj = gson.fromJson(body, com.google.gson.JsonObject::class.java)
-        obj.addProperty("sig", sig)
+        // Подписываем тело БЕЗ поля `sig` — ровно в том виде, в каком его
+        // пересоберёт проверяющий.
+        //
+        // Первая версия подписывала `gson.toJson(payload)`, а там поле `sig`
+        // уже присутствовало пустой строкой (Gson опускает только null).
+        // Получатель это поле УДАЛЯЛ, то есть проверял другую строку —
+        // короче на девять символов. Подпись не сходилась НИ РАЗУ и ни у
+        // кого: функция выглядела работающей, а на деле метила «не
+        // подтверждено» вообще всё.
+        val obj = gson.fromJson(gson.toJson(payload), com.google.gson.JsonObject::class.java)
+        obj.remove("sig")
+        val body = gson.toJson(obj)
+        obj.addProperty("sig", signPayload(body))
         return gson.toJson(obj)
     }
 
@@ -416,6 +430,10 @@ object Messenger {
     /** Send a message. Stores our copy locally + a self-copy so our other
      *  devices sync the same history. */
     suspend fun send(contactId: Long, text: String): Boolean = withContext(Dispatchers.IO) {
+        // Личность нужна для ПОДПИСИ. Она загружается в poll/register, и
+        // отправка сразу после холодного старта уходила без подписи — у
+        // получателя навсегда «не подтверждено».
+        ensureIdentity()
         ensureKey(contactId)
         val c = contact(contactId) ?: return@withContext false
         val u = java.util.UUID.randomUUID().toString()
@@ -429,7 +447,10 @@ object Messenger {
         if (myId > 0) {
             try {
                 val self = gson.toJson(
-                    MsgPayload(u = u, k = "text", t = text, peer = contactId, self = true, mid = mid)
+                    MsgPayload(
+                        ts = System.currentTimeMillis(), u = u, k = "text", t = text,
+                        peer = contactId, self = true, mid = mid,
+                    )
                 )
                 postMessage(myId, seal(self, myPublicKey()))
             } catch (e: Exception) { /* best-effort sync */ }
@@ -796,6 +817,10 @@ object Messenger {
         // Ключ дотягиваем ДО заливки: иначе блоб уезжал на сервер целиком и
         // только потом падало шифрование — человек ждал «100 %», получал
         // «не удалось», а на сервере оставался файл-сирота.
+        // Личность нужна для ПОДПИСИ. Она загружается в poll/register, и
+        // отправка сразу после холодного старта уходила без подписи — у
+        // получателя навсегда «не подтверждено».
+        ensureIdentity()
         ensureKey(contactId)
         val c = contact(contactId) ?: return@withContext false
         val u = java.util.UUID.randomUUID().toString()
@@ -824,6 +849,10 @@ object Messenger {
         // Ключ дотягиваем ДО заливки: иначе блоб уезжал на сервер целиком и
         // только потом падало шифрование — человек ждал «100 %», получал
         // «не удалось», а на сервере оставался файл-сирота.
+        // Личность нужна для ПОДПИСИ. Она загружается в poll/register, и
+        // отправка сразу после холодного старта уходила без подписи — у
+        // получателя навсегда «не подтверждено».
+        ensureIdentity()
         ensureKey(contactId)
         val c = contact(contactId) ?: return@withContext false
         val u = java.util.UUID.randomUUID().toString()
@@ -852,6 +881,10 @@ object Messenger {
         // Ключ дотягиваем ДО заливки: иначе блоб уезжал на сервер целиком и
         // только потом падало шифрование — человек ждал «100 %», получал
         // «не удалось», а на сервере оставался файл-сирота.
+        // Личность нужна для ПОДПИСИ. Она загружается в poll/register, и
+        // отправка сразу после холодного старта уходила без подписи — у
+        // получателя навсегда «не подтверждено».
+        ensureIdentity()
         ensureKey(contactId)
         val c = contact(contactId) ?: return@withContext false
         val u = java.util.UUID.randomUUID().toString()
@@ -972,9 +1005,16 @@ object Messenger {
                     val stamp = if (
                         o.ts > nowMs - 365L * 24 * 3600 * 1000 && o.ts < nowMs + 24L * 3600 * 1000
                     ) o.ts else nowMs
-                    val senderKey =
-                        if (o.self) myPublicKey() else contact(m.fromClient)?.pubKey.orEmpty()
-                    val ok = o.self || verified(raw, senderKey)
+                    // Чьё это, решаем по ОТПРАВИТЕЛЮ пакета, а не по флагу
+                    // внутри него.
+                    //
+                    // `self` лежит в тексте, который выбирает отправитель, а
+                    // запечатать пакет можно на любой публичный ключ — их
+                    // сервер раздаёт по запросу. То есть один флаг отменял всю
+                    // проверку: подделка помечалась как проверенная. Ключ для
+                    // сверки берём из наших контактов.
+                    val mineByServer = m.fromClient == myClientId() && myClientId() != 0L
+
                     // A message from ourselves is a sent-copy syncing history:
                     // file it into the peer's chat on the sent side. Otherwise
                     // it's a real incoming message.
@@ -992,6 +1032,14 @@ object Messenger {
                             else Contact(chat, "Контакт $chat", "")
                         )
                     }
+                    // Проверяем ПОСЛЕ того, как контакт заведён: иначе первое
+                    // сообщение от нового человека проверять было нечем — ключ
+                    // ещё не сохранён, — и приговор «не подтверждено»
+                    // записывался в историю навсегда.
+                    val ok = verified(
+                        raw,
+                        if (mineByServer) myPublicKey() else contact(m.fromClient)?.pubKey.orEmpty(),
+                    )
                     val added: Boolean
                     val preview: String
                     if (o.k == "image" && o.media > 0 && o.key.isNotEmpty()) {

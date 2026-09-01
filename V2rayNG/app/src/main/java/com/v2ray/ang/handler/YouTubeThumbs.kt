@@ -66,7 +66,21 @@ object YouTubeThumbs {
                 }.getOrNull()
                     ?.also { cache.put(url, it); failedAt.remove(url) }
                     ?.asImageBitmap()
-                    ?: run { failedAt[url] = System.currentTimeMillis(); null }
+                    ?: run {
+                        // Отмену НЕ считаем неудачей.
+                        //
+                        // Уход строки с экрана обрывает вызов, execute()
+                        // бросает — и адрес получал пятиминутную метку. Быстро
+                        // проматал ленту и вернулся: плитки пустые и не
+                        // перезапрашиваются. До отмены запросов они просто
+                        // догружались.
+                        if (kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]
+                                ?.isActive != false
+                        ) {
+                            failedAt[url] = System.currentTimeMillis()
+                        }
+                        null
+                    }
             } finally {
                 runCatching { if (!call.isExecuted()) call.cancel() }
             }

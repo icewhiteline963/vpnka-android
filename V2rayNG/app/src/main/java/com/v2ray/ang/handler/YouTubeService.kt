@@ -71,21 +71,24 @@ object YouTubeService {
     // и каждая картинка открывала отдельный CONNECT через туннель. Порт
     // прокси может смениться в настройках, поэтому клиент пересобирается,
     // когда порт изменился.
-    @Volatile private var clientPort = -1
-    @Volatile private var sharedClient: OkHttpClient? = null
+    // Порт и клиент — ОДНОЙ ссылкой.
+    //
+    // Двумя отдельными полями их могли увидеть вразнобой: новый порт со
+    // старым клиентом. Запрос ушёл бы на несуществующий локальный порт и
+    // упал — а для обложки это ещё и пятиминутная метка «не грузится».
+    @Volatile private var shared: Pair<Int, OkHttpClient>? = null
 
     fun proxiedClient(): OkHttpClient {
         val port = SettingsManager.getHttpPort()
-        sharedClient?.let { if (clientPort == port) return it }
+        shared?.let { (p, c) -> if (p == port) return c }
         return synchronized(this) {
-            sharedClient?.let { if (clientPort == port) return@synchronized it }
+            shared?.let { (p, c) -> if (p == port) return@synchronized c }
             val c = OkHttpClient.Builder()
                 .proxy(Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", port)))
                 .connectTimeout(20, TimeUnit.SECONDS)
                 .readTimeout(30, TimeUnit.SECONDS)
                 .build()
-            sharedClient = c
-            clientPort = port
+            shared = port to c
             c
         }
     }
@@ -390,13 +393,19 @@ object YouTubeService {
      */
     class Cancelled : IOException("отменено")
 
-    /** Хватит ли места под файл такого размера (плюс запас на сборку). */
-    fun hasRoomFor(context: Context, bytes: Long): Boolean = runCatching {
-        val free = android.os.StatFs(context.cacheDir.absolutePath).availableBytes
-        // Для раздельных дорожек на диске одновременно живут видео, звук и
-        // склейка — берём троекратный запас плюс 200 МБ.
-        free > bytes * 3 + 200L * 1024 * 1024
-    }.getOrDefault(true)
+    /**
+     * Сколько места свободно там, где мы работаем.
+     *
+     * Меряем ИМЕННО внутреннюю память: в ней живут времянки и склейка, а их
+     * втрое больше самого файла. Копия в «Загрузках» — отдельный том, и
+     * ответ про него был бы не о том месте, где заканчивается диск.
+     */
+    fun freeWorkBytes(context: Context): Long = runCatching {
+        android.os.StatFs(context.cacheDir.absolutePath).availableBytes
+    }.getOrDefault(Long.MAX_VALUE)
+
+    /** Ниже этого порога за загрузку лучше не браться. */
+    const val MIN_FREE_BYTES = 500L * 1024 * 1024
 
     fun download(
         context: Context,
