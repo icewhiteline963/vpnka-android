@@ -4,6 +4,9 @@ import android.util.Base64
 import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import com.tencent.mmkv.MMKV
 import com.v2ray.ang.AppConfig
 import com.v2ray.ang.util.LogUtil
@@ -194,7 +197,7 @@ object Messenger {
     // consumes it on first composition. 0 = nothing pending.
     // Состояние Compose: просьба открыть чат приходит из уведомления, когда
     // мессенджер уже на экране, — обычное поле никто не перечитывал.
-    var pendingChat by androidx.compose.runtime.mutableStateOf(0L)
+    var pendingChat by mutableStateOf(0L)
         private set
 
     /** Ask the UI to open a given chat next time SmartDesk/messenger draws. */
