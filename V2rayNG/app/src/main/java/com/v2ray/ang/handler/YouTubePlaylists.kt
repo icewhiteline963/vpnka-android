@@ -25,17 +25,25 @@ object YouTubePlaylists {
 
     private fun load(): MutableList<Playlist> {
         val raw = MmkvManager.decodeSettingsString(KEY)
+        // Повреждённые данные НЕ затираем.
+        //
+        // Раньше любой сбой разбора давал пустой список, тут же не находил
+        // «Избранное» и СОХРАНЯЛ поверх исходных данных пустышку: все
+        // плейлисты и избранное исчезали безвозвратно при первом же чтении —
+        // а читается это прямо из отрисовки списка.
+        var broken = false
         val list: MutableList<Playlist> = if (raw == null) mutableListOf()
         else try {
             gson.fromJson<MutableList<Playlist>>(raw, object : TypeToken<MutableList<Playlist>>() {}.type)
                 ?: mutableListOf()
         } catch (e: Exception) {
+            broken = true
             mutableListOf()
         }
         // Guarantee «Избранное» exists (first), migrating any legacy favourites.
         if (list.none { it.id == FAV_ID }) {
             list.add(0, Playlist(FAV_ID, "Избранное", migrateLegacyFavs().toMutableList()))
-            store(list)
+            if (!broken) store(list)
         }
         return list
     }

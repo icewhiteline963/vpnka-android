@@ -89,6 +89,15 @@ class VpnkaMediaService : MediaSessionService() {
         // следующем открытии видео отматывалось на старое место, а уборка
         // скачанного его не видела.
         player.addListener(object : androidx.media3.common.Player.Listener {
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                // Ссылки на потоки привязаны ко времени и к адресу выхода:
+                // пауза на час, смена ноды или переподключение туннеля делают
+                // их недействительными. Раньше плеер просто замирал —
+                // картинка стоит, кнопка показывает «играет», сообщения нет.
+                // Одна попытка пересобрать, дальше отдаём состояние экрану.
+                runCatching { session?.player?.prepare() }
+            }
+
             override fun onPlaybackStateChanged(state: Int) {
                 if (state != androidx.media3.common.Player.STATE_ENDED) return
                 val p = session?.player ?: return

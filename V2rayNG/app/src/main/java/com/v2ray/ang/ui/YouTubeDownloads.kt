@@ -172,6 +172,9 @@ object YouTubeDownloads {
         val ctx = context.applicationContext
         val e = add("$title · ${option.label}", option.mime)
         e.sourceUrl = pageUrl; e.sourceTitle = title
+        // Без качества «Повторить» тянуло максимум: человек выбирал 480p,
+        // сорвалось — и повтор качал 2160p через наши ноды.
+        e.sourceQuality = option.label
         e.job = scope.launch {
             val self = coroutineContext[Job]
             awaitWindow(ctx, e)
@@ -188,6 +191,15 @@ object YouTubeDownloads {
                     ) { d, t, s -> e.done = d; e.total = t; e.speed = s }
                 }
                     .onSuccess {
+                        // Отмена во время ремукса и копирования в «Загрузки»
+                        // не прерывала работу (там нет точек приостановки), и
+                        // этот блок перетирал «Отменено» на «Готово» — файл
+                        // оставался, хотя человек нажал «отменить».
+                        if (self?.isActive != true || e.state == State.CANCELLED) {
+                            runCatching { it.let { u -> ctx.contentResolver.delete(u, null, null) } }
+                            e.state = State.CANCELLED
+                            return@onSuccess
+                        }
                         e.uri = it; e.state = State.DONE
                         // Помним, что скачали: список в памяти умрёт вместе с
                         // процессом, а файл останется.
@@ -223,8 +235,14 @@ object YouTubeDownloads {
     fun retry(context: Context, e: Entry) {
         if (e.state != State.FAILED && e.state != State.CANCELLED) return
         val src = e.sourceUrl ?: return
+        val name = e.sourceTitle ?: e.label
+        val kind = e.kind
         entries.remove(e)
-        enqueueVideoByUrl(context, src, e.sourceTitle ?: e.label, e.sourceQuality)
+        // Файл со страницы качаем файлом. Повтор гнал ЛЮБУЮ запись через
+        // разбор ролика YouTube: pdf или архив там падали с «нет форматов»,
+        // и перекачать их было нельзя вовсе.
+        if (kind == "Файл") enqueueFile(context, src, name)
+        else enqueueVideoByUrl(context, src, name, e.sourceQuality)
     }
 
     /**
@@ -295,6 +313,15 @@ object YouTubeDownloads {
                     ) { d, t, s -> e.done = d; e.total = t; e.speed = s }
                 }
                     .onSuccess {
+                        // Отмена во время ремукса и копирования в «Загрузки»
+                        // не прерывала работу (там нет точек приостановки), и
+                        // этот блок перетирал «Отменено» на «Готово» — файл
+                        // оставался, хотя человек нажал «отменить».
+                        if (self?.isActive != true || e.state == State.CANCELLED) {
+                            runCatching { it.let { u -> ctx.contentResolver.delete(u, null, null) } }
+                            e.state = State.CANCELLED
+                            return@onSuccess
+                        }
                         e.uri = it; e.state = State.DONE
                         // Помним, что скачали: список в памяти умрёт вместе с
                         // процессом, а файл останется.
@@ -330,6 +357,15 @@ object YouTubeDownloads {
                     ) { d, t, s -> e.done = d; e.total = t; e.speed = s }
                 }
                     .onSuccess {
+                        // Отмена во время ремукса и копирования в «Загрузки»
+                        // не прерывала работу (там нет точек приостановки), и
+                        // этот блок перетирал «Отменено» на «Готово» — файл
+                        // оставался, хотя человек нажал «отменить».
+                        if (self?.isActive != true || e.state == State.CANCELLED) {
+                            runCatching { it.let { u -> ctx.contentResolver.delete(u, null, null) } }
+                            e.state = State.CANCELLED
+                            return@onSuccess
+                        }
                         e.uri = it; e.state = State.DONE
                         // Помним, что скачали: список в памяти умрёт вместе с
                         // процессом, а файл останется.
@@ -354,6 +390,15 @@ object YouTubeDownloads {
                 e.state = State.RUNNING
                 runCatching { YouTubeService.downloadSubtitle(ctx, sub, title) }
                     .onSuccess {
+                        // Отмена во время ремукса и копирования в «Загрузки»
+                        // не прерывала работу (там нет точек приостановки), и
+                        // этот блок перетирал «Отменено» на «Готово» — файл
+                        // оставался, хотя человек нажал «отменить».
+                        if (self?.isActive != true || e.state == State.CANCELLED) {
+                            runCatching { it.let { u -> ctx.contentResolver.delete(u, null, null) } }
+                            e.state = State.CANCELLED
+                            return@onSuccess
+                        }
                         e.uri = it; e.state = State.DONE
                         // Помним, что скачали: список в памяти умрёт вместе с
                         // процессом, а файл останется.

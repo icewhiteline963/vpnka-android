@@ -27,29 +27,49 @@ object YouTubeThumbs {
         override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
     }
 
-    /** Адреса, на которых уже обожглись, — не долбим их на каждой прокрутке. */
-    private val failed = java.util.Collections.synchronizedSet(mutableSetOf<String>())
-
     fun cached(url: String): ImageBitmap? = cache.get(url)?.asImageBitmap()
+
+    /**
+     * Когда обожглись в последний раз.
+     *
+     * Раньше адрес заносился в «неудачные» НАВСЕГДА: пролистал ленту с
+     * выключенным ВПН — и эти обложки не грузились до перезапуска
+     * приложения, даже когда связь вернулась. Держим отметку пять минут.
+     */
+    private const val FAIL_TTL_MS = 5 * 60 * 1000L
+    private val failedAt = java.util.Collections.synchronizedMap(mutableMapOf<String, Long>())
 
     suspend fun load(url: String): ImageBitmap? {
         cache.get(url)?.let { return it.asImageBitmap() }
-        if (url in failed) return null
+        val burned = failedAt[url]
+        if (burned != null && System.currentTimeMillis() - burned < FAIL_TTL_MS) return null
         return withContext(Dispatchers.IO) {
-            runCatching {
-                val req = Request.Builder()
-                    .url(url)
-                    .header("User-Agent", YouTubeService.USER_AGENT_DESKTOP)
-                    .build()
-                YouTubeService.proxiedClient().newCall(req).execute().use { resp ->
-                    if (!resp.isSuccessful) return@use null
-                    val bytes = resp.body?.bytes() ?: return@use null
-                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            val req = Request.Builder()
+                .url(url)
+                .header("User-Agent", YouTubeService.USER_AGENT_DESKTOP)
+                .build()
+            // Вызов держим, чтобы оборвать его при уходе строки с экрана:
+            // отмена корутины сама по себе блокирующий execute() не
+            // прерывает, и быстрая прокрутка догружала все обложки подряд
+            // через наши ноды.
+            val call = YouTubeService.proxiedClient().newCall(req)
+            try {
+                kotlinx.coroutines.currentCoroutineContext()[kotlinx.coroutines.Job]?.invokeOnCompletion {
+                    if (it != null) runCatching { call.cancel() }
                 }
-            }.getOrNull()
-                ?.also { cache.put(url, it) }
-                ?.asImageBitmap()
-                ?: run { failed.add(url); null }
+                runCatching {
+                    call.execute().use { resp ->
+                        if (!resp.isSuccessful) return@use null
+                        val bytes = resp.body?.bytes() ?: return@use null
+                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    }
+                }.getOrNull()
+                    ?.also { cache.put(url, it); failedAt.remove(url) }
+                    ?.asImageBitmap()
+                    ?: run { failedAt[url] = System.currentTimeMillis(); null }
+            } finally {
+                runCatching { if (!call.isExecuted()) call.cancel() }
+            }
         }
     }
 }

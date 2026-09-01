@@ -197,6 +197,15 @@ fun YouTubeApp() {
     var newPlDialog by remember { mutableStateOf(false) }
     var renamePl by remember { mutableStateOf<YouTubePlaylists.Playlist?>(null) }
     val context = LocalContext.current
+    // Восстановление списка и уборка времянок — при открытии ПРИЛОЖЕНИЯ.
+    //
+    // Раньше это висело на вкладке «Загрузки»: кто туда не заходил, носил на
+    // диске времянки размером с ролик неограниченно долго, а счётчик в шапке
+    // не знал о восстановленных строках.
+    LaunchedEffect(Unit) {
+        YouTubeDownloads.restore()
+        withContext(Dispatchers.IO) { YouTubeService.sweepTemp(context) }
+    }
 
     // Storage permission for a playlist «Скачать всё» on pre-Android-10.
     var pendingAction by remember { mutableStateOf<(() -> Unit)?>(null) }
@@ -480,12 +489,7 @@ fun YouTubeApp() {
                 }
             } else {
                 // tab == 2: downloads
-                LaunchedEffect(Unit) {
-                    YouTubeDownloads.restore()
-                    // Времянки прерванных загрузок — это полный размер ролика
-                    // каждая; после убитого процесса они остаются навсегда.
-                    withContext(Dispatchers.IO) { YouTubeService.sweepTemp(context) }
-                }
+
                 val dls = YouTubeDownloads.entries
                 val later = remember(laterTick) { YouTubeLater.all() }
                 var wifiOnly by remember { mutableStateOf(YouTubeLater.wifiOnly) }
@@ -595,7 +599,10 @@ fun YouTubeApp() {
                 var recTick by remember { mutableStateOf(0) }
                 var autoDel by remember { mutableStateOf(DownloadRecords.autoDelete) }
                 val watchedRecs = remember(recTick, autoDel, dls.size) {
-                    DownloadRecords.watchedOlderThan(if (autoDel) DownloadRecords.AUTO_DAYS else 0)
+                    // Порог ВСЕГДА 14 дней. С нулём кнопка сносила всё просмотренное
+                    // любой давности — включая досмотренное минуту назад, — а
+                    // подпись рядом обещала «через 14 дн. после просмотра».
+                    DownloadRecords.watchedOlderThan(DownloadRecords.AUTO_DAYS)
                 }
                 LaunchedEffect(autoDel) {
                     if (autoDel) {
@@ -1319,7 +1326,14 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
     // «Только звук»: видео-дорожка выключается, и плеер перестаёт её качать.
     // Это не украшение — трафик идёт через НАШИ ноды с их лимитами, так что
     // экономия здесь наша прямая, а не только пользовательская.
-    var audioOnly by remember { mutableStateOf(false) }
+    // Настройка живёт между заходами: выключил видео ради трафика, вышел,
+    // вернулся — и оно включалось обратно само.
+    var audioOnly by remember {
+        mutableStateOf(MmkvManager.decodeSettingsString("yt_audio_only") == "1")
+    }
+    LaunchedEffect(audioOnly) {
+        MmkvManager.encodeSettings("yt_audio_only", if (audioOnly) "1" else "0")
+    }
     // Отметка «взять с собой» — решение отдельное от «качать сейчас»:
     // трафик идёт через наши ноды и на мобильном стоит человеку денег.
     var laterTick by remember { mutableStateOf(0) }
@@ -1335,6 +1349,7 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
     var isPlaying by remember { mutableStateOf(true) }
     // «Хотим играть» отдельно от «играет»: между ними буферизация.
     var wantsPlay by remember { mutableStateOf(true) }
+    var stalled by remember { mutableStateOf(false) }
     var position by remember { mutableStateOf(0L) }
 
     // Кнопки в маленьком окне.
@@ -1426,6 +1441,11 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
             isPlaying = c.isPlaying
             wantsPlay = c.playWhenReady
             position = c.currentPosition
+            // Плеер встал: ссылка на поток протухла (они привязаны ко времени
+            // и к адресу выхода) или оборвалась сеть. Раньше об этом не
+            // говорилось никак — кадр замирал, кнопка рисовала «играет».
+            stalled = c.playbackState == androidx.media3.common.Player.STATE_IDLE &&
+                c.playWhenReady
             kotlinx.coroutines.delay(500)
         }
     }
@@ -1826,6 +1846,30 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                 }
             }
 
+            if (stalled) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+                        .clip(RoundedCornerShape(11.dp))
+                        .background(VpnkaColors.Warning.copy(alpha = 0.16f))
+                        .clickable {
+                            stalled = false
+                            scope.launch {
+                                val r = withContext(Dispatchers.IO) {
+                                    runCatching { YouTubeService.resolve(pb.pageUrl) }
+                                }
+                                r.getOrNull()?.let { pbState = it }
+                            }
+                        }
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "Воспроизведение прервалось — нажмите, чтобы продолжить",
+                        fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp,
+                        color = VpnkaColors.TextStrong,
+                    )
+                }
+            }
             Text(
                 cleanTitle(pb.title),
                 fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, lineHeight = 21.sp,

@@ -64,13 +64,30 @@ object YouTubeService {
      *  init, so the extractor's proxy port is fixed for the process (the HTTP
      *  port is a stable setting). The player builds its own proxied client per
      *  playback and always reads the current port. */
+    // Клиент переиспользуем, а не создаём заново на каждый запрос.
+    //
+    // Новый OkHttpClient — это свой пул соединений и свои потоки: на ленте
+    // обложек их набегали десятки, ни одно соединение не переиспользовалось,
+    // и каждая картинка открывала отдельный CONNECT через туннель. Порт
+    // прокси может смениться в настройках, поэтому клиент пересобирается,
+    // когда порт изменился.
+    @Volatile private var clientPort = -1
+    @Volatile private var sharedClient: OkHttpClient? = null
+
     fun proxiedClient(): OkHttpClient {
         val port = SettingsManager.getHttpPort()
-        return OkHttpClient.Builder()
-            .proxy(Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", port)))
-            .connectTimeout(20, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .build()
+        sharedClient?.let { if (clientPort == port) return it }
+        return synchronized(this) {
+            sharedClient?.let { if (clientPort == port) return@synchronized it }
+            val c = OkHttpClient.Builder()
+                .proxy(Proxy(Proxy.Type.HTTP, InetSocketAddress("127.0.0.1", port)))
+                .connectTimeout(20, TimeUnit.SECONDS)
+                .readTimeout(30, TimeUnit.SECONDS)
+                .build()
+            sharedClient = c
+            clientPort = port
+            c
+        }
     }
 
     fun ensureInit() {
@@ -372,6 +389,14 @@ object YouTubeService {
      * нельзя. Отдельный тип, чтобы вызывающий отличил одно от другого.
      */
     class Cancelled : IOException("отменено")
+
+    /** Хватит ли места под файл такого размера (плюс запас на сборку). */
+    fun hasRoomFor(context: Context, bytes: Long): Boolean = runCatching {
+        val free = android.os.StatFs(context.cacheDir.absolutePath).availableBytes
+        // Для раздельных дорожек на диске одновременно живут видео, звук и
+        // склейка — берём троекратный запас плюс 200 МБ.
+        free > bytes * 3 + 200L * 1024 * 1024
+    }.getOrDefault(true)
 
     fun download(
         context: Context,
