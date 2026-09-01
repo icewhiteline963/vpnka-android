@@ -7,6 +7,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.PathEffect
+import android.app.PendingIntent
+import android.content.Intent
+import com.v2ray.ang.R
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Image
@@ -1206,6 +1209,9 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
     // Раньше ExoPlayer создавался прямо здесь и умирал вместе с экраном:
     // свернул приложение — звук кончился. Ровно за это люди ставили Vanced.
     var player by remember { mutableStateOf<MediaController?>(null) }
+    // Приёмник команд из маленького окна живёт дольше одной композиции —
+    // держим ссылку на текущий плеер в коробке, а не захватываем значение.
+    val playerRef = remember { mutableStateOf<MediaController?>(null) }
     DisposableEffect(Unit) {
         val token = SessionToken(
             context,
@@ -1281,16 +1287,78 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
     // Картинка-в-картинке: окно системы поверх других приложений. Плеер уже
     // в службе, поэтому переживает сворачивание сам — здесь только просьба
     // к системе показать маленькое окно.
+    // Кнопки в маленьком окне.
+    //
+    // Система рисует их сама — но только те, что мы объявим в параметрах, и
+    // каждая должна вести на PendingIntent. Внутри окна наш Compose-оверлей
+    // не показывается вовсе (там рисуется одно видео), поэтому до сих пор
+    // маленькое окно было немым: остановить или отмотать можно было, только
+    // развернув приложение обратно.
+    val pipReceiver = remember {
+        object : android.content.BroadcastReceiver() {
+            override fun onReceive(c: Context?, i: Intent?) {
+                val p = playerRef.value ?: return
+                when (i?.getIntExtra(PIP_EXTRA, 0)) {
+                    PIP_PLAY -> if (p.playWhenReady) p.pause() else p.play()
+                    PIP_BACK -> p.seekTo((p.currentPosition - 10_000).coerceAtLeast(0))
+                    PIP_FWD -> p.seekTo(p.currentPosition + 10_000)
+                }
+            }
+        }
+    }
+    DisposableEffect(Unit) {
+        val f = android.content.IntentFilter(PIP_ACTION)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(pipReceiver, f, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            context.registerReceiver(pipReceiver, f)
+        }
+        onDispose { runCatching { context.unregisterReceiver(pipReceiver) } }
+    }
+
+    fun pipParams(playing: Boolean): android.app.PictureInPictureParams? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return null
+        fun act(code: Int, icon: Int, title: String) = android.app.RemoteAction(
+            android.graphics.drawable.Icon.createWithResource(context, icon),
+            title, title,
+            PendingIntent.getBroadcast(
+                context, code,
+                Intent(PIP_ACTION).setPackage(context.packageName).putExtra(PIP_EXTRA, code),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            ),
+        )
+        return android.app.PictureInPictureParams.Builder()
+            .setAspectRatio(android.util.Rational(16, 9))
+            .setActions(
+                listOf(
+                    act(PIP_BACK, R.drawable.ic_pip_back10, "−10 с"),
+                    act(
+                        PIP_PLAY,
+                        if (playing) R.drawable.ic_pip_pause else R.drawable.ic_play_24dp,
+                        if (playing) "Пауза" else "Играть",
+                    ),
+                    act(PIP_FWD, R.drawable.ic_pip_fwd10, "+10 с"),
+                ),
+            )
+            .build()
+    }
+
+    // Значок «пауза/играть» в окне должен меняться вместе с состоянием —
+    // иначе он застынет в том виде, в каком окно открыли.
+    val inPip = (context as? MainActivity)?.inPip == true
+    LaunchedEffect(wantsPlay, inPip) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && inPip) {
+            runCatching {
+                (context as? android.app.Activity)?.setPictureInPictureParams(pipParams(wantsPlay)!!)
+            }
+        }
+    }
+
     val enterPip: () -> Unit = {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val act = context as? android.app.Activity
-            runCatching {
-                act?.enterPictureInPictureMode(
-                    android.app.PictureInPictureParams.Builder()
-                        .setAspectRatio(android.util.Rational(16, 9))
-                        .build()
-                )
-            }
+            runCatching { act?.enterPictureInPictureMode(pipParams(wantsPlay)!!) }
         }
     }
 
@@ -1354,7 +1422,7 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
     }
     // The PlayerView is a stable single instance; when a quality change rebuilds
     // `player`, re-point the view at the new one (else it shows the released one).
-    LaunchedEffect(player) { playerView.player = player }
+    LaunchedEffect(player) { playerView.player = player; playerRef.value = player }
 
     LaunchedEffect(player, audioOnly) {
         val c = player ?: return@LaunchedEffect
@@ -1460,7 +1528,6 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
         if (fullscreen) { fullscreen = false; true } else false
     }
 
-    val inPip = (context as? MainActivity)?.inPip == true
     // Встроенный контроллер PlayerView нужен РОВНО в полноэкранном режиме:
     // свой оверлей мы рисуем только в обычном виде, а в маленьком окне поверх
     // приложений управление не показываем вовсе.
@@ -2099,6 +2166,14 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
 }
 
 /** Пилюля управления поверх кадра: тёмная подложка, мелкий моно. */
+// Команды из маленького окна: система шлёт их широковещательно, поэтому им
+// нужны стабильные имя и коды.
+private const val PIP_ACTION = "com.v2ray.ang.PIP_ACTION"
+private const val PIP_EXTRA = "what"
+private const val PIP_PLAY = 1
+private const val PIP_BACK = 2
+private const val PIP_FWD = 3
+
 @Composable
 private fun OverlayPill(label: String, onClick: (() -> Unit)?) {
     Box(

@@ -175,22 +175,17 @@ object SmartDeskChrome {
 @Composable
 fun VpnkaSmartDeskAppScreen(
     appId: String,
-    appLabel: String,
-    appGlyph: String,
-    online: Boolean,
-    onBack: () -> Unit,   // back to the SmartDesk desktop
-    // Выход на главный экран VPNka живёт в общей нижней панели, поэтому
-    // приложению он больше не нужен; параметр оставлен, чтобы не трогать
-    // вызовы, и намеренно не используется.
-    @Suppress("UNUSED_PARAMETER") onExit: () -> Unit,
+    /** Возврат к столу. Кнопки для него у приложения своей нет — это делает
+     *  «⌂ Стол» в общей панели и системная «назад». */
+    onBack: () -> Unit,
 ) {
     Box(modifier = Modifier.fillMaxSize().background(VpnkaColors.BgOffMid)) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            // Keep the app bar (icon + title) and bottom bar clear of the
-            // system status/navigation bars — the host owns this inset so the
-            // apps inside don't each have to.
+            // Содержимое не должно лезть под системные полосы — хозяин окна
+            // берёт этот отступ на себя, чтобы каждое приложение не делало
+            // это само.
             .systemBarsPadding()
             // Lift the whole app above the soft keyboard whenever any input
             // (messenger, browser omnibox, YouTube search, editors) opens it,
@@ -213,14 +208,14 @@ fun VpnkaSmartDeskAppScreen(
         LaunchedEffect(Unit) {
             if (online && appId != "browser") { SmartDeskSync.sync(); syncTick++ }
         }
-        // Шапка ЛИПКАЯ: она лежит поверх содержимого, а содержимое уезжает
-        // под неё — так в макете (полупрозрачное полотно rgba(bg,.85)).
-        // Раньше шапка занимала свою полосу и просто отталкивала список вниз.
+        // Своей верхней полосы у приложения больше нет.
+        //
+        // Там были «‹», значок приложения и точка связи — и всё это уже есть
+        // внизу: «⌂ Стол» возвращает туда же, куда «‹», значок открытого
+        // приложения подсвечен в панели, состояние связи — на карточке стола.
+        // Полоса занимала полсантиметра сверху и не давала ничего нового.
         Box(modifier = Modifier.fillMaxSize().weight(1f)) {
-            Box(
-                modifier = Modifier.fillMaxSize()
-                    .padding(top = if (SmartDeskChrome.barHidden) 0.dp else APP_BAR_HEIGHT),
-            ) {
+            Box(modifier = Modifier.fillMaxSize()) {
             when (appId) {
                 "calendar" -> CalendarApp(syncTick, onChanged)
                 "contacts" -> ContactsApp(syncTick, onChanged)
@@ -232,12 +227,6 @@ fun VpnkaSmartDeskAppScreen(
                 "help" -> HelpApp()
                 else -> EmptyHint("Приложение недоступно")
             }
-            }
-            if (!SmartDeskChrome.barHidden) {
-                SmartDeskAppBar(
-                    appId = appId, glyph = appGlyph, online = online, onBack = onBack,
-                    modifier = Modifier.align(Alignment.TopCenter),
-                )
             }
         }
         // Своей нижней панели у приложения больше нет: обе кнопки —
@@ -262,51 +251,6 @@ fun SmartDeskStatusScrim() {
     }
 }
 
-
-/** Высота липкой шапки приложения — под неё отводится отступ содержимому. */
-private val APP_BAR_HEIGHT = 50.dp
-
-@Composable
-private fun SmartDeskAppBar(
-    appId: String,
-    glyph: String,
-    online: Boolean,
-    onBack: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(APP_BAR_HEIGHT)
-            // Полупрозрачное полотно: под шапкой видно, что список продолжается,
-            // — сплошная полоса выглядела бы обрезом страницы.
-            .background(VpnkaColors.BgOffMid.copy(alpha = 0.85f))
-            .padding(horizontal = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // Back to the desktop — top-left, no title (the icon speaks for itself).
-        Text(
-            "‹", fontSize = 27.sp, color = VpnkaColors.TextStrong,
-            modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onBack)
-                .padding(horizontal = 10.dp, vertical = 2.dp),
-        )
-        Spacer(Modifier.width(6.dp))
-        Box(
-            modifier = Modifier
-                .size(34.dp)
-                .clip(RoundedCornerShape(11.dp))
-                .background(androidx.compose.ui.graphics.Brush.linearGradient(appTint(appId))),
-            contentAlignment = Alignment.Center,
-        ) { Text(text = glyph, fontSize = 18.sp) }
-        Spacer(Modifier.weight(1f))
-        Box(
-            modifier = Modifier
-                .size(10.dp)
-                .clip(CircleShape)
-                .background(if (online) VpnkaColors.Green else VpnkaColors.Warning),
-        )
-    }
-}
 
 // ---------------------------------------------------------------- Calendar ---
 

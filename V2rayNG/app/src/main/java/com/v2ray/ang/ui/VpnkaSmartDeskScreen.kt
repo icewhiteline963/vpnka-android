@@ -846,11 +846,7 @@ fun VpnkaSmartDeskScreen(
               Box(modifier = Modifier.padding(bottom = bottomOverlay)) {
                 VpnkaSmartDeskAppScreen(
                     appId = app.id,
-                    appLabel = app.label,
-                    appGlyph = app.glyph,
-                    online = online,
                     onBack = { openApp = null; deskTick++ },
-                    onExit = onBack,
                 )
               }
             }
