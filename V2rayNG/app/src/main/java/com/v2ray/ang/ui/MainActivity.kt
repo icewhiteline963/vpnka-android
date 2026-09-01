@@ -1767,6 +1767,21 @@ class MainActivity : HelperBaseComponentActivity() {
                     .filter { !it.frozen }
                     .mapNotNull { it.daysLeft }
                     .maxOrNull(),
+                // Отдельная строка: план, который кончается раньше других,
+                // когда за ним ещё есть живой. Это не потеря связи, а потеря
+                // того, что давал именно он, — и говорить об этом надо своими
+                // словами, а не общей полосой «подписка кончается».
+                endingSoonPlan = subInfo?.subscriptions.orEmpty()
+                    .filter { !it.frozen && it.daysLeft != null }
+                    .let { live ->
+                        if (live.size < 2) return@let null
+                        val soonest = live.minByOrNull { it.daysLeft ?: 0 } ?: return@let null
+                        val last = live.maxOfOrNull { it.daysLeft ?: 0 } ?: return@let null
+                        val days = soonest.daysLeft ?: return@let null
+                        // Молчим, пока запас есть, и когда кончаются все разом.
+                        if (days > 7 || days >= last) return@let null
+                        (soonest.tariff ?: "Подписка") to days
+                    },
                 onRenew = { goBuyOrLink() },
                 // The plan the traffic is actually on, not merely the first
                 // one: the row names that subscription, so the numbers under
