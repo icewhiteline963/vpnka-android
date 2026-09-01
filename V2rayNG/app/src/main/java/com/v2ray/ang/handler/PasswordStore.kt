@@ -71,6 +71,12 @@ object PasswordStore {
         store(list)
     }
 
+    /** Стереть все пароли — при выходе из аккаунта. */
+    fun clearAll() {
+        store.clearAll()
+        store.trim()
+    }
+
     fun remove(host: String) {
         val list = load()
         if (list.removeAll { it.host.equals(host, ignoreCase = true) }) store(list)

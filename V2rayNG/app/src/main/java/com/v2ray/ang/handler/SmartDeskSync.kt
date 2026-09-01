@@ -115,7 +115,7 @@ object SmartDeskSync {
                 // Снимаем ТОЛЬКО отправленное: очередь чистилась целиком, и правка,
                 // сделанная пока запрос был в полёте, исчезала — не уехала на
                 // сервер и стёрлась локально следующей самоочисткой.
-                SmartDeskStore.clearPendingKeys(batch.map { it.kind to it.id })
+                SmartDeskStore.clearPendingKeys(batch.map { Triple(it.kind, it.id, it.updatedAtMs) })
                 true
             }
         } catch (e: Exception) {

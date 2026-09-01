@@ -184,11 +184,61 @@ class BackupActivity : HelperBaseComponentActivity() {
                 "vpnka_browser_passwords",
                 "browser_history",
                 "chat_calls",
-                "webdav_password",
+                // Идентификатор установки. В чужой копии он делает второй
+                // телефон двойником первого: сервер считает их одним
+                // устройством и путает выдачу пробного доступа.
+                "vpnka_install_id",
+                // Что человек искал и что смотрел на YouTube — такой же
+                // журнал, как история браузера.
+                "vpnka_youtube_queries",
+                "vpnka_youtube_positions",
+                "yt_watched_at",
             ).forEach { copy.removeValueForKey(it) }
+            // MMKV — журнал с ДОЗАПИСЬЮ: `removeValueForKey` дописывает
+            // запись «удалено», а прежние байты остаются в файле и уезжают
+            // в архив как есть. Уплотнение переписывает файл заново.
+            copy.trim()
             copy.close()
         }
+        // Пароль от WebDAV лежал НЕ ЗДЕСЬ.
+        //
+        // Из настроек вычищался несуществующий ключ `webdav_password`, а
+        // настоящий конфиг — адрес, логин и пароль одной строкой — хранится
+        // под `WEBDAV_CONFIG` в контейнере MAIN. То есть чистка была, а
+        // пароль всё это время уезжал в архив. Адрес и логин оставляем,
+        // затираем только пароль.
+        runCatching {
+            val main = MMKV.mmkvWithID("MAIN", MMKV.SINGLE_PROCESS_MODE, null, backupDir)
+            val raw = main.decodeString("WEBDAV_CONFIG")
+            if (!raw.isNullOrEmpty()) {
+                val obj = runCatching { org.json.JSONObject(raw) }.getOrNull()
+                if (obj != null && obj.has("password")) {
+                    obj.put("password", "")
+                    main.encode("WEBDAV_CONFIG", obj.toString())
+                } else {
+                    main.removeValueForKey("WEBDAV_CONFIG")
+                }
+                main.trim()
+            }
+            main.close()
+        }
     }
+
+    /**
+     * Ключи, которые обязаны пережить восстановление.
+     *
+     * Это ключи шифрования локальных контейнеров, токен сессии и
+     * идентификатор установки — всё то, чего в архиве СПЕЦИАЛЬНО нет.
+     */
+    private val keepOnRestore = listOf(
+        "vpnka_vault_cryptkey",
+        "vpnka_messenger_cryptkey",
+        "vpnka_smartdesk_cryptkey",
+        "vpnka_pwd_cryptkey",
+        "vpnka_account_token",
+        "vpnka_recovery_code",
+        "vpnka_install_id",
+    )
 
     private fun restoreConfiguration(zipFile: File): Boolean {
         val backupDir = this.cacheDir.absolutePath + "/${System.currentTimeMillis()}"
@@ -197,7 +247,24 @@ class BackupActivity : HelperBaseComponentActivity() {
             return false
         }
 
+        // Восстановление УНИЧТОЖАЛО данные — как раз из-за того, что копия
+        // стала безопасной.
+        //
+        // Секретов в архиве нет, но `restoreAllFromDirectory` кладёт
+        // контейнер настроек ПОВЕРХ нынешнего — вместе с ключами шифрования.
+        // Сами зашифрованные контейнеры (сейф, переписка, пароли, заметки)
+        // остаются на телефоне, а ключи к ним пропадают: человек делает
+        // копию, восстанавливает её на том же телефоне — и теряет всё
+        // личное разом. Поэтому снимаем эти ключи ДО восстановления и
+        // возвращаем ПОСЛЕ.
+        val preserved = runCatching {
+            keepOnRestore.mapNotNull { k ->
+                MmkvManager.decodeSettingsString(k)?.takeIf { it.isNotEmpty() }?.let { k to it }
+            }
+        }.getOrDefault(emptyList())
+
         val count = MMKV.restoreAllFromDirectory(backupDir)
+        runCatching { preserved.forEach { (k, v) -> MmkvManager.encodeSettings(k, v) } }
         SettingsChangeManager.makeSetupGroupTab()
         SettingsChangeManager.makeRestartService()
 

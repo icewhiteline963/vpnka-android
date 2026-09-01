@@ -240,6 +240,12 @@ private fun TextNoteBody(note: SmartDeskStore.Note, title: String, onSave: (Smar
     DisposableEffect(note.id) {
         onDispose {
             val (t, body, sp) = latest
+            // Защита от воскрешения стояла только у списка-чеклиста.
+            //
+            // У текста «удалить» тоже выносит редактор из композиции, и
+            // сохранение при уходе перетирало уже поставленную «могилу»:
+            // удаление не доезжало до сервера, заметка возвращалась.
+            if (SmartDeskStore.isDeleted(note.id)) return@onDispose
             if (t != note.title || body != note.body || sp != note.spans) {
                 onSave(
                     note.copy(

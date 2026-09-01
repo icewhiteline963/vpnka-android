@@ -195,7 +195,18 @@ fun VpnkaSmartDeskAppScreen(
         // app hides it while a nested screen is open (e.g. a chat) via
         // SmartDeskChrome, so its own header isn't stacked under ours. Reset on
         // every app open so a fresh app always starts with the bar shown.
-        LaunchedEffect(appId) { SmartDeskChrome.barHidden = false }
+        // Сброс флага — СИНХРОННЫЙ и до эффектов приложения.
+        //
+        // Был LaunchedEffect: его тело запускается корутиной, то есть ПОЗЖЕ
+        // синхронного DisposableEffect мессенджера, который панель прячет.
+        // Порядок выходил «спрятать → показать», и в мессенджере всё это
+        // время висели две пятипунктовые полосы одна над другой. Правку я
+        // объявлял в прошлой версии, но в файл она не попала.
+        val shownApp = remember(appId) { appId }
+        DisposableEffect(shownApp) {
+            SmartDeskChrome.barHidden = false
+            onDispose {}
+        }
         // Sync on open (through the VPN) and after every edit; syncTick keys
         // each app's list so it re-reads once the server's view is merged in.
         val scope = rememberCoroutineScope()
@@ -1193,24 +1204,23 @@ private class BrowserTab(
         // умеет; иначе — первым делом на старте страницы. Второй путь чуть
         // слабее (скрипт страницы теоретически успевает раньше), но лучше,
         // чем ничего.
-        if (androidx.webkit.WebViewFeature.isFeatureSupported(
-                androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT,
+        // Запасной путь включается по ФАКТУ установки, а не по поддержке.
+        //
+        // Раньше проверяли только «умеет ли WebView»: если умеет, но вызов
+        // бросил, скрипт не ставился НИКУДА — запасная ветка молчала, потому
+        // что смотрела на ту же поддержку. WebRTC при этом оставался живым, и
+        // страница видела настоящий адрес.
+        val startScriptInstalled = androidx.webkit.WebViewFeature.isFeatureSupported(
+            androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT,
+        ) && runCatching {
+            androidx.webkit.WebViewCompat.addDocumentStartJavaScript(
+                this, NO_WEBRTC_JS, setOf("*"),
             )
-        ) {
-            runCatching {
-                androidx.webkit.WebViewCompat.addDocumentStartJavaScript(
-                    this, NO_WEBRTC_JS, setOf("*"),
-                )
-            }
-        }
+            true
+        }.getOrDefault(false)
         webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView?, u: String?, favicon: android.graphics.Bitmap?) {
-                if (!androidx.webkit.WebViewFeature.isFeatureSupported(
-                        androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT,
-                    )
-                ) {
-                    view?.evaluateJavascript(NO_WEBRTC_JS, null)
-                }
+                if (!startScriptInstalled) view?.evaluateJavascript(NO_WEBRTC_JS, null)
                 u?.let { this@BrowserTab.url.value = it }; this@BrowserTab.canBack.value = canGoBack(); this@BrowserTab.canFwd.value = canGoForward()
             }
             override fun onPageFinished(view: WebView?, u: String?) {
@@ -1221,7 +1231,9 @@ private class BrowserTab(
                     // тогда наш же автозаполнитель отдаст ему пароль.
                     val host = runCatching { android.net.Uri.parse(u ?: "").host }.getOrNull()
                     val creds = if (u?.startsWith("https://") == true && host != null) {
-                        PasswordStore.credentialsJson(host)
+                        // Повреждённое хранилище не должно ронять приложение
+                        // на КАЖДОЙ https-странице.
+                        runCatching { PasswordStore.credentialsJson(host) }.getOrNull()
                     } else {
                         null
                     }
@@ -1295,7 +1307,13 @@ private const val NO_WEBRTC_JS = """
 private const val PWD_JS = """
 (function(){
  try{
-  var raw=null; try{ raw=window.__vpnkaCreds ? JSON.stringify(window.__vpnkaCreds) : null; }catch(e){}
+  var raw=null;
+  try{
+    raw = window.__vpnkaCreds ? JSON.stringify(window.__vpnkaCreds) : null;
+    // Сразу забираем значение со страницы: пока оно лежало в глобальной
+    // переменной, его читал любой сторонний скрипт главного фрейма.
+    try { delete window.__vpnkaCreds; } catch(e) { window.__vpnkaCreds = null; }
+  }catch(e){}
   if(raw){ try{ var c=JSON.parse(raw);
     var pw=document.querySelector('input[type=password]');
     if(pw){ pw.value=c.p;
@@ -1429,6 +1447,20 @@ private fun BrowserApp() {
     var nextId by remember { mutableIntStateOf(1) }
     var activeId by remember { mutableIntStateOf(0) }
     val active = tabs.firstOrNull { it.id == activeId } ?: tabs.first()
+    // Фоновые вкладки СТАВИМ НА ПАУЗУ.
+    //
+    // Закрытую вкладку глушили, а просто переключённую — нет: она оставалась
+    // живой и продолжала крутить скрипты, звук и сеть. При включённом ВПН
+    // это ещё и трафик, за который человек платит, из страницы, которую он
+    // уже не смотрит.
+    LaunchedEffect(activeId, tabs.size) {
+        tabs.forEach { t ->
+            runCatching {
+                if (t.id == activeId) { t.webView.onResume(); t.webView.resumeTimers() }
+                else t.webView.onPause()
+            }
+        }
+    }
     var editing by remember { mutableStateOf(false) }
     var omni by remember { mutableStateOf(androidx.compose.ui.text.input.TextFieldValue("")) }
     var showTabs by remember { mutableStateOf(false) }
@@ -1777,8 +1809,16 @@ private fun BrowserApp() {
 
     // Нет туннеля — закрываем содержимое ЗАСЛОНКОЙ, но вкладки живут.
     if (!connected) {
+        // Заслонка перехватывает и касания, и «назад».
+        //
+        // Без своего обработчика ввода Compose пропускал нажатия НАСКВОЗЬ:
+        // по невидимой странице можно было листать, жать ссылки и вводить в
+        // формы, а «назад» ходила по её истории вместо выхода из браузера.
+        SmartDeskBackHandler { true }
         Box(
-            modifier = Modifier.fillMaxSize().background(VpnkaColors.BgOffMid).padding(32.dp),
+            modifier = Modifier.fillMaxSize().background(VpnkaColors.BgOffMid)
+                .pointerInput(Unit) { detectTapGestures { } }
+                .padding(32.dp),
             contentAlignment = Alignment.Center,
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {

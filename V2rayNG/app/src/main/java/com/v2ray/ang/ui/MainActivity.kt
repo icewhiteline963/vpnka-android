@@ -275,6 +275,19 @@ class MainActivity : HelperBaseComponentActivity() {
         showSubscription = false
         showRecovery = false
         showPlansList = false
+        // Список закрывался не весь.
+        //
+        // Уведомление о сообщении или нажатие ярлыка открывали рабочий стол,
+        // но открытая переписка поддержки, экран уведомлений, карточка
+        // тарифа и выбор сервера оставались сверху — человек жал на
+        // уведомление и попадал не туда. Особенно «Серверы»: под ним рабочий
+        // стол вообще не рисуется.
+        openedTicket = null
+        openedPlan = null
+        showNotificationSettings = false
+        showPlanPicker = false
+        showServerPicker = false
+        showServers = false
     }
 
     /** A home-screen app shortcut was tapped: open SmartDesk on that app. */
@@ -497,7 +510,14 @@ class MainActivity : HelperBaseComponentActivity() {
     private fun closeTopVpnkaScreen(): Boolean = logBack(when {
         // SmartDesk steps back internally first (overlay/app → desktop); only
         // from the bare desktop does back close the whole surface.
-        showSmartDesk -> { if (smartDeskBack?.invoke() != true) showSmartDesk = false; true }
+        // Условие ТО ЖЕ, что и при отрисовке (`showSmartDesk && !showServers`).
+        //
+        // Иначе при открытых «Серверах» стол на экране не виден, а «назад»
+        // всё равно уходила внутрь него: нажатие пропадало впустую, экран не
+        // менялся.
+        showSmartDesk && !showServers -> {
+            if (smartDeskBack?.invoke() != true) showSmartDesk = false; true
+        }
         openedTicket != null -> { openedTicket = null; true }
         showTickets -> { showTickets = false; true }
         showSupport -> { showSupport = false; true }

@@ -157,13 +157,23 @@ object SmartDeskStore {
      * следующей самоочисткой. Синхронизация запускается на каждое
      * сохранение, так что параллельные вызовы — обычное дело.
      */
-    fun clearPendingKeys(sent: List<Pair<String, String>>) {
+    fun clearPendingKeys(sent: List<Triple<String, String, Long>>) {
         if (sent.isEmpty()) return
+        // Сверяем не только ЧТО уехало, но и КАКОЙ ВЕРСИИ.
+        //
+        // `queue` держит одну запись на элемент, схлопывая повторные правки.
+        // Значит правка ТОЙ ЖЕ заметки, сделанная пока запрос в полёте,
+        // заменяла запись в очереди — и снималась как «отправленная», не
+        // уехав на сервер. Ключа мало, нужна отметка времени.
         val gone = sent.toSet()
-        val left = readChanges().filterNot { (it.kind to it.id) in gone }
-        if (left.isEmpty()) store.remove(KEY_PENDING)
-        else store.encode(KEY_PENDING, gson.toJson(left))
+        synchronized(pendingLock) {
+            val l = readChanges().filterNot { Triple(it.kind, it.id, it.updatedAtMs) in gone }
+            if (l.isEmpty()) store.remove(KEY_PENDING) else store.encode(KEY_PENDING, gson.toJson(l))
+        }
     }
+
+    /** Общий замок очереди: `queue` и `clearPendingKeys` правят один ключ. */
+    private val pendingLock = Any()
 
     /** Maximum-privacy self-wipe. After a confirmed sync (queue empty, so nothing
      *  is lost) the local records are erased and the cursor reset, so the next
@@ -190,9 +200,11 @@ object SmartDeskStore {
 
     /** Record a pending change, collapsing repeated edits of the same item. */
     private fun queue(kind: String, id: String, updatedAtMs: Long, deleted: Boolean, payloadJson: String) {
-        val list = readChanges().filterNot { it.kind == kind && it.id == id }.toMutableList()
-        list.add(Change(kind, id, updatedAtMs, deleted, payloadJson))
-        store.encode(KEY_PENDING, gson.toJson(list))
+        synchronized(pendingLock) {
+            val list = readChanges().filterNot { it.kind == kind && it.id == id }.toMutableList()
+            list.add(Change(kind, id, updatedAtMs, deleted, payloadJson))
+            store.encode(KEY_PENDING, gson.toJson(list))
+        }
     }
 
     /**

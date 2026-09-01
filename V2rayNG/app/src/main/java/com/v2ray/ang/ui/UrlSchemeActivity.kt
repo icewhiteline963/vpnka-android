@@ -23,6 +23,11 @@ class UrlSchemeActivity : BaseComponentActivity() {
     private var asking = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // super обязателен: без него Android бросает SuperNotCalledException.
+        // Раньше активность жила один кадр и сразу закрывалась, поэтому
+        // недосмотр не проявлялся; теперь на ней держится вопрос об импорте —
+        // и падать она стала бы ровно там, где нужна.
+        super.onCreate(savedInstanceState)
         try {
             intent.apply {
                 if (action == Intent.ACTION_SEND) {

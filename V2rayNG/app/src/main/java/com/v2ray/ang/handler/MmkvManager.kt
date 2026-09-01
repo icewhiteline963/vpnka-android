@@ -989,6 +989,11 @@ object MmkvManager {
         if (code.isNullOrBlank()) return
         settingsStorage.encode(KEY_VPNKA_RECOVERY, code)
     }
+
+    /** Забыть код восстановления — он принадлежит вышедшему аккаунту. */
+    fun clearRecoveryCode() {
+        settingsStorage.removeValueForKey(KEY_VPNKA_RECOVERY)
+    }
     // Where a plan's own subscription lives. The `g/` is not decoration:
     // `/sub/<token>` is the client's aggregate feed and 404s for a group
     // token, so every per-plan group the app created pointed at nothing.

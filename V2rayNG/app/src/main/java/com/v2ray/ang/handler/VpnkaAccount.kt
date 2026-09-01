@@ -828,6 +828,20 @@ object VpnkaAccount {
         // личность в хранилище затиралась чужим ключом.
         runCatching { Vault.lock() }
         runCatching { Messenger.forgetLocalIdentity() }
+        // Личного на телефоне оставалось больше, чем убиралось.
+        //
+        // Сейф и мессенджер снимались, а рабочий стол (заметки, контакты,
+        // календарь), пароли от сайтов, код восстановления, история браузера,
+        // журнал звонков и просмотренное на YouTube — нет. Человек, который
+        // отдаёт телефон и специально выходит из аккаунта, вправе считать,
+        // что после этого его на телефоне не осталось.
+        runCatching { SmartDeskStore.wipeLocal() }
+        runCatching { SmartDeskStore.clearPending() }
+        runCatching { PasswordStore.clearAll() }
+        runCatching { MmkvManager.clearRecoveryCode() }
+        runCatching { BrowserHistory.clear() }
+        runCatching { ChatPrefs.clearCalls() }
+        runCatching { YouTubeHistory.clearQueries() }
         if (token == null) return@withContext
         try {
             http().newCall(

@@ -434,7 +434,12 @@ object Messenger {
         // отправка сразу после холодного старта уходила без подписи — у
         // получателя навсегда «не подтверждено».
         ensureIdentity()
-        ensureKey(contactId)
+        // Результат проверки ключа РАНЬШЕ выбрасывался.
+        //
+        // Ключ дотягивали до заливки, но не смотрели, дотянулся ли он: без
+        // ключа блоб всё равно уезжал целиком и падал уже на шифровании —
+        // ровно тот случай, ради которого проверку и заводили.
+        if (!ensureKey(contactId)) return@withContext false
         val c = contact(contactId) ?: return@withContext false
         val u = java.util.UUID.randomUUID().toString()
         val ct = try { seal(signedJson(MsgPayload(ts = System.currentTimeMillis(), u = u, k = "text", t = text)), c.pubKey) }
@@ -821,7 +826,12 @@ object Messenger {
         // отправка сразу после холодного старта уходила без подписи — у
         // получателя навсегда «не подтверждено».
         ensureIdentity()
-        ensureKey(contactId)
+        // Результат проверки ключа РАНЬШЕ выбрасывался.
+        //
+        // Ключ дотягивали до заливки, но не смотрели, дотянулся ли он: без
+        // ключа блоб всё равно уезжал целиком и падал уже на шифровании —
+        // ровно тот случай, ради которого проверку и заводили.
+        if (!ensureKey(contactId)) return@withContext false
         val c = contact(contactId) ?: return@withContext false
         val u = java.util.UUID.randomUUID().toString()
         val k = ByteArray(32).also { SecureRandom().nextBytes(it) }
@@ -853,7 +863,12 @@ object Messenger {
         // отправка сразу после холодного старта уходила без подписи — у
         // получателя навсегда «не подтверждено».
         ensureIdentity()
-        ensureKey(contactId)
+        // Результат проверки ключа РАНЬШЕ выбрасывался.
+        //
+        // Ключ дотягивали до заливки, но не смотрели, дотянулся ли он: без
+        // ключа блоб всё равно уезжал целиком и падал уже на шифровании —
+        // ровно тот случай, ради которого проверку и заводили.
+        if (!ensureKey(contactId)) return@withContext false
         val c = contact(contactId) ?: return@withContext false
         val u = java.util.UUID.randomUUID().toString()
         val k = ByteArray(32).also { SecureRandom().nextBytes(it) }
@@ -885,7 +900,12 @@ object Messenger {
         // отправка сразу после холодного старта уходила без подписи — у
         // получателя навсегда «не подтверждено».
         ensureIdentity()
-        ensureKey(contactId)
+        // Результат проверки ключа РАНЬШЕ выбрасывался.
+        //
+        // Ключ дотягивали до заливки, но не смотрели, дотянулся ли он: без
+        // ключа блоб всё равно уезжал целиком и падал уже на шифровании —
+        // ровно тот случай, ради которого проверку и заводили.
+        if (!ensureKey(contactId)) return@withContext false
         val c = contact(contactId) ?: return@withContext false
         val u = java.util.UUID.randomUUID().toString()
         val k = ByteArray(32).also { SecureRandom().nextBytes(it) }

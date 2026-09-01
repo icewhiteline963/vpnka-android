@@ -219,6 +219,13 @@ fun VpnkaMessengerApp() {
         myChannels = Channels.mine()
         pollOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
         while (true) {
+            // Опрос идёт и без включённого ВПН — НАМЕРЕННО.
+            //
+            // Раньше цикл стоял под `if (VpnkaColors.connected)`, и человек с
+            // выключенным туннелем просто не получал сообщений, никак об этом
+            // не узнавая. Переписка зашифрована на устройстве, а сам факт
+            // обращения к нашему домену провайдер видит и так — на входе в
+            // аккаунт и обновлении подписки.
             run {
                 Messenger.connectWs { type, from ->
                     when (type) {

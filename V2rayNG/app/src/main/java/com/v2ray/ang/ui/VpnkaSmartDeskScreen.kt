@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -311,6 +312,14 @@ fun VpnkaSmartDeskScreen(
     // нельзя: величина оставалась от прошлого замера, и содержимое
     // поднималось над низом на полторы сотни точек.
     val bottomOverlay = if (SmartDeskChrome.barHidden) navInset else barHeight
+    // Пока открыта клавиатура, место под панель НЕ отводим.
+    //
+    // Приложение внутри поднимает себя над клавиатурой само (`imePadding`),
+    // а этот отступ продолжал резервировать высоту панели вместе с
+    // навигационной вставкой — и над клавиатурой висела мёртвая полоса в
+    // сотню точек. Панель в этот момент всё равно скрыта за клавиатурой.
+    val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
+    val appBottomOverlay = if (imeBottom > 0) 0.dp else bottomOverlay
     var wallpaper by remember {
         mutableStateOf(MmkvManager.decodeSettingsString("vpnka_smartdesk_wallpaper") ?: "flow")
     }
@@ -801,7 +810,7 @@ fun VpnkaSmartDeskScreen(
               // проглядывала подложка стола на высоту системной навигации.
               Box(
                   modifier = Modifier.background(VpnkaColors.BgOffMid)
-                      .padding(bottom = bottomOverlay),
+                      .padding(bottom = appBottomOverlay),
               ) {
                 VpnkaSmartDeskAppScreen(
                     appId = app.id,
