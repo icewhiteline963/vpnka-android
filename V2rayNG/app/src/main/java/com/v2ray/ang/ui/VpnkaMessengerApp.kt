@@ -1188,6 +1188,19 @@ private fun ChatScreen(
             }
         }
         }
+        // «Печатает…» — строкой над полем ввода.
+        //
+        // Раньше она жила под именем в шапке; шапки не стало, а само событие
+        // приходит по-прежнему. Здесь она появляется только на те секунды,
+        // пока собеседник печатает, и в покое места не занимает.
+        if (typing) {
+            Text(
+                "печатает…",
+                fontFamily = VpnkaFonts.manrope600, fontSize = 11.sp,
+                color = VpnkaColors.Accent,
+                modifier = Modifier.padding(start = 14.dp, bottom = 2.dp),
+            )
+        }
         Row(
             modifier = Modifier.fillMaxWidth().padding(8.dp),
             verticalAlignment = Alignment.CenterVertically,
