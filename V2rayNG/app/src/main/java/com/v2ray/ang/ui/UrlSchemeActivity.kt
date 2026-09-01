@@ -107,7 +107,7 @@ class UrlSchemeActivity : BaseComponentActivity() {
         val shown = uri.host ?: decodedUrl.take(40)
         val target = decodedUrl
 
-        androidx.appcompat.app.AlertDialog.Builder(this)
+        android.app.AlertDialog.Builder(this)
             .setTitle("Добавить конфигурацию?")
             .setMessage(
                 "Ссылка от «$shown» хочет добавить серверы в VPNka.\n\n" +
