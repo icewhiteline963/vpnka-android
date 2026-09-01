@@ -1155,6 +1155,15 @@ private class BrowserTab(
     val canFwd = mutableStateOf(false)
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
+    /** Пропуск главного фрейма к мосту сохранения паролей.
+     *
+     * Свой на вкладку и на всё её время. Обновлять на каждую загрузку
+     * нельзя: обработчик отправки формы ставится один раз на документ и
+     * держит пропуск в замыкании — после смены сохранение перестало бы
+     * работать вовсе. Чужому фрейму он недоступен и так: значение кладётся
+     * только в главный фрейм и тут же убирается со страницы. */
+    private val pwdNonce: String = java.util.UUID.randomUUID().toString()
+
     /** The host we actually trust is the tab's current URL — NOT anything the
      *  page's JS passes us. This is what stops a site reading other sites' creds. */
     private fun currentHost(): String? = try {
@@ -1189,7 +1198,16 @@ private class BrowserTab(
         // сохранить — там всё равно решает человек в диалоге.
         if (!incognito) addJavascriptInterface(object {
             @android.webkit.JavascriptInterface
-            fun promptSave(user: String, pass: String) {
+            fun promptSave(pass: String, user: String, secret: String) {
+                // Мост виден ВСЕМ фреймам, включая чужие рекламные.
+                //
+                // Прочитать пароль через него уже нельзя, но предложить
+                // сохранить — было можно: сторонний скрипт в iframe подсовывал
+                // свою пару, диалог показывался от имени ВЕРХНЕГО сайта, и
+                // человек одним «Сохранить» портил себе настоящую запись.
+                // Пропуск на каждую загрузку кладём только в главный фрейм —
+                // из чужого источника его не прочитать.
+                if (secret.isEmpty() || secret != pwdNonce) return
                 val host = currentHost() ?: return
                 mainHandler.post { onOfferSave(host, user, pass) }
             }
@@ -1242,7 +1260,8 @@ private class BrowserTab(
                     // evaluateJavascript выполняется в ГЛАВНОМ фрейме —
                     // чужому iframe эти значения не достаются.
                     view?.evaluateJavascript(
-                        "(function(){window.__vpnkaCreds=" + (creds ?: "null") + ";})();",
+                        "(function(){window.__vpnkaCreds=" + (creds ?: "null") +
+                            ";window.__vpnkaN=" + org.json.JSONObject.quote(pwdNonce) + ";})();",
                         null,
                     )
                     view?.evaluateJavascript(PWD_JS, null)
@@ -1324,12 +1343,16 @@ private const val PWD_JS = """
       if(uf&&c.u) uf.value=c.u;
     }
   }catch(e){} }
+  // Пропуск забираем СРАЗУ и держим в замыкании: со страницы он исчезает,
+  // и сторонний скрипт главного фрейма его тоже не прочитает.
+  var __n='';
+  try{ __n = window.__vpnkaN || ''; delete window.__vpnkaN; }catch(e){ try{ window.__vpnkaN=null; }catch(e2){} }
   if(!window.__vpnkaPwdHook){ window.__vpnkaPwdHook=true;
    document.addEventListener('submit', function(ev){
     try{ var f=ev.target; var pw=f&&f.querySelector?f.querySelector('input[type=password]'):null; if(!pw||!pw.value) return;
       var ins=f.querySelectorAll('input'); var u='';
       for(var i=0;i<ins.length;i++){ if(ins[i]===pw) break; var t=(ins[i].type||'text').toLowerCase(); if(t=='text'||t=='email'||t=='tel') u=ins[i].value; }
-      VpnkaPwd.promptSave(u, pw.value);
+      VpnkaPwd.promptSave(pw.value, u, __n);
     }catch(e){}
    }, true);
   }

@@ -269,6 +269,15 @@ object Vault {
                 android.util.Log.w("Vault", "wrapped_privkey не открылся текущим ключом")
                 return@withContext null
             }
+            // Расшифровалось, но внутри пусто — тоже НЕ перегенерируем.
+            //
+            // Отказ ставился только на исключение. Если блоб открылся, а
+            // полей в нём нет, код шёл дальше и записывал новую пару поверх
+            // существующей записи — с тем же исходом: переписка на других
+            // устройствах человека становилась нечитаемой. Пустой блоб —
+            // это поломка, о которой надо сказать, а не молча подменить.
+            android.util.Log.w("Vault", "wrapped_privkey пуст — личность не подменяем")
+            return@withContext null
         }
         val kp = java.security.KeyPairGenerator.getInstance("RSA")
             .apply { initialize(2048) }.generateKeyPair()
