@@ -76,10 +76,23 @@ object Messenger {
 
     private val store: MMKV by lazy { MMKV.mmkvWithID(ID_STORE, MMKV.SINGLE_PROCESS_MODE, cryptKey()) }
 
-    data class Contact(val id: Long, val name: String, val pubKey: String)
+    data class Contact(
+        val id: Long,
+        val name: String,
+        val pubKey: String,
+        /** Ключ собеседника сменился и человек этого ещё не подтвердил. */
+        val keyChanged: Boolean = false,
+    )
     data class Msg(
         val id: Long, val mine: Boolean, val text: String, val ts: Long,
         val u: String = "", val k: String = "text", val img: String = "", val dur: Int = 0,
+        /**
+         * Доказано ли авторство подписью отправителя.
+         *
+         * У своих и у старых сообщений — true (их писали до подписей, и
+         * пугать задним числом нечем). У входящих ставится проверкой.
+         */
+        val verified: Boolean = true,
     )
 
     // --- keys: the RSA identity now lives in the VAULT, shared across devices
@@ -135,8 +148,29 @@ object Messenger {
     }
 
     fun addContact(c: Contact) {
+        val old = contacts().firstOrNull { it.id == c.id }
+        // Смена ключа собеседника — это событие, а не мелочь.
+        //
+        // Ключи мы получаем из НАШЕГО же справочника. Молчаливая замена
+        // означает, что сервер (или тот, кто его получит) подставляет свой
+        // ключ и читает переписку — при том что продукт продаётся как «сервер
+        // не читает ничего». Новый ключ принимаем (иначе человеку нечем
+        // писать), но поднимаем флаг и говорим об этом в чате.
+        val changed = old != null &&
+            old.pubKey.isNotBlank() &&
+            c.pubKey.isNotBlank() &&
+            old.pubKey != c.pubKey
         val list = contacts().filterNot { it.id == c.id }.toMutableList()
-        list.add(c)
+        list.add(c.copy(keyChanged = changed || (old?.keyChanged == true && old.pubKey == c.pubKey)))
+        store.encode(KEY_CONTACTS, gson.toJson(list))
+    }
+
+    /** Человек сверил отпечаток и подтвердил, что всё в порядке. */
+    fun acceptKeyChange(contactId: Long) {
+        val list = contacts().toMutableList()
+        val i = list.indexOfFirst { it.id == contactId }
+        if (i < 0) return
+        list[i] = list[i].copy(keyChanged = false)
         store.encode(KEY_CONTACTS, gson.toJson(list))
     }
 
@@ -210,6 +244,43 @@ object Messenger {
     fun consumePendingChat(): Long { val v = pendingChat; pendingChat = 0L; return v }
 
     // --- crypto ---
+
+    /**
+     * Подписать тело пакета своим ключом личности.
+     *
+     * Подписываем ПЛАЙНТЕКСТ до запечатывания: получатель расшифрует его
+     * своим ключом и проверит подпись публичным ключом отправителя.
+     */
+    private fun signPayload(json: String): String = runCatching {
+        val priv = privateKey() ?: return@runCatching ""
+        val sg = java.security.Signature.getInstance("SHA256withRSA")
+        sg.initSign(priv)
+        sg.update(json.toByteArray())
+        Base64.encodeToString(sg.sign(), b64f)
+    }.getOrDefault("")
+
+    /** Проверить подпись пакета публичным ключом отправителя. */
+    private fun verifyPayload(json: String, sigB64: String, senderPubB64: String): Boolean =
+        runCatching {
+            if (sigB64.isBlank() || senderPubB64.isBlank()) return@runCatching false
+            val kf = KeyFactory.getInstance("RSA")
+            val pub = kf.generatePublic(X509EncodedKeySpec(Base64.decode(senderPubB64, b64f)))
+            val sg = java.security.Signature.getInstance("SHA256withRSA")
+            sg.initVerify(pub)
+            sg.update(json.toByteArray())
+            sg.verify(Base64.decode(sigB64, b64f))
+        }.getOrDefault(false)
+
+    /** Собрать подписанный JSON пакета: сначала тело, потом подпись рядом. */
+    private fun signedJson(payload: MsgPayload): String {
+        val body = gson.toJson(payload)
+        val sig = signPayload(body)
+        // Подпись кладём отдельным полем поверх тела — так проверяющему не
+        // нужно гадать, что именно подписано: ровно тело без `sig`.
+        val obj = gson.fromJson(body, com.google.gson.JsonObject::class.java)
+        obj.addProperty("sig", sig)
+        return gson.toJson(obj)
+    }
 
     private fun seal(plaintext: String, recipientPubB64: String): String {
         val kf = KeyFactory.getInstance("RSA")
@@ -348,7 +419,7 @@ object Messenger {
         ensureKey(contactId)
         val c = contact(contactId) ?: return@withContext false
         val u = java.util.UUID.randomUUID().toString()
-        val ct = try { seal(gson.toJson(MsgPayload(u = u, k = "text", t = text)), c.pubKey) }
+        val ct = try { seal(signedJson(MsgPayload(u = u, k = "text", t = text)), c.pubKey) }
             catch (e: Exception) { return@withContext false }
         val mid = postMessage(contactId, ct) ?: return@withContext false
         appendMessage(contactId, Msg(id = mid, mine = true, text = text, ts = System.currentTimeMillis(), u = u))
@@ -607,6 +678,18 @@ object Messenger {
         // decrypted with `key` (AES-256 base64). Cross-platform envelope {iv,ct}.
         // `dur` is the voice-message length in seconds.
         val media: Long = 0, val key: String = "", val mime: String = "", val dur: Int = 0,
+        /**
+         * Подпись отправителя (SHA256withRSA по телу пакета без этого поля).
+         *
+         * До неё авторство определялось метаданными СЕРВЕРА: он знает
+         * публичные ключи всех (сам их хранит) и мог изготовить корректно
+         * зашифрованное сообщение с любым «от кого». Слепой релей защищал
+         * содержимое, но не авторство — а продукт обещает, что сервер не
+         * может ничего.
+         *
+         * Пустая строка = пакет от старой версии: показываем, но помечаем.
+         */
+        val sig: String = "",
     )
 
     // AES-GCM for media blobs — {iv,ct} envelope, byte-compatible with the web.
@@ -710,14 +793,14 @@ object Messenger {
         val mediaId = uploadMedia(contactId, aesGcm(k, jpeg), onProgress) ?: return@withContext false
         val keyB = Base64.encodeToString(k, b64f)
         val ct = try {
-            seal(gson.toJson(MsgPayload(u = u, k = "image", media = mediaId, key = keyB, mime = "image/jpeg")), c.pubKey)
+            seal(signedJson(MsgPayload(u = u, k = "image", media = mediaId, key = keyB, mime = "image/jpeg")), c.pubKey)
         } catch (e: Exception) { return@withContext false }
         val mid = postMessage(contactId, ct) ?: return@withContext false
         appendMessage(contactId, Msg(id = mid, mine = true, text = "", ts = System.currentTimeMillis(), u = u, k = "image", img = Base64.encodeToString(jpeg, b64f)))
         val myId = myClientId()
         if (myId > 0) {
             try {
-                val self = gson.toJson(MsgPayload(u = u, k = "image", media = mediaId, key = keyB, mime = "image/jpeg", peer = contactId, self = true, mid = mid))
+                val self = signedJson(MsgPayload(u = u, k = "image", media = mediaId, key = keyB, mime = "image/jpeg", peer = contactId, self = true, mid = mid))
                 postMessage(myId, seal(self, myPublicKey()))
             } catch (e: Exception) { /* best-effort sync */ }
         }
@@ -738,14 +821,14 @@ object Messenger {
         val mediaId = uploadMedia(contactId, aesGcm(k, m4a), onProgress) ?: return@withContext false
         val keyB = Base64.encodeToString(k, b64f)
         val ct = try {
-            seal(gson.toJson(MsgPayload(u = u, k = "voice", media = mediaId, key = keyB, mime = "audio/mp4", dur = durSec)), c.pubKey)
+            seal(signedJson(MsgPayload(u = u, k = "voice", media = mediaId, key = keyB, mime = "audio/mp4", dur = durSec)), c.pubKey)
         } catch (e: Exception) { return@withContext false }
         val mid = postMessage(contactId, ct) ?: return@withContext false
         appendMessage(contactId, Msg(id = mid, mine = true, text = "", ts = System.currentTimeMillis(), u = u, k = "voice", img = Base64.encodeToString(m4a, b64f), dur = durSec))
         val myId = myClientId()
         if (myId > 0) {
             try {
-                val self = gson.toJson(MsgPayload(u = u, k = "voice", media = mediaId, key = keyB, mime = "audio/mp4", dur = durSec, peer = contactId, self = true, mid = mid))
+                val self = signedJson(MsgPayload(u = u, k = "voice", media = mediaId, key = keyB, mime = "audio/mp4", dur = durSec, peer = contactId, self = true, mid = mid))
                 postMessage(myId, seal(self, myPublicKey()))
             } catch (e: Exception) { /* best-effort sync */ }
         }
@@ -766,14 +849,14 @@ object Messenger {
         val mediaId = uploadMedia(contactId, aesGcm(k, mp4), onProgress) ?: return@withContext false
         val keyB = Base64.encodeToString(k, b64f)
         val ct = try {
-            seal(gson.toJson(MsgPayload(u = u, k = "video", media = mediaId, key = keyB, mime = "video/mp4", dur = durSec)), c.pubKey)
+            seal(signedJson(MsgPayload(u = u, k = "video", media = mediaId, key = keyB, mime = "video/mp4", dur = durSec)), c.pubKey)
         } catch (e: Exception) { return@withContext false }
         val mid = postMessage(contactId, ct) ?: return@withContext false
         appendMessage(contactId, Msg(id = mid, mine = true, text = "", ts = System.currentTimeMillis(), u = u, k = "video", img = Base64.encodeToString(mp4, b64f), dur = durSec))
         val myId = myClientId()
         if (myId > 0) {
             try {
-                val self = gson.toJson(MsgPayload(u = u, k = "video", media = mediaId, key = keyB, mime = "video/mp4", dur = durSec, peer = contactId, self = true, mid = mid))
+                val self = signedJson(MsgPayload(u = u, k = "video", media = mediaId, key = keyB, mime = "video/mp4", dur = durSec, peer = contactId, self = true, mid = mid))
                 postMessage(myId, seal(self, myPublicKey()))
             } catch (e: Exception) { /* best-effort sync */ }
         }
@@ -784,6 +867,25 @@ object Messenger {
         val o = gson.fromJson(raw, MsgPayload::class.java)
         if (o != null && o.k.isNotEmpty()) o else MsgPayload(k = "text", t = raw)
     } catch (e: Exception) { MsgPayload(k = "text", t = raw) }
+
+    /**
+     * Подтверждено ли авторство пакета.
+     *
+     * Пересобираем тело без поля `sig` ровно так же, как его собирал
+     * отправитель, и проверяем подпись его публичным ключом.
+     *
+     * `false` значит «мы НЕ можем доказать, что это писал он»: либо пакет от
+     * старой версии без подписи, либо ключ у нас другой, либо подпись не
+     * сходится. Сообщение всё равно показываем — иначе переписка со старыми
+     * версиями просто исчезла бы, — но помечаем.
+     */
+    private fun verified(raw: String, senderPubB64: String): Boolean = runCatching {
+        val obj = gson.fromJson(raw, com.google.gson.JsonObject::class.java) ?: return false
+        val sig = obj.get("sig")?.asString.orEmpty()
+        if (sig.isBlank()) return false
+        obj.remove("sig")
+        verifyPayload(gson.toJson(obj), sig, senderPubB64)
+    }.getOrDefault(false)
 
     /**
      * Background-notifier peek: is there a new INCOMING message worth a
@@ -849,6 +951,12 @@ object Messenger {
                         continue
                     }
                     val o = parsePayload(raw)
+                    // Авторство проверяем ПОСЛЕ того, как узнали отправителя:
+                    // подпись сверяется его публичным ключом из наших
+                    // контактов, а не тем, что назвал сервер.
+                    val senderKey =
+                        if (o.self) myPublicKey() else contact(m.fromClient)?.pubKey.orEmpty()
+                    val ok = o.self || verified(raw, senderKey)
                     // A message from ourselves is a sent-copy syncing history:
                     // file it into the peer's chat on the sent side. Otherwise
                     // it's a real incoming message.
@@ -883,7 +991,7 @@ object Messenger {
                         val img = try {
                             Base64.encodeToString(aesGcmDec(Base64.decode(o.key, b64f), blob), b64f)
                         } catch (e: Exception) { "" }
-                        added = appendMessage(chat, Msg(id = id, mine = mine, text = "", ts = System.currentTimeMillis(), u = o.u, k = "image", img = img))
+                        added = appendMessage(chat, Msg(id = id, mine = mine, text = "", ts = System.currentTimeMillis(), u = o.u, k = "image", img = img, verified = ok))
                         preview = "📷 Фото"
                     } else if (o.k == "voice" && o.media > 0 && o.key.isNotEmpty()) {
                         val blob = downloadMedia(o.media)
@@ -896,7 +1004,7 @@ object Messenger {
                         val audio = try {
                             Base64.encodeToString(aesGcmDec(Base64.decode(o.key, b64f), blob), b64f)
                         } catch (e: Exception) { "" }
-                        added = appendMessage(chat, Msg(id = id, mine = mine, text = "", ts = System.currentTimeMillis(), u = o.u, k = "voice", img = audio, dur = o.dur))
+                        added = appendMessage(chat, Msg(id = id, mine = mine, text = "", ts = System.currentTimeMillis(), u = o.u, k = "voice", img = audio, dur = o.dur, verified = ok))
                         preview = "🎤 Голосовое"
                     } else if (o.k == "video" && o.media > 0 && o.key.isNotEmpty()) {
                         val blob = downloadMedia(o.media)
@@ -909,10 +1017,10 @@ object Messenger {
                         val vid = try {
                             Base64.encodeToString(aesGcmDec(Base64.decode(o.key, b64f), blob), b64f)
                         } catch (e: Exception) { "" }
-                        added = appendMessage(chat, Msg(id = id, mine = mine, text = "", ts = System.currentTimeMillis(), u = o.u, k = "video", img = vid, dur = o.dur))
+                        added = appendMessage(chat, Msg(id = id, mine = mine, text = "", ts = System.currentTimeMillis(), u = o.u, k = "video", img = vid, dur = o.dur, verified = ok))
                         preview = "🎬 Видео"
                     } else {
-                        added = appendMessage(chat, Msg(id = id, mine = mine, text = o.t, ts = System.currentTimeMillis(), u = o.u))
+                        added = appendMessage(chat, Msg(id = id, mine = mine, text = o.t, ts = System.currentTimeMillis(), u = o.u, verified = ok))
                         preview = o.t
                     }
                     // Only genuinely-new messages from other people are worth a

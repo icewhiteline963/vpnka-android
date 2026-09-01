@@ -1206,6 +1206,17 @@ private fun ChatScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.align(Alignment.End).padding(top = 3.dp),
                             ) {
+                                // Авторство не доказано: подписи нет или она
+                                // не сошлась. Сообщение показываем — старые
+                                // версии подписей не ставят, — но за
+                                // проверенное не выдаём.
+                                if (!m.mine && !m.verified) {
+                                    Text(
+                                        "не подтверждено  ",
+                                        fontFamily = VpnkaFonts.manrope600, fontSize = 10.sp,
+                                        color = VpnkaColors.Amber,
+                                    )
+                                }
                                 Text(
                                     msgTime(m.ts), fontSize = 10.sp,
                                     color = VpnkaColors.TextFaint,
