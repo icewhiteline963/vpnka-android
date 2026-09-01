@@ -106,6 +106,7 @@ import androidx.compose.foundation.shape.CircleShape
 import com.v2ray.ang.handler.SettingsManager
 import com.v2ray.ang.handler.DeviceStorage
 import com.v2ray.ang.handler.DownloadRecords
+import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.YouTubeHistory
 import com.v2ray.ang.handler.YouTubeLater
 import com.v2ray.ang.handler.YouTubeMarks

@@ -394,7 +394,7 @@ object YouTubeDownloads {
                         // не прерывала работу (там нет точек приостановки), и
                         // этот блок перетирал «Отменено» на «Готово» — файл
                         // оставался, хотя человек нажал «отменить».
-                        if (self?.isActive != true || e.state == State.CANCELLED) {
+                        if (e.state == State.CANCELLED) {
                             runCatching { it.let { u -> ctx.contentResolver.delete(u, null, null) } }
                             e.state = State.CANCELLED
                             return@onSuccess
