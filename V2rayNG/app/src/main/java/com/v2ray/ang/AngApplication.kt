@@ -86,6 +86,11 @@ class AngApplication : Application() {
 
         MMKV.initialize(this)
 
+        // Перехват аварий — сразу после MMKV и раньше всего остального:
+        // падение при запуске тоже должно записаться. Ставим во ВСЕХ трёх
+        // процессах, а отправляем только из главного.
+        com.v2ray.ang.handler.CrashLog.install()
+
         // Initialize WorkManager with the custom configuration
         WorkManager.initialize(this, workManagerConfiguration)
 
@@ -128,6 +133,10 @@ class AngApplication : Application() {
         // accounts, milliseconds apart. Two empty clients from one phone in
         // one day is what that looked like from the admin list.
         if (isMainProcess()) {
+            // Авария прошлого запуска уезжает на сервер здесь: в момент
+            // падения сеть трогать нельзя — процесс уже умирает и отправка
+            // не успевает.
+            vpnkaScope.launch { com.v2ray.ang.handler.CrashLog.flush(this@AngApplication) }
             vpnkaScope.launch { VpnkaAccount.register() }
         }
 
