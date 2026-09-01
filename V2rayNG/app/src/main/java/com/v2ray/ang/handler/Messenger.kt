@@ -590,6 +590,15 @@ object Messenger {
         // остальное.
         if (!VpnkaAccount.smartDeskAllowed()) return
         val token = MmkvManager.getAccountToken() ?: return
+        // Мёртвую сессию не долбим.
+        //
+        // Сервер теперь отвечает 401 на «сессия кончилась» отдельно от 403
+        // «SmartDesk не для тебя». На 403 разрешение снимается и стук
+        // прекращается, а на 401 повторять было некому запретить: цикл
+        // мессенджера зовёт нас каждые 2,5 секунды, и телефон с протухшим
+        // токеном стучался бы вечно. Запоминаем ИМЕННО токен: сменился —
+        // пробуем снова.
+        if (token == wsDeadToken) return
         // The token rides in the handshake header, not the query string: a URL
         // is written verbatim into every access log it passes, and app sessions
         // never expire — a logged token stays a working key to the account.
@@ -632,6 +641,10 @@ object Messenger {
                     if (r?.code == 403) {
                         VpnkaAccount.denySmartDesk()
                     }
+                    if (r?.code == 401) {
+                        // Вход кончился — ждём нового токена, а не долбим.
+                        wsDeadToken = MmkvManager.getAccountToken()
+                    }
                 }
                 override fun onClosed(ws: WebSocket, code: Int, reason: String) {
                     if (webSocket === ws) webSocket = null
@@ -639,6 +652,10 @@ object Messenger {
             },
         )
     }
+
+    /** Токен, на котором рукопожатие вернуло 401. Пока он не сменился,
+     *  соваться в сокет незачем. */
+    @Volatile private var wsDeadToken: String? = null
 
     fun disconnectWs() {
         webSocket?.close(1000, null)
