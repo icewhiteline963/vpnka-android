@@ -284,6 +284,13 @@ object Utils {
     fun openUri(context: Context, uriString: String) {
         try {
             val uri = uriString.toUri()
+            // Только веб-ссылки. Сюда приходят адреса с бэкенда (страницы
+            // оплаты), и без проверки схемы подменённый ответ мог бы увести
+            // человека в чужое приложение или в файловую схему.
+            if (uri.scheme?.lowercase() !in setOf("http", "https")) {
+                LogUtil.w(AppConfig.TAG, "openUri: схема не веб — отказано")
+                return
+            }
             context.startActivity(Intent(Intent.ACTION_VIEW, uri))
         } catch (e: Exception) {
             LogUtil.e(AppConfig.TAG, "Failed to open URI", e)
@@ -531,11 +538,19 @@ object Utils {
      *
      * @return The receiver flags.
      */
-    fun receiverFlags(): Int = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        ContextCompat.RECEIVER_EXPORTED
-    } else {
-        ContextCompat.RECEIVER_NOT_EXPORTED
-    }
+    /**
+     * ВСЕГДА «не экспортирован».
+     *
+     * Здесь стояло `RECEIVER_EXPORTED` на Android 13+ — то есть ровно
+     * наоборот: приёмники, которыми управляется служба (остановка и
+     * перезапуск туннеля) и состояние плитки, были открыты ЛЮБОМУ приложению
+     * на телефоне. Постороннее приложение могло молча погасить ВПН, а человек
+     * продолжал бы считать себя защищённым, пока трафик идёт открытым.
+     *
+     * Внешняя доставка нам не нужна: свои намерения мы шлём адресно, с
+     * указанием пакета (см. MessageUtil).
+     */
+    fun receiverFlags(): Int = ContextCompat.RECEIVER_NOT_EXPORTED
 
     /**
      * Check if the package is Xray.

@@ -815,6 +815,21 @@ object MmkvManager {
         return id
     }
 
+    /**
+     * Сменить отпечаток установки — при выходе из аккаунта.
+     *
+     * Сервер ищет владельца пробного доступа по этому отпечатку, и после
+     * выхода он висел на ДВУХ клиентах: старом и только что заведённом.
+     * Побеждал старый — то есть телефон, «вышедший из аккаунта», продолжал
+     * получать ключи прежнего владельца и занимать у него слот устройства.
+     * Выход был косметикой для экрана профиля.
+     */
+    fun rotateInstallId(): String {
+        val id = java.util.UUID.randomUUID().toString().replace("-", "")
+        settingsStorage.encode(KEY_VPNKA_INSTALL_ID, id)
+        return id
+    }
+
     private const val KEY_VPNKA_INSTALL_ID = "vpnka_install_id"
 
     /**

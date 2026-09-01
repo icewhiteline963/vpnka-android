@@ -108,7 +108,18 @@ object SmartDeskStore {
     // --- Notes ---
     fun notes(): List<Note> = readList(KEY_NOTES)
     fun saveNote(n: Note) { upsert(KEY_NOTES, n); queue("note", n.id, n.updatedAt, false, gson.toJson(n)) }
-    fun deleteNote(id: String) { delete<Note>(KEY_NOTES, id); queue("note", id, nowMs(), true, "{}") }
+    fun deleteNote(id: String) {
+        deletedIds.add(id)
+        delete<Note>(KEY_NOTES, id); queue("note", id, nowMs(), true, "{}")
+    }
+
+    /**
+     * Удалённые в этом сеансе — чтобы редактор не воскресил заметку
+     * сохранением при уходе с экрана.
+     */
+    private val deletedIds = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+
+    fun isDeleted(id: String): Boolean = deletedIds.contains(id)
 
     // --- Mail ---
     fun mail(): List<MailMessage> = readList(KEY_MAIL)
@@ -138,12 +149,31 @@ object SmartDeskStore {
     fun pending(): List<Change> = readChanges()
     fun clearPending() { store.remove(KEY_PENDING) }
 
+    /**
+     * Снять из очереди только те записи, что реально уехали.
+     *
+     * `clearPending` сносила очередь ЦЕЛИКОМ, включая правки, поставленные
+     * пока запрос был в полёте: они не уходили на сервер и стирались
+     * следующей самоочисткой. Синхронизация запускается на каждое
+     * сохранение, так что параллельные вызовы — обычное дело.
+     */
+    fun clearPendingKeys(sent: List<Pair<String, String>>) {
+        if (sent.isEmpty()) return
+        val gone = sent.toSet()
+        val left = readChanges().filterNot { (it.kind to it.id) in gone }
+        if (left.isEmpty()) store.remove(KEY_PENDING)
+        else store.encode(KEY_PENDING, gson.toJson(left))
+    }
+
     /** Maximum-privacy self-wipe. After a confirmed sync (queue empty, so nothing
      *  is lost) the local records are erased and the cursor reset, so the next
      *  open re-pulls everything from the encrypted server. Between sessions the
      *  phone holds no SmartDesk data at all — not even ciphertext. */
     fun wipeLocal() {
         store.remove(KEY_CALENDAR)
+        // Заметки тоже: их пропускали, а обещание «на телефоне ничего не
+        // оседает» касается в первую очередь именно их.
+        store.remove(KEY_NOTES)
         store.remove(KEY_CONTACTS)
         store.remove(KEY_MAIL)
         setCursor(0)

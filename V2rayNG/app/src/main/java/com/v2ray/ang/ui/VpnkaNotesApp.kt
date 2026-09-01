@@ -317,8 +317,16 @@ private fun ChecklistBody(note: SmartDeskStore.Note, title: String, onSave: (Sma
     // Сохранение при уходе с экрана — как у текстовой заметки. Без него
     // «назад» из списка покупок молча терял правки, если не нажать «Готово»;
     // у текстовых заметок это починили, у списков забыли.
+    // Сохранение при уходе — но НЕ после удаления.
+    //
+    // «Удалить» выносит редактор из композиции, срабатывал onDispose, и
+    // заметка возвращалась: у списка безусловно, у текста при любой правке.
+    // Хуже, что запись перетирала уже поставленную «могилу» в очереди
+    // синхронизации, и удаление не доезжало до сервера.
     val latest = rememberUpdatedState(::persist)
-    DisposableEffect(note.id) { onDispose { latest.value.invoke() } }
+    DisposableEffect(note.id) {
+        onDispose { if (!SmartDeskStore.isDeleted(note.id)) latest.value.invoke() }
+    }
 
     Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         items.forEachIndexed { i, item ->

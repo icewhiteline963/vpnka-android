@@ -48,6 +48,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -449,17 +450,6 @@ private fun ContactsApp(syncTick: Int, onChanged: () -> Unit) {
 
     fun reload() { all = SmartDeskStore.contacts(); onChanged() }
 
-    // Contact detail card (call / email actions).
-    opened?.let { c ->
-        ContactDetail(
-            c = c,
-            onCall = { openIntent(context, "tel:" + c.phone) },
-            onEmail = { openIntent(context, "mailto:" + c.email) },
-            onEdit = { editing = c; showEditor = true },
-            onBack = { opened = null },
-        )
-    }
-
     val filtered = all
         .filter {
             query.isBlank() ||
@@ -520,6 +510,23 @@ private fun ContactsApp(syncTick: Int, onChanged: () -> Unit) {
                 .clickable { editing = null; showEditor = true },
             contentAlignment = Alignment.Center,
         ) { Text("+", fontSize = 30.sp, color = VpnkaColors.OnAccent) }
+    }
+
+    // Карточка контакта — ПОВЕРХ списка и с перехватом «назад».
+    //
+    // Раньше она объявлялась ДО списка, а в Compose позже объявленный
+    // ребёнок рисуется сверху: карточка оказывалась под списком, тап по
+    // контакту визуально не делал ничего, а «назад» закрывал всё приложение,
+    // потому что своего обработчика у контактов не было вовсе.
+    opened?.let { c ->
+        SmartDeskBackHandler { opened = null; true }
+        ContactDetail(
+            c = c,
+            onCall = { openIntent(context, "tel:" + c.phone) },
+            onEmail = { openIntent(context, "mailto:" + c.email) },
+            onEdit = { editing = c; showEditor = true },
+            onBack = { opened = null },
+        )
     }
 
     if (showEditor) {
@@ -1155,10 +1162,16 @@ private class BrowserTab(
         // В инкогнито менеджер паролей молчит: подставлять сохранённый
         // пароль и предлагать записать новый в режиме «без следов» —
         // ровно то, чего от него не ждут.
+        //
+        // ЧИТАТЬ пароли страница больше НЕ МОЖЕТ. Объект, добавленный через
+        // addJavascriptInterface, виден ВСЕМ фреймам, включая чужой рекламный
+        // iframe, а хост мы брали из адреса ВЕРХНЕГО документа — то есть
+        // сторонний код на странице банка мог попросить пароль от банка и
+        // получить его без единого действия человека. Теперь подстановку
+        // делаем мы сами: значения уезжают в главный фрейм скриптом, который
+        // впрыскиваем после загрузки, а мост оставлен только на предложение
+        // сохранить — там всё равно решает человек в диалоге.
         if (!incognito) addJavascriptInterface(object {
-            @android.webkit.JavascriptInterface
-            fun getCredentials(): String? = currentHost()?.let { PasswordStore.credentialsJson(it) }
-
             @android.webkit.JavascriptInterface
             fun promptSave(user: String, pass: String) {
                 val host = currentHost() ?: return
@@ -1173,13 +1186,50 @@ private class BrowserTab(
             }.getOrDefault("файл")
             onDownload?.invoke(dUrl, name)
         }
+        // Скрипт-заглушка WebRTC ставится ДО документа, если WebView это
+        // умеет; иначе — первым делом на старте страницы. Второй путь чуть
+        // слабее (скрипт страницы теоретически успевает раньше), но лучше,
+        // чем ничего.
+        if (androidx.webkit.WebViewFeature.isFeatureSupported(
+                androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT,
+            )
+        ) {
+            runCatching {
+                androidx.webkit.WebViewCompat.addDocumentStartJavaScript(
+                    this, NO_WEBRTC_JS, setOf("*"),
+                )
+            }
+        }
         webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView?, u: String?, favicon: android.graphics.Bitmap?) {
+                if (!androidx.webkit.WebViewFeature.isFeatureSupported(
+                        androidx.webkit.WebViewFeature.DOCUMENT_START_SCRIPT,
+                    )
+                ) {
+                    view?.evaluateJavascript(NO_WEBRTC_JS, null)
+                }
                 u?.let { this@BrowserTab.url.value = it }; this@BrowserTab.canBack.value = canGoBack(); this@BrowserTab.canFwd.value = canGoForward()
             }
             override fun onPageFinished(view: WebView?, u: String?) {
                 u?.let { this@BrowserTab.url.value = it }; this@BrowserTab.canBack.value = canGoBack(); this@BrowserTab.canFwd.value = canGoForward()
-                if (!incognito) view?.evaluateJavascript(PWD_JS, null)
+                if (!incognito) {
+                    // Пароли отдаём ТОЛЬКО по https: на http страницу может
+                    // подменить кто угодно между выходной нодой и сайтом, и
+                    // тогда наш же автозаполнитель отдаст ему пароль.
+                    val host = runCatching { android.net.Uri.parse(u ?: "").host }.getOrNull()
+                    val creds = if (u?.startsWith("https://") == true && host != null) {
+                        PasswordStore.credentialsJson(host)
+                    } else {
+                        null
+                    }
+                    // evaluateJavascript выполняется в ГЛАВНОМ фрейме —
+                    // чужому iframe эти значения не достаются.
+                    view?.evaluateJavascript(
+                        "(function(){window.__vpnkaCreds=" + (creds ?: "null") + ";})();",
+                        null,
+                    )
+                    view?.evaluateJavascript(PWD_JS, null)
+                }
                 // Журнал посещений. Инкогнито молчит — иначе окно «без следов»
                 // оставляло бы главный след.
                 if (!incognito) u?.let { BrowserHistory.add(it, this@BrowserTab.title.value) }
@@ -1207,10 +1257,42 @@ private class BrowserTab(
 /** Injected after each page load: autofills a saved login and, on form submit,
  *  hands the entered username/password back to the app to offer saving. Reads
  *  only the top document's inputs; the app supplies the trusted origin. */
+/**
+ * Гасим WebRTC в браузере — до единой строки страницы.
+ *
+ * Прокси WebView заворачивает только загрузку по HTTP; UDP-сокеты WebRTC он
+ * не трогает вовсе, а собственное приложение исключено из туннеля
+ * (addDisallowedApplication в CoreVpnService — иначе ядро зациклилось бы на
+ * себе). Значит любая страница могла собрать ICE-кандидатов напрямую и
+ * узнать НАСТОЯЩИЙ адрес человека, пока всё остальное шло через ноду. Для
+ * ВПН-браузера это худший из возможных проколов: он не мешает работе и никак
+ * не виден.
+ *
+ * Ставим заглушки, а не удаляем свойства: сайт, который просто проверяет
+ * наличие RTCPeerConnection, не должен падать.
+ */
+private const val NO_WEBRTC_JS = """
+(function(){
+  try{
+    var block = function(){ throw new DOMException('WebRTC отключён', 'NotAllowedError'); };
+    var names = ['RTCPeerConnection','webkitRTCPeerConnection','mozRTCPeerConnection',
+                 'RTCDataChannel','webkitRTCDataChannel'];
+    for (var i=0;i<names.length;i++){
+      try { Object.defineProperty(window, names[i], { value: block, writable:false, configurable:false }); } catch(e){}
+    }
+    if (navigator.mediaDevices) {
+      try { navigator.mediaDevices.getUserMedia = function(){ return Promise.reject(new DOMException('Отключено','NotAllowedError')); }; } catch(e){}
+      try { navigator.mediaDevices.enumerateDevices = function(){ return Promise.resolve([]); }; } catch(e){}
+    }
+    try { navigator.getUserMedia = undefined; } catch(e){}
+  }catch(e){}
+})();
+"""
+
 private const val PWD_JS = """
 (function(){
  try{
-  var raw=null; try{ raw=VpnkaPwd.getCredentials(); }catch(e){}
+  var raw=null; try{ raw=window.__vpnkaCreds ? JSON.stringify(window.__vpnkaCreds) : null; }catch(e){}
   if(raw){ try{ var c=JSON.parse(raw);
     var pw=document.querySelector('input[type=password]');
     if(pw){ pw.value=c.p;
@@ -1239,30 +1321,14 @@ private fun domainOf(url: String): String = try {
 
 @Composable
 private fun BrowserApp() {
+    // Заглушку «нужен VPN» показываем ПОВЕРХ, а не вместо.
+    //
+    // Раньше здесь стоял ранний выход, и любое моргание туннеля (смена
+    // сервера, короткий обрыв) на один кадр выносило из композиции ВСЕ
+    // вкладки вместе с их историей и введёнными в формы данными: браузер
+    // собирался заново с одной страницей. Пять открытых вкладок исчезали от
+    // случайного переподключения.
     val connected = VpnkaColors.connected
-    if (!connected) {
-        Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("🔒", fontSize = 44.sp)
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    text = "Браузер работает только через VPN",
-                    fontFamily = VpnkaFonts.nunito800,
-                    fontSize = 17.sp,
-                    color = VpnkaColors.TextStrong,
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    text = "Включите подключение на главном экране — весь трафик пойдёт через наш VPN.",
-                    fontFamily = VpnkaFonts.manrope600,
-                    fontSize = 14.sp,
-                    color = VpnkaColors.TextMuted,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                )
-            }
-        }
-        return
-    }
 
     // Fail-closed: if this device's WebView can't be forced through our proxy,
     // do NOT open a browser at all — otherwise traffic would egress directly,
@@ -1294,19 +1360,49 @@ private fun BrowserApp() {
 
     // Force every WebView request through the local proxy while this screen is
     // up; drop the override when leaving so no other WebView is affected.
+    // Прокси накладывается ДО первой загрузки.
+    //
+    // Раньше вкладка создавалась в `remember`, а её конструктор сразу звал
+    // loadUrl — то есть первая страница уходила НАПРЯМУЮ: провайдер видел и
+    // DNS-запрос, и адрес узла в открытом виде. Наложение вдобавок
+    // асинхронное, и колбэк ошибки был пустой: если бы оно не применилось,
+    // браузер спокойно работал бы мимо туннеля.
+    var proxyReady by remember { mutableStateOf(false) }
+    var proxyFailed by remember { mutableStateOf(false) }
     DisposableEffect(httpPort) {
-        val supported = WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)
-        if (supported) {
-            val cfg = ProxyConfig.Builder()
-                .addProxyRule("127.0.0.1:$httpPort")
-                .build()
-            ProxyController.getInstance().setProxyOverride(cfg, { it.run() }, {})
-        }
+        val cfg = ProxyConfig.Builder()
+            .addProxyRule("127.0.0.1:$httpPort")
+            .build()
+        runCatching {
+            ProxyController.getInstance().setProxyOverride(
+                cfg, { it.run() }, { proxyReady = true },
+            )
+        }.onFailure { proxyFailed = true }
         onDispose {
-            if (supported) {
+            runCatching {
                 ProxyController.getInstance().clearProxyOverride({ it.run() }, {})
             }
+            proxyReady = false
         }
+    }
+
+    if (proxyFailed) {
+        Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+            Text(
+                "Не удалось направить браузер через VPN. Страницы не открываются — " +
+                    "выпускать их мимо туннеля мы не станем.",
+                fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp,
+                color = VpnkaColors.TextMuted,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
+        }
+        return
+    }
+    if (!proxyReady) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = VpnkaColors.Accent)
+        }
+        return
     }
 
     // Password manager: a page offer to save creds, and the manager sheet.
@@ -1674,6 +1770,31 @@ private fun BrowserApp() {
             onOpen = { u -> showHistory = false; active.go(u) },
             onClose = { showHistory = false },
         )
+    }
+
+    // Нет туннеля — закрываем содержимое ЗАСЛОНКОЙ, но вкладки живут.
+    if (!connected) {
+        Box(
+            modifier = Modifier.fillMaxSize().background(VpnkaColors.BgOffMid).padding(32.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("🔒", fontSize = 44.sp)
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "Браузер работает только через VPN",
+                    fontFamily = VpnkaFonts.nunito800, fontSize = 17.sp,
+                    color = VpnkaColors.TextStrong,
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Включите подключение на главном экране — вкладки останутся на месте.",
+                    fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp,
+                    color = VpnkaColors.TextMuted,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                )
+            }
+        }
     }
 
     if (showPwds) {

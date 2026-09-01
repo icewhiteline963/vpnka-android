@@ -66,7 +66,9 @@ object SmartDeskSync {
         // — the work stays queued until the user unlocks.
         if (!Vault.isUnlocked()) return@withContext false
 
-        val changes = SmartDeskStore.pending().map { c ->
+        // Снимок очереди: по нему потом снимем ровно отправленное.
+        val batch = SmartDeskStore.pending()
+        val changes = batch.map { c ->
             val ct = Vault.encrypt(c.payloadJson) ?: return@withContext false
             ChangeOut(
                 kind = c.kind,
@@ -110,7 +112,10 @@ object SmartDeskSync {
                     )
                 }
                 SmartDeskStore.setCursor(parsed.cursor)
-                SmartDeskStore.clearPending()
+                // Снимаем ТОЛЬКО отправленное: очередь чистилась целиком, и правка,
+                // сделанная пока запрос был в полёте, исчезала — не уехала на
+                // сервер и стёрлась локально следующей самоочисткой.
+                SmartDeskStore.clearPendingKeys(batch.map { it.kind to it.id })
                 true
             }
         } catch (e: Exception) {

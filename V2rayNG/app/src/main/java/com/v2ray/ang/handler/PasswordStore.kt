@@ -2,21 +2,51 @@ package com.v2ray.ang.handler
 
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import com.tencent.mmkv.MMKV
+import java.security.SecureRandom
 
 /**
- * SmartDesk browser password manager. Stores one login per host in the app's
- * encrypted MMKV settings. Lookups are always keyed by the trusted current-page
- * host supplied by the app (never by a host string coming from page JS), so a
- * site can only ever read back its OWN saved credentials.
+ * Менеджер паролей браузера SmartDesk: по одной записи на узел.
+ *
+ * Хранилище ЗАШИФРОВАНО — как у мессенджера и рабочего стола. Раньше пароли
+ * лежали в общих настройках без ключа, хотя и диалог сохранения, и эта
+ * страница обещали обратное: при снятом образе или на руте они читались как
+ * есть. Обещание и хранение теперь совпадают.
+ *
+ * Отдавать пароль странице по запросу нельзя: объект, добавленный в WebView,
+ * виден всем фреймам, включая чужой рекламный iframe. Подстановку делает сам
+ * браузер, впрыском в главный фрейм и только по https.
  */
 object PasswordStore {
     private const val KEY = "vpnka_browser_passwords"
+    private const val KEY_CRYPT = "vpnka_pwd_cryptkey"
+    private const val ID_STORE = "vpnka_passwords"
     private val gson = Gson()
+
+    private fun cryptKey(): String {
+        MmkvManager.decodeSettingsString(KEY_CRYPT)?.let { if (it.isNotBlank()) return it }
+        val bytes = ByteArray(16).also { SecureRandom().nextBytes(it) }
+        val key = bytes.joinToString("") { "%02x".format(it) }
+        MmkvManager.encodeSettings(KEY_CRYPT, key)
+        return key
+    }
+
+    private val store: MMKV by lazy {
+        MMKV.mmkvWithID(ID_STORE, MMKV.SINGLE_PROCESS_MODE, cryptKey())
+    }
 
     data class Cred(val host: String, val username: String, val password: String)
 
     private fun load(): MutableList<Cred> {
-        val raw = MmkvManager.decodeSettingsString(KEY) ?: return mutableListOf()
+        // Переезд со старого незашифрованного хранилища: перекладываем и
+        // стираем оттуда, чтобы открытая копия не осталась лежать.
+        MmkvManager.decodeSettingsString(KEY)?.let { legacy ->
+            if (legacy.isNotBlank()) {
+                store.encode(KEY, legacy)
+                MmkvManager.encodeSettings(KEY, "")
+            }
+        }
+        val raw = store.decodeString(KEY) ?: return mutableListOf()
         return try {
             gson.fromJson<MutableList<Cred>>(raw, object : TypeToken<MutableList<Cred>>() {}.type)
                 ?: mutableListOf()
@@ -26,7 +56,7 @@ object PasswordStore {
     }
 
     private fun store(list: List<Cred>) {
-        MmkvManager.encodeSettings(KEY, gson.toJson(list))
+        store.encode(KEY, gson.toJson(list))
     }
 
     fun all(): List<Cred> = load()

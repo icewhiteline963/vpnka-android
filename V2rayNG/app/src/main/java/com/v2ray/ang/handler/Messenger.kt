@@ -164,16 +164,27 @@ object Messenger {
         catch (e: Exception) { emptyList() }
     }
 
+    /**
+     * Запись в историю — ПОД ЗАМКОМ.
+     *
+     * Список читается, меняется и пишется целиком, а писать могут двое сразу:
+     * цикл опроса раз в 2,5 секунды и внеочередной опрос по «пробуждению» от
+     * WebSocket (сервер шлёт его на каждое входящее). Второй затирал первого
+     * — а курсор уже сдвинут, и сервер это сообщение больше не отдаст.
+     * Дедуп по uuid тут не спасает: он про дубли, а не про потерю.
+     */
+    private val historyLock = Any()
+
     /** @return true if the message was actually stored (not a dedup hit). */
-    private fun appendMessage(contactId: Long, m: Msg): Boolean {
+    private fun appendMessage(contactId: Long, m: Msg): Boolean = synchronized(historyLock) {
         val list = messages(contactId).toMutableList()
         // Dedup by uuid first (the sent-copy that syncs history carries the same
         // uuid as the local copy), then by server id for legacy messages.
-        if (m.u.isNotEmpty() && list.any { it.u == m.u }) return false
-        if (m.id != 0L && list.any { it.id == m.id }) return false
+        if (m.u.isNotEmpty() && list.any { it.u == m.u }) return@synchronized false
+        if (m.id != 0L && list.any { it.id == m.id }) return@synchronized false
         list.add(m)
         store.encode("msg_$contactId", gson.toJson(list))
-        return true
+        return@synchronized true
     }
 
     /** A newly-arrived incoming message, for the background notifier. */
@@ -374,6 +385,18 @@ object Messenger {
     fun deleteChat(contactId: Long) {
         store.removeValueForKey("msg_$contactId")
         store.encode(KEY_CONTACTS, gson.toJson(contacts().filterNot { it.id == contactId }))
+    }
+
+    /**
+     * Забыть личность и локальные данные мессенджера — при выходе из аккаунта.
+     *
+     * Без этого следующий владелец телефона видел переписку и контакты
+     * предыдущего, а его собственная личность в общем хранилище затиралась
+     * блобом под чужим мастер-ключом.
+     */
+    fun forgetLocalIdentity() {
+        identity = null
+        store.allKeys()?.forEach { store.removeValueForKey(it) }
     }
 
     /** Wipe local chat history on this device (server + peers unchanged). */
@@ -667,6 +690,10 @@ object Messenger {
     suspend fun sendImage(
         contactId: Long, jpeg: ByteArray, onProgress: (Int) -> Unit = {},
     ): Boolean = withContext(Dispatchers.IO) {
+        // Ключ дотягиваем ДО заливки: иначе блоб уезжал на сервер целиком и
+        // только потом падало шифрование — человек ждал «100 %», получал
+        // «не удалось», а на сервере оставался файл-сирота.
+        ensureKey(contactId)
         val c = contact(contactId) ?: return@withContext false
         val u = java.util.UUID.randomUUID().toString()
         val k = ByteArray(32).also { SecureRandom().nextBytes(it) }
@@ -691,6 +718,10 @@ object Messenger {
     suspend fun sendVoice(
         contactId: Long, m4a: ByteArray, durSec: Int, onProgress: (Int) -> Unit = {},
     ): Boolean = withContext(Dispatchers.IO) {
+        // Ключ дотягиваем ДО заливки: иначе блоб уезжал на сервер целиком и
+        // только потом падало шифрование — человек ждал «100 %», получал
+        // «не удалось», а на сервере оставался файл-сирота.
+        ensureKey(contactId)
         val c = contact(contactId) ?: return@withContext false
         val u = java.util.UUID.randomUUID().toString()
         val k = ByteArray(32).also { SecureRandom().nextBytes(it) }
@@ -715,6 +746,10 @@ object Messenger {
     suspend fun sendVideo(
         contactId: Long, mp4: ByteArray, durSec: Int, onProgress: (Int) -> Unit = {},
     ): Boolean = withContext(Dispatchers.IO) {
+        // Ключ дотягиваем ДО заливки: иначе блоб уезжал на сервер целиком и
+        // только потом падало шифрование — человек ждал «100 %», получал
+        // «не удалось», а на сервере оставался файл-сирота.
+        ensureKey(contactId)
         val c = contact(contactId) ?: return@withContext false
         val u = java.util.UUID.randomUUID().toString()
         val k = ByteArray(32).also { SecureRandom().nextBytes(it) }

@@ -820,6 +820,14 @@ object VpnkaAccount {
         // Drop the account's imported subscriptions and servers too, or the
         // connect screen keeps presenting the paid interface after logout.
         MmkvManager.clearVpnkaSubscriptions()
+        // Новый отпечаток установки: иначе сервер продолжит узнавать в этом
+        // телефоне ПРЕЖНЕГО владельца и отдавать его ключи.
+        MmkvManager.rotateInstallId()
+        // Заодно снимаем сейф и личность мессенджера. Без этого следующий
+        // владелец видел переписку и контакты предыдущего, а его собственная
+        // личность в хранилище затиралась чужим ключом.
+        runCatching { Vault.lock() }
+        runCatching { Messenger.forgetLocalIdentity() }
         if (token == null) return@withContext
         try {
             http().newCall(

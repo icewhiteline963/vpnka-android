@@ -242,14 +242,21 @@ object CallManager {
         // адрес не утечёт. Молча раскрывать IP на сервисе, который покупают
         // ради приватности, хуже, чем не дать позвонить.
         val hasTurn = iceServers.any { srv -> srv.urls.any { it.startsWith("turn") } }
+        if (!hasTurn) {
+            // Без ретранслятора звонок не поднимаем вовсе. NOHOST убирает
+            // только host-кандидатов, srflx остаются — и это настоящий
+            // публичный адрес человека.
+            endReason = "Звонки временно недоступны"
+            cleanup(Phase.ENDED)
+            return
+        }
         val rtc = PeerConnection.RTCConfiguration(iceServers).apply {
             sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN
             continualGatheringPolicy = PeerConnection.ContinualGatheringPolicy.GATHER_CONTINUALLY
             bundlePolicy = PeerConnection.BundlePolicy.MAXBUNDLE
             rtcpMuxPolicy = PeerConnection.RtcpMuxPolicy.REQUIRE
             iceTransportsType =
-                if (hasTurn) PeerConnection.IceTransportsType.RELAY
-                else PeerConnection.IceTransportsType.NOHOST
+                PeerConnection.IceTransportsType.RELAY
         }
         pc = factory?.createPeerConnection(rtc, pcObserver) ?: return
         val f = factory ?: return
@@ -408,12 +415,17 @@ object CallManager {
             if (!s.username.isNullOrEmpty()) b.setUsername(s.username)
             if (!s.credential.isNullOrEmpty()) b.setPassword(s.credential)
             b.createIceServer()
-        }.ifEmpty { defaultIce() }
-    } catch (e: Exception) { defaultIce() }
+        }
+    } catch (e: Exception) { emptyList() }
 
-    private fun defaultIce() = listOf(
-        PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
-    )
+    // Запасного варианта нет НАМЕРЕННО.
+    //
+    // Раньше при недоступном списке серверов подставлялся публичный STUN
+    // Google. Тогда политика становилась NOHOST, а она убирает только
+    // host-кандидатов — srflx остаются, и это НАСТОЯЩИЙ публичный адрес
+    // человека, потому что наше приложение исключено из собственного
+    // туннеля. То есть звонок в «приватном» мессенджере раскрывал адрес и
+    // собеседнику, и Google. Нет ретранслятора — нет звонка.
 
     /** Кто кому звонил: к моменту отбоя фаза уже ACTIVE и направление теряется. */
     private var lastOutgoing = false
