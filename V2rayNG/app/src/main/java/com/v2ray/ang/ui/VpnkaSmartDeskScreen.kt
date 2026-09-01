@@ -313,8 +313,7 @@ fun VpnkaSmartDeskScreen(
     // Фактическая высота нижней панели (со вставкой навигации) — её и
     // отводим содержимому. Мини-плеер и подсказка сюда НЕ входят: они
     // всплывают поверх и не должны отнимать у стола ряды значков.
-    val navInset = androidx.compose.foundation.layout.WindowInsets.navigationBars
-        .asPaddingValues().calculateBottomPadding()
+    val navInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     var barHeight by remember { mutableStateOf(BAR_HEIGHT) }
     // Когда панель спрятана (чат, канал, плеер), отводить под неё место
     // нельзя: величина оставалась от прошлого замера, и содержимое
