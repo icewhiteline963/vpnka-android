@@ -768,12 +768,16 @@ private fun VpnkaSignIn(
 
     OutlinedTextField(
         value = code,
-        // The code is six characters from a fixed alphabet, so anything
-        // longer is a typo rather than input worth keeping. Upper-casing
-        // here — not just on send — means the field shows the user exactly
-        // what the bot showed them.
-        onValueChange = { code = it.uppercase().filter { c -> c.isLetterOrDigit() }.take(6) },
-        label = { Text("Код из бота", color = VpnkaColors.TextMuted) },
+        // Поле принимает ОБА кода: короткий вход из бота (6 знаков) и код
+        // восстановления (16 знаков четвёрками).
+        //
+        // Раньше здесь стояло `.take(6)`, а кнопка включалась ровно на шести
+        // знаках — то есть код восстановления невозможно было даже набрать,
+        // хотя экран прямо называет его «единственным способом вернуть
+        // подписку, если телефон потеряется». И сама функция восстановления
+        // не вызывалась ниоткуда.
+        onValueChange = { code = it.uppercase().filter { c -> c.isLetterOrDigit() }.take(16) },
+        label = { Text("Код из бота или код восстановления", color = VpnkaColors.TextMuted) },
         singleLine = true,
         enabled = !signingIn,
         // Without explicit colours the field takes Material's palette, not
@@ -808,7 +812,7 @@ private fun VpnkaSignIn(
     Spacer(Modifier.height(16.dp))
     Button(
         onClick = { onSignIn(code) },
-        enabled = code.length == 6 && !signingIn,
+        enabled = (code.length == 6 || code.length == 16) && !signingIn,
         modifier = Modifier.fillMaxWidth(),
         colors = ButtonDefaults.buttonColors(
             containerColor = VpnkaColors.Accent,

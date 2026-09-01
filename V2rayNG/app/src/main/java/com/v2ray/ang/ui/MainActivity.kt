@@ -1207,7 +1207,15 @@ class MainActivity : HelperBaseComponentActivity() {
                     signingIn = true
                     signInError = null
                     lifecycleScope.launch {
-                        val result = VpnkaAccount.signIn(code)
+                        // Шестизначный — вход из бота, шестнадцатизначный —
+                        // восстановление. Разделяем по длине: у человека в
+                        // руках всегда что-то одно, и спрашивать «какой это
+                        // код» значило бы перекладывать на него нашу задачу.
+                        val result = if (code.length == 16) {
+                            VpnkaAccount.recover(code)
+                        } else {
+                            VpnkaAccount.signIn(code)
+                        }
                         signingIn = false
                         result.fold(
                             onSuccess = {
@@ -1220,8 +1228,13 @@ class MainActivity : HelperBaseComponentActivity() {
                                         // Wrong, expired and already-used are one
                                         // answer from the server on purpose, so
                                         // the message covers all three.
-                                        "Код не подошёл. Он живёт 10 минут и " +
-                                            "срабатывает один раз — возьмите новый в боте."
+                                        if (code.length == 16) {
+                                            "Код восстановления не подошёл. " +
+                                                "Проверьте, что переписали все 16 знаков."
+                                        } else {
+                                            "Код не подошёл. Он живёт 10 минут и " +
+                                                "срабатывает один раз — возьмите новый в боте."
+                                        }
                                     } else {
                                         "Не удалось войти — проверьте интернет"
                                     }
@@ -1387,9 +1400,18 @@ class MainActivity : HelperBaseComponentActivity() {
                         when (val r = VpnkaAccount.purchase(id, "balance")) {
                             is VpnkaAccount.PurchaseResult.Settled -> {
                                 toast("Оплачено — подписка активна")
-                                // Refresh the profile and activate the new plan
-                                // (its radio) — the sync pulls its servers.
-                                selectNewestOnSync = true
+                                // Активируем ИМЕННО купленное.
+                                //
+                                // Сервер называет адрес купленной подписки, а
+                                // мы его выбрасывали и просили «самую
+                                // долгоживущую». У владельца годового тарифа
+                                // купленный сверх него месяц так и не
+                                // становился активным — та самая жалоба,
+                                // которую для оплаты картой уже закрыли.
+                                preferGroupToken = r.subscriptionUrl
+                                    ?.substringAfterLast("/g/")
+                                    ?.takeIf { it.isNotBlank() }
+                                selectNewestOnSync = preferGroupToken == null
                                 subReload++
                                 showShop = false
                             }
