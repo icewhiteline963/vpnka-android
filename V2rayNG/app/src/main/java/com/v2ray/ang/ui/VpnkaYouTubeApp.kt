@@ -1287,6 +1287,28 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
     // Картинка-в-картинке: окно системы поверх других приложений. Плеер уже
     // в службе, поэтому переживает сворачивание сам — здесь только просьба
     // к системе показать маленькое окно.
+    var fullscreen by remember { mutableStateOf(false) }
+    // «Только звук»: видео-дорожка выключается, и плеер перестаёт её качать.
+    // Это не украшение — трафик идёт через НАШИ ноды с их лимитами, так что
+    // экономия здесь наша прямая, а не только пользовательская.
+    var audioOnly by remember { mutableStateOf(false) }
+    // Отметка «взять с собой» — решение отдельное от «качать сейчас»:
+    // трафик идёт через наши ноды и на мобильном стоит человеку денег.
+    var laterTick by remember { mutableStateOf(0) }
+    val inLater = remember(laterTick, pb.pageUrl) { YouTubeLater.has(pb.pageUrl) }
+    var speed by remember { mutableStateOf(1f) }
+    var ptab by remember { mutableStateOf(0) }
+    var chapters by remember(pb.pageUrl) { mutableStateOf<List<YouTubeService.Chapter>?>(null) }
+    var cues by remember(pb.pageUrl) { mutableStateOf<List<YouTubeService.Cue>?>(null) }
+    var marksTick by remember { mutableStateOf(0) }
+    var noteAt by remember { mutableStateOf<Long?>(null) }
+    val marks = remember(marksTick, pb.pageUrl) { YouTubeMarks.marks(pb.pageUrl) }
+    val notes = remember(marksTick, pb.pageUrl) { YouTubeMarks.notes(pb.pageUrl) }
+    var isPlaying by remember { mutableStateOf(true) }
+    // «Хотим играть» отдельно от «играет»: между ними буферизация.
+    var wantsPlay by remember { mutableStateOf(true) }
+    var position by remember { mutableStateOf(0L) }
+
     // Кнопки в маленьком окне.
     //
     // Система рисует их сама — но только те, что мы объявим в параметрах, и
@@ -1362,27 +1384,6 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
         }
     }
 
-    var fullscreen by remember { mutableStateOf(false) }
-    // «Только звук»: видео-дорожка выключается, и плеер перестаёт её качать.
-    // Это не украшение — трафик идёт через НАШИ ноды с их лимитами, так что
-    // экономия здесь наша прямая, а не только пользовательская.
-    var audioOnly by remember { mutableStateOf(false) }
-    // Отметка «взять с собой» — решение отдельное от «качать сейчас»:
-    // трафик идёт через наши ноды и на мобильном стоит человеку денег.
-    var laterTick by remember { mutableStateOf(0) }
-    val inLater = remember(laterTick, pb.pageUrl) { YouTubeLater.has(pb.pageUrl) }
-    var speed by remember { mutableStateOf(1f) }
-    var ptab by remember { mutableStateOf(0) }
-    var chapters by remember(pb.pageUrl) { mutableStateOf<List<YouTubeService.Chapter>?>(null) }
-    var cues by remember(pb.pageUrl) { mutableStateOf<List<YouTubeService.Cue>?>(null) }
-    var marksTick by remember { mutableStateOf(0) }
-    var noteAt by remember { mutableStateOf<Long?>(null) }
-    val marks = remember(marksTick, pb.pageUrl) { YouTubeMarks.marks(pb.pageUrl) }
-    val notes = remember(marksTick, pb.pageUrl) { YouTubeMarks.notes(pb.pageUrl) }
-    var isPlaying by remember { mutableStateOf(true) }
-    // «Хотим играть» отдельно от «играет»: между ними буферизация.
-    var wantsPlay by remember { mutableStateOf(true) }
-    var position by remember { mutableStateOf(0L) }
 
     // Позиция нужна закладкам и заметкам, а подсветка строки транскрипта —
     // каждую секунду. Опрашиваем раз в 500 мс: слушателя позиции у Media3

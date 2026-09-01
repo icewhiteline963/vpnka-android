@@ -202,11 +202,13 @@ fun VpnkaSmartDeskAppScreen(
         val scope = rememberCoroutineScope()
         var syncTick by remember { mutableIntStateOf(0) }
         val onChanged = {
-            scope.launch { if (online) SmartDeskSync.sync(); syncTick++ }
+            // Связь берём из общего состояния: отдельным параметром её сюда
+            // передавала верхняя полоса, которой больше нет.
+            scope.launch { if (VpnkaColors.connected) SmartDeskSync.sync(); syncTick++ }
             Unit
         }
         LaunchedEffect(Unit) {
-            if (online && appId != "browser") { SmartDeskSync.sync(); syncTick++ }
+            if (VpnkaColors.connected && appId != "browser") { SmartDeskSync.sync(); syncTick++ }
         }
         // Своей верхней полосы у приложения больше нет.
         //
