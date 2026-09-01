@@ -32,13 +32,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -175,18 +176,22 @@ object SmartDeskChrome {
 @Composable
 fun VpnkaSmartDeskAppScreen(
     appId: String,
-    /** Возврат к столу. Кнопки для него у приложения своей нет — это делает
-     *  «⌂ Стол» в общей панели и системная «назад». */
+    /**
+     * Возврат к столу. Своей кнопки у приложения нет: обычно это «⌂ Стол» в
+     * общей панели, а в мессенджере (он прячет панель ради собственной) —
+     * только системная «назад».
+     */
     onBack: () -> Unit,
 ) {
     Box(modifier = Modifier.fillMaxSize().background(VpnkaColors.BgOffMid)) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            // Содержимое не должно лезть под системные полосы — хозяин окна
-            // берёт этот отступ на себя, чтобы каждое приложение не делало
-            // это само.
-            .systemBarsPadding()
+            // Только ВЕРХНЯЯ вставка. Нижнюю уже отдал стол вместе с
+            // высотой панели (`bottomOverlay`), и systemBarsPadding добавлял
+            // её второй раз — внизу каждого приложения оставалась мёртвая
+            // полоса высотой ещё одной системной панели.
+            .statusBarsPadding()
             // Lift the whole app above the soft keyboard whenever any input
             // (messenger, browser omnibox, YouTube search, editors) opens it,
             // so the bottom controls are never hidden behind it.
@@ -385,7 +390,12 @@ private fun CalendarApp(syncTick: Int, onChanged: () -> Unit) {
                     color = VpnkaColors.TextMuted,
                 )
             } else {
-                LazyColumn(modifier = Modifier.fillMaxWidth()) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth(),
+                    // Место под плавающую «+» — иначе последняя запись лежит
+                    // под кнопкой и касание по ней открывает редактор.
+                    contentPadding = PaddingValues(bottom = 76.dp),
+                ) {
                     items(dayEvents, key = { it.id }) { e ->
                         Card(
                             title = e.title.ifBlank { "Без названия" },
@@ -477,7 +487,13 @@ private fun ContactsApp(syncTick: Int, onChanged: () -> Unit) {
             if (filtered.isEmpty()) {
                 EmptyHint(if (all.isEmpty()) "Контактов пока нет. Добавьте первый." else "Ничего не найдено")
             } else {
-                LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
+                    // Место под плавающую «+»: без него последняя строка
+                    // лежала под кнопкой, и касание по ней открывало
+                    // редактор вместо самой записи.
+                    contentPadding = PaddingValues(bottom = 76.dp),
+                ) {
                     items(filtered, key = { it.id }) { c ->
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp)
@@ -809,6 +825,7 @@ internal object AdBlocker {
     // инкременты просто терялись.
     private val lock = Any()
     private var unsaved = 0
+    private var counted = 0L
 
     /** Compose-состояние: плитка «Заблокировано» обновляется живьём. */
     var blocked by mutableStateOf(-1L)
@@ -816,25 +833,35 @@ internal object AdBlocker {
 
     private fun ensureLoaded() {
         if (blocked < 0) {
-            blocked = MmkvManager.decodeSettingsString(KEY_COUNT)?.toLongOrNull() ?: 0L
+            counted = MmkvManager.decodeSettingsString(KEY_COUNT)?.toLongOrNull() ?: 0L
+            blocked = counted
         }
     }
 
     private fun countOne() {
         synchronized(lock) {
             ensureLoaded()
-            blocked += 1
+            counted += 1
             unsaved++
-            if (unsaved >= 20) { MmkvManager.encodeSettings(KEY_COUNT, blocked.toString()); unsaved = 0 }
+            if (unsaved >= 20) {
+                MmkvManager.encodeSettings(KEY_COUNT, counted.toString())
+                unsaved = 0
+                // Состояние обновляем ПАЧКАМИ, а не на каждый запрос: оно
+                // читается плиткой на столе, а стол остаётся живым под
+                // открытым браузером — иначе выходили сотни перерисовок на
+                // одну страницу.
+                blocked = counted
+            }
         }
     }
 
     /** Дописать хвост на диск — при уходе с экрана, чтобы он не пропадал. */
     fun flush() {
         synchronized(lock) {
-            if (unsaved > 0 && blocked >= 0) {
-                MmkvManager.encodeSettings(KEY_COUNT, blocked.toString())
+            if (unsaved > 0) {
+                MmkvManager.encodeSettings(KEY_COUNT, counted.toString())
                 unsaved = 0
+                blocked = counted
             }
         }
     }
@@ -844,6 +871,9 @@ internal object AdBlocker {
         synchronized(lock) { ensureLoaded() }
         return blocked
     }
+
+    /** Сбросить хвост на диск при уходе с экрана — иначе он теряется. */
+    fun flushOnLeave() = flush()
     var enabled: Boolean
         get() = MmkvManager.decodeSettingsString(KEY) != "0"
         set(v) { MmkvManager.encodeSettings(KEY, if (v) "1" else "0") }
@@ -1358,8 +1388,6 @@ private fun BrowserApp() {
             menuOpen -> { menuOpen = false; true }
             showTabs -> { showTabs = false; true }
             findQuery != null -> { findQuery = null; active.webView.clearMatches(); true }
-            showTabs -> { showTabs = false; true }
-            menuOpen -> { menuOpen = false; true }
             editing -> { editing = false; true }
             active.canBack.value -> { runCatching { active.webView.goBack() }; true }
             else -> false

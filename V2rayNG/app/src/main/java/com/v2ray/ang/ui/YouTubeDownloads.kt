@@ -64,15 +64,17 @@ object YouTubeDownloads {
     fun restore() {
         if (restored) return
         restored = true
-        DownloadRecords.all().sortedBy { it.savedAt }.forEach { r ->
+        // Новое сверху — как у живых загрузок, они добавляются в начало.
+        DownloadRecords.all().sortedByDescending { it.savedAt }.forEach { r ->
             if (entries.any { it.uri?.toString() == r.uri }) return@forEach
-            val e = Entry(nextId++, r.name, "application/octet-stream")
+            val e = Entry(nextId++, r.name, r.mime)
             e.state = State.DONE
             e.uri = android.net.Uri.parse(r.uri)
             e.total = r.bytes
             e.done = r.bytes
             e.sourceUrl = r.sourceUrl
             e.sourceTitle = r.name
+            e.kind = r.kind
             entries.add(e)
         }
     }
@@ -99,9 +101,10 @@ object YouTubeDownloads {
             e.state = State.QUEUED
             // Спим короткими шагами: «Сейчас» должно срабатывать сразу, а не
             // ждать конца получасовой дрёмы.
-            repeat(15) {
-                if (e.bypass) return@repeat
+            var slept = 0
+            while (slept < 30 && !e.bypass) {
                 kotlinx.coroutines.delay(2_000)
+                slept += 2
             }
         }
         e.waitReason = null
@@ -188,7 +191,9 @@ object YouTubeDownloads {
                         e.uri = it; e.state = State.DONE
                         // Помним, что скачали: список в памяти умрёт вместе с
                         // процессом, а файл останется.
-                        DownloadRecords.add(it.toString(), e.label, e.sourceUrl, e.total)
+                        DownloadRecords.add(
+                            it.toString(), e.label, e.sourceUrl, e.total, e.mime, e.kind,
+                        )
                     }
                     .onFailure { e.state = failureState(it, e) }
             }
@@ -293,7 +298,9 @@ object YouTubeDownloads {
                         e.uri = it; e.state = State.DONE
                         // Помним, что скачали: список в памяти умрёт вместе с
                         // процессом, а файл останется.
-                        DownloadRecords.add(it.toString(), e.label, e.sourceUrl, e.total)
+                        DownloadRecords.add(
+                            it.toString(), e.label, e.sourceUrl, e.total, e.mime, e.kind,
+                        )
                     }
                     .onFailure { e.state = failureState(it, e) }
             }
@@ -326,7 +333,9 @@ object YouTubeDownloads {
                         e.uri = it; e.state = State.DONE
                         // Помним, что скачали: список в памяти умрёт вместе с
                         // процессом, а файл останется.
-                        DownloadRecords.add(it.toString(), e.label, e.sourceUrl, e.total)
+                        DownloadRecords.add(
+                            it.toString(), e.label, e.sourceUrl, e.total, e.mime, e.kind,
+                        )
                     }
                     .onFailure { e.state = failureState(it, e) }
             }
@@ -348,7 +357,9 @@ object YouTubeDownloads {
                         e.uri = it; e.state = State.DONE
                         // Помним, что скачали: список в памяти умрёт вместе с
                         // процессом, а файл останется.
-                        DownloadRecords.add(it.toString(), e.label, e.sourceUrl, e.total)
+                        DownloadRecords.add(
+                            it.toString(), e.label, e.sourceUrl, e.total, e.mime, e.kind,
+                        )
                     }
                     .onFailure { e.error = it.message ?: it.javaClass.simpleName; e.state = State.FAILED }
             }

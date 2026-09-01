@@ -685,7 +685,7 @@ class MainActivity : HelperBaseComponentActivity() {
                 // and leaving it in the picker is how someone selects a
                 // subscription and finds no servers behind it.
                 val live = fetched?.subscriptions.orEmpty()
-                    .filter { (it.daysLeft ?: 1) > 0 }
+                    .filter { (it.daysLeft ?: 0) >= 0 }
                     // Longest-lived first: syncSubscriptions treats the first as
                     // the one to fall back to / activate, and a just-acquired
                     // month or plan is the one with the most days left.
@@ -1501,7 +1501,7 @@ class MainActivity : HelperBaseComponentActivity() {
                 // the list invites someone to select one and conclude the
                 // app is broken when no servers appear behind it.
                 plans = subInfo?.subscriptions.orEmpty()
-                    .filter { (it.daysLeft ?: 1) > 0 },
+                    .filter { (it.daysLeft ?: 0) >= 0 },
                 activeToken = MmkvManager.vpnkaTokenForGuid(selectedSub),
                 trialHoursLeft = subInfo?.trialHoursLeft,
                 // Same door as «Подключить Telegram»: the month is granted

@@ -15,6 +15,9 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -241,11 +244,23 @@ private fun loadOrder(): MutableList<Pair<DeskApp, Int>> {
             val cell = parts.getOrNull(1)?.toIntOrNull() ?: return@mapNotNull null
             app to cell
         }
-    // Newly-installed apps (not in the stored layout) get the next free cell.
+    // Новому приложению — ПЕРВАЯ свободная ячейка, а не «последняя занятая
+    // плюс один».
+    //
+    // Раскладка не переписывается при удалении, поэтому цикл «удалить из
+    // магазина — поставить обратно» каждый раз двигал значок на ячейку
+    // дальше: он уезжал в ряд, которого на экране нет, оказывался под
+    // карточками «Продолжить» и переставал открываться совсем — прокрутки в
+    // сетке нет, вернуть его перетаскиванием было нельзя.
     val placed = parsed.map { it.first.id }.toSet()
     val result = parsed.toMutableList()
-    var next = (parsed.maxOfOrNull { it.second } ?: -1) + 1
-    apps.filter { it.id !in placed }.forEach { result.add(it to next++) }
+    val taken = parsed.map { it.second }.toMutableSet()
+    apps.filter { it.id !in placed }.forEach { app ->
+        var cell = 0
+        while (cell in taken) cell++
+        taken.add(cell)
+        result.add(app to cell)
+    }
     return result
 }
 
@@ -295,8 +310,16 @@ fun VpnkaSmartDeskScreen(
     var showSettings by remember { mutableStateOf(false) }
     var showShade by remember { mutableStateOf(false) }     // swipe top-left down
     var showControl by remember { mutableStateOf(false) }   // swipe top-right down
-    // Фактическая высота нижнего блока — её и отводим содержимому.
-    var bottomOverlay by remember { mutableStateOf(BAR_HEIGHT) }
+    // Фактическая высота нижней панели (со вставкой навигации) — её и
+    // отводим содержимому. Мини-плеер и подсказка сюда НЕ входят: они
+    // всплывают поверх и не должны отнимать у стола ряды значков.
+    val navInset = androidx.compose.foundation.layout.WindowInsets.navigationBars
+        .asPaddingValues().calculateBottomPadding()
+    var barHeight by remember { mutableStateOf(BAR_HEIGHT) }
+    // Когда панель спрятана (чат, канал, плеер), отводить под неё место
+    // нельзя: величина оставалась от прошлого замера, и содержимое
+    // поднималось над низом на полторы сотни точек.
+    val bottomOverlay = if (SmartDeskChrome.barHidden) navInset else barHeight + navInset
     var wallpaper by remember {
         mutableStateOf(MmkvManager.decodeSettingsString("vpnka_smartdesk_wallpaper") ?: "flow")
     }
@@ -338,7 +361,12 @@ fun VpnkaSmartDeskScreen(
     // выходе: главный экран VPNka остаётся в своей, светлой.
     DisposableEffect(Unit) {
         VpnkaColors.flow = true
-        onDispose { VpnkaColors.flow = false }
+        onDispose {
+            VpnkaColors.flow = false
+            // Хвост счётчика заблокированного — на диск, иначе последние до
+            // двадцати штук пропадают вместе с процессом.
+            AdBlocker.flushOnLeave()
+        }
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -361,7 +389,11 @@ fun VpnkaSmartDeskScreen(
         // bit lower (top padding), and the top edge stays clear for the
         // shade/control swipes; exit is the bottom dock.
         Row(
-            modifier = Modifier.fillMaxWidth().padding(start = 22.dp, end = 18.dp, top = 46.dp, bottom = 2.dp),
+            // Отступ от системной строки берём у системы: число 46 не
+            // спасало на аппаратах с высоким вырезом — пилюли уходили под
+            // тёмную полосу статус-бара целиком.
+            modifier = Modifier.fillMaxWidth().statusBarsPadding()
+                .padding(start = 22.dp, end = 18.dp, top = 12.dp, bottom = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Spacer(Modifier.weight(1f))
@@ -578,7 +610,7 @@ fun VpnkaSmartDeskScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .weight(1f)
-                .padding(top = 14.dp, start = 12.dp, end = 12.dp)
+                .padding(top = 14.dp, start = 18.dp, end = 18.dp)
                 .pointerInput(Unit) {
                     detectTapGestures(onLongPress = { showSettings = true })
                 }
@@ -650,7 +682,15 @@ fun VpnkaSmartDeskScreen(
                                     // ряда, значок можно было утащить в ряд
                                     // ниже видимого: он сохранялся туда же и
                                     // пропадал под карточками «Продолжить».
-                                    val maxRow = ((gridHPx / cellHPx).toInt() - 1).coerceAtLeast(0)
+                                    // Ряды считаем по числу значков, а не по
+                                    // тому, сколько ЦЕЛЫХ ячеек влезло: ряд
+                                    // виден и когда влезает не целиком, а при
+                                    // ⌊высота/ячейка⌋ = 1 предел выходил 0 —
+                                    // и значок второго ряда схлопывался в
+                                    // первый при любом перетаскивании.
+                                    val rows = (order.size + COLUMNS - 1) / COLUMNS
+                                    val fits = (gridHPx / cellHPx).toInt().coerceAtLeast(1)
+                                    val maxRow = (maxOf(rows, fits) - 1).coerceAtLeast(0)
                                     val newRow = ((baseY + drag.y) / cellHPx).roundToInt()
                                         .coerceIn(0, maxRow)
                                     val target = newRow * COLUMNS + newCol
@@ -869,8 +909,7 @@ fun VpnkaSmartDeskScreen(
             modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                 // Панель системной навигации: без этого отступа кнопки панели
                 // оказывались ПОД тремя системными кнопками Android.
-                .navigationBarsPadding()
-                .onSizeChanged { bottomOverlay = with(density) { it.height.toDp() } },
+                .navigationBarsPadding(),
         ) {
                 // Мини-плеер: фоновый звук продолжает играть, когда «Видео»
                 // закрыто, и до сих пор остановить его можно было, только
@@ -924,6 +963,20 @@ fun VpnkaSmartDeskScreen(
                     }
                 }
                 if (!SmartDeskChrome.barHidden) {
+                    // Место содержимому отводим по ПАНЕЛИ, а не по всему
+                    // нижнему блоку, и меряем её вместе со вставкой навигации.
+                    //
+                    // Мерка стояла правее navigationBarsPadding и отдавала
+                    // высоту БЕЗ неё: панель занимала на 24-48 dp больше, и
+                    // ровно столько нижнего края содержимого оказывалось под
+                    // ней. А мини-плеер и подсказка попадали в ту же мерку и
+                    // отнимали у сетки целые ряды значков — при появлении
+                    // подсказки стол прыгал.
+                    Box(
+                        modifier = Modifier.onSizeChanged {
+                            barHeight = with(density) { it.height.toDp() }
+                        },
+                    ) {
                     SmartDeskTabBar(
                         current = openApp?.id,
                         onDesk = { openApp = null; deskTick++ },
@@ -932,6 +985,7 @@ fun VpnkaSmartDeskScreen(
                             CATALOG_BY_ID[id]?.let { openApp = it }
                         },
                     )
+                    }
                 }
         }
         // Лист настроек рисуется на уровне ВСЕГО экрана. Внутри полосы сетки
@@ -1025,6 +1079,7 @@ private fun BarItem(
             fontFamily = if (selected) VpnkaFonts.nunito800 else VpnkaFonts.manrope600,
             fontSize = 10.sp,
             maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             color = tint,
         )
     }

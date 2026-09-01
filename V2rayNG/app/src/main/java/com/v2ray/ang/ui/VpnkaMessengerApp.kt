@@ -135,6 +135,13 @@ fun VpnkaMessengerApp() {
     var myChannels by remember { mutableStateOf<List<Channels.Channel>>(emptyList()) }
     var typingFrom by remember { mutableStateOf(0L) }
     var typingUntil by remember { mutableStateOf(0L) }
+    // Срок жизни строки «печатает…» проверялся только при перерисовке, а
+    // назначить её было некому: собеседник начал печатать и передумал —
+    // строка висела до следующего события. Гасим по таймеру.
+    LaunchedEffect(typingUntil) {
+        val left = typingUntil - System.currentTimeMillis()
+        if (left > 0) { delay(left + 100); typingFrom = 0L }
+    }
     val scope = rememberCoroutineScope()
     val appCtx = LocalContext.current.applicationContext
 
@@ -143,8 +150,23 @@ fun VpnkaMessengerApp() {
     // участвовал в системном жесте.
     SmartDeskBackHandler {
         when {
+            // Разговор перехватывает «назад» первым. Обработчик стоит ВЫШЕ
+            // раннего выхода на экран звонка, и без этой ветки нажатие втихую
+            // разбирало стек под звонком: закрывался чат, потом вкладка,
+            // потом весь мессенджер — а разговор продолжался без единого
+            // элемента управления.
+            CallManager.phase != CallManager.Phase.IDLE -> true
+            // Профиль с ключом переехал в лист действий и рисуется на весь
+            // экран. Без этой ветки системная «назад» из него выбрасывала
+            // сразу на рабочий стол, минуя список чатов.
+            openProfile != null -> { openProfile = null; true }
+            confirm != null -> { confirm = null; true }
+            sheetFor != null -> { sheetFor = null; true }
             showCreate -> { showCreate = false; true }
-            openChannel != null -> { openChannel = null; true }
+            // tick++ — то, что раньше делала кнопка «‹» в шапке канала. Без
+            // него список каналов не перечитывался, и только что подписанный
+            // канал не появлялся на полке.
+            openChannel != null -> { openChannel = null; tick++; true }
             openId != null -> { openId = null; true }
             tab != MsgTab.CHATS -> { tab = MsgTab.CHATS; true }
             else -> false
@@ -257,7 +279,7 @@ fun VpnkaMessengerApp() {
     }
 
     openChannel?.let { ch ->
-        ChannelScreen(channel = ch, onBack = { openChannel = null; tick++ })
+        ChannelScreen(channel = ch)
         return
     }
 
@@ -290,7 +312,7 @@ fun VpnkaMessengerApp() {
                     ChatPrefs.markSeen(c.id); prefsTick++
                 }
             }
-            ChatScreen(contact = c, tick = tick, typing = typing, onSent = { tick++ }, onBack = { openId = null })
+            ChatScreen(contact = c, tick = tick, typing = typing, onSent = { tick++ })
             return
         }
     }
@@ -846,7 +868,7 @@ private fun ResultRow(glyph: String?, title: String, sub: String?, onClick: () -
 }
 
 @Composable
-private fun ChannelScreen(channel: Channels.Channel, onBack: () -> Unit) {
+private fun ChannelScreen(channel: Channels.Channel) {
     val scope = rememberCoroutineScope()
     var posts by remember { mutableStateOf<List<Channels.Post>>(emptyList()) }
     // The owner can always read/post, even if the subscription flag lags.
@@ -862,7 +884,19 @@ private fun ChannelScreen(channel: Channels.Channel, onBack: () -> Unit) {
         if (!subscribed) {
             Box(modifier = Modifier.fillMaxSize().weight(1f).padding(24.dp), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Подпишитесь, чтобы читать канал", fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp, color = VpnkaColors.TextMuted)
+                    // Шапки у канала больше нет — значит хотя бы здесь надо
+                // сказать, на что предлагается подписаться.
+                Text(
+                    channel.title, fontFamily = VpnkaFonts.nunito800, fontSize = 17.sp,
+                    color = VpnkaColors.TextStrong,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "@${channel.handle}", fontFamily = VpnkaFonts.manrope600,
+                    fontSize = 12.sp, color = VpnkaColors.TextFaint,
+                )
+                Spacer(Modifier.height(12.dp))
+                Text("Подпишитесь, чтобы читать канал", fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp, color = VpnkaColors.TextMuted)
                     Spacer(Modifier.height(10.dp))
                     Box(modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(VpnkaColors.Accent)
                         .clickable { scope.launch { if (Channels.subscribe(channel.id)) { subscribed = true; refresh++ } } }
@@ -936,7 +970,6 @@ private fun ChatScreen(
     tick: Int,
     typing: Boolean,
     onSent: () -> Unit,
-    onBack: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     var draft by remember { mutableStateOf("") }

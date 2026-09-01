@@ -183,7 +183,11 @@ fun YouTubeApp() {
     // Просьба открыть вкладку может прийти, когда «Видео» УЖЕ на экране —
     // тогда новой композиции нет, и одного чтения при рождении мало.
     LaunchedEffect(SmartDeskChrome.pendingYtTab) {
-        SmartDeskChrome.consumePendingYtTab()?.let { tab = it; playing = null; openPl = null }
+        // Плеер НЕ закрываем: подсказка «Добавлено в загрузки · Открыть»
+        // всплывает поверх видео, и нажатие на неё гасило ролик, который
+        // человек в этот момент смотрит. Вкладку под плеером переключаем —
+        // он её и увидит, когда выйдет.
+        SmartDeskChrome.consumePendingYtTab()?.let { tab = it; openPl = null }
     }
     // Мини-плеер с рабочего стола: открываем ИМЕННО играющий ролик.
     LaunchedEffect(SmartDeskChrome.pendingPlayback) {
@@ -656,11 +660,13 @@ fun YouTubeApp() {
                         DlAction("Скачать всё") {
                             withStorage {
                                 later.forEach { i ->
+                                    // Из очереди «позже» вычёркиваем не здесь,
+                                    // а когда загрузка реально началась.
                                     YouTubeDownloads.enqueueVideoByUrl(
                                         context, i.url, i.title, i.quality,
+                                        clearLater = i.url,
                                     )
                                 }
-                                YouTubeLater.clear()
                                 laterTick++
                                 SmartDeskToast.show(
                                     "В загрузках: ${later.size}", "Открыть", "downloads",
@@ -700,8 +706,8 @@ fun YouTubeApp() {
                                 withStorage {
                                     YouTubeDownloads.enqueueVideoByUrl(
                                         context, i.url, i.title, i.quality,
+                                        clearLater = i.url,
                                     )
-                                    YouTubeLater.remove(i.url)
                                     laterTick++
                                 }
                             }
@@ -884,7 +890,20 @@ internal fun NowPlayingBar(onOpen: (YouTubeService.Playback) -> Unit) {
         }
         Spacer(Modifier.width(6.dp))
         DlAction("⏹") {
-            ctl?.run { pause(); clearMediaItems() }
+            // Сначала запомнить место, потом гасить.
+            //
+            // Служба сохраняет позицию сама, но читает её у
+            // YouTubeNowPlaying, а очистка очереди обнуляет и его, и
+            // длительность: остановка самой очевидной кнопкой теряла место, на
+            // котором человек закончил слушать.
+            ctl?.let { c ->
+                if (c.duration > 0) {
+                    YouTubeHistory.savePosition(
+                        current.pageUrl, c.currentPosition / 1000, c.duration / 1000,
+                    )
+                }
+                c.pause(); c.clearMediaItems()
+            }
             YouTubeNowPlaying.current = null
         }
     }
@@ -1329,13 +1348,14 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
         }
     }
     DisposableEffect(Unit) {
+        // ContextCompat делает правильное на всех уровнях. Голый
+        // registerReceiver до API 33 считает приёмник ЭКСПОРТИРОВАННЫМ:
+        // любое приложение на телефоне могло слать нам эти команды и
+        // управлять чужим воспроизведением.
         val f = android.content.IntentFilter(PIP_ACTION)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            context.registerReceiver(pipReceiver, f, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            @Suppress("UnspecifiedRegisterReceiverFlag")
-            context.registerReceiver(pipReceiver, f)
-        }
+        ContextCompat.registerReceiver(
+            context, pipReceiver, f, ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
         onDispose { runCatching { context.unregisterReceiver(pipReceiver) } }
     }
 
@@ -1643,6 +1663,8 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                         Spacer(Modifier.weight(1f))
                         OverlayPill(if (busy) "…" else "качество") { openPlayQuality() }
                         Spacer(Modifier.width(6.dp))
+                        // На Android 7 маленького окна нет вовсе — кнопка
+                        // там молча ничего не делала.
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                             OverlayPill("⤢") { enterPip() }
                             Spacer(Modifier.width(6.dp))

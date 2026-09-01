@@ -81,10 +81,14 @@ object ExpiryReminder {
             // Telegram — this only governs the on-device push.
             if (!info.notifyExpiryInApp) return Result.success()
 
+            // По самому ДАЛЬНЕМУ сроку: доступ кончается тогда, когда истечёт
+            // последний план. Брался ближайший — и человек с годовой
+            // подпиской плюс бесплатным месяцем получал системное
+            // уведомление «подписка кончается сегодня», хотя впереди год.
             val daysLeft = info.subscriptions.orEmpty()
                 .filter { !it.frozen }
                 .mapNotNull { it.daysLeft }
-                .minOrNull()
+                .maxOrNull()
                 ?: return Result.success()
 
             val stage = STAGES.firstOrNull { daysLeft <= it } ?: run {

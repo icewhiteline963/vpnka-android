@@ -90,10 +90,16 @@ class VpnkaMediaService : MediaSessionService() {
         // скачанного его не видела.
         player.addListener(object : androidx.media3.common.Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
-                if (state == androidx.media3.common.Player.STATE_ENDED) {
-                    com.v2ray.ang.handler.YouTubeNowPlaying.current?.pageUrl?.let {
-                        com.v2ray.ang.handler.YouTubeHistory.markWatched(it)
-                    }
+                if (state != androidx.media3.common.Player.STATE_ENDED) return
+                val p = session?.player ?: return
+                // ENDED приходит и от очистки очереди («стоп» в мини-плеере),
+                // а не только от досмотренного ролика. Отличаем по позиции:
+                // без этого брошенный на второй минуте ролик пометился бы
+                // досмотренным и попал под автоуборку скачанного.
+                val dur = p.duration
+                if (dur <= 0 || p.currentPosition < dur - 30_000) return
+                com.v2ray.ang.handler.YouTubeNowPlaying.current?.pageUrl?.let {
+                    com.v2ray.ang.handler.YouTubeHistory.markWatched(it)
                 }
             }
         })

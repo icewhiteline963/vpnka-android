@@ -26,6 +26,10 @@ object DownloadRecords {
         val sourceUrl: String?,
         val bytes: Long,
         val savedAt: Long,
+        /** Тип файла: без него восстановленная строка не открывалась ничем. */
+        val mime: String = "application/octet-stream",
+        /** Полка списка: «Видео» | «Файл» | «Субтитры». */
+        val kind: String = "Видео",
     )
 
     fun all(): List<Rec> {
@@ -40,10 +44,19 @@ object DownloadRecords {
     private fun save(list: List<Rec>) =
         MmkvManager.encodeSettings(KEY, gson.toJson(list.take(MAX)))
 
-    fun add(uri: String, name: String, sourceUrl: String?, bytes: Long) {
+    fun add(
+        uri: String,
+        name: String,
+        sourceUrl: String?,
+        bytes: Long,
+        mime: String = "application/octet-stream",
+        kind: String = "Видео",
+    ) {
         if (uri.isBlank()) return
-        save(listOf(Rec(uri, name, sourceUrl, bytes, System.currentTimeMillis())) +
-            all().filterNot { it.uri == uri })
+        save(
+            listOf(Rec(uri, name, sourceUrl, bytes, System.currentTimeMillis(), mime, kind)) +
+                all().filterNot { it.uri == uri },
+        )
     }
 
     fun forget(uri: String) = save(all().filterNot { it.uri == uri })
@@ -71,12 +84,24 @@ object DownloadRecords {
             else if (u.scheme == "content") context.contentResolver.delete(u, null, null) > 0
             else u.path?.let { java.io.File(it).delete() } ?: false
         }.getOrDefault(false)
-        // Забываем запись, только если файл действительно исчез. Иначе он
-        // остался бы на диске, а мы бы о нём больше не знали: повторная
-        // уборка его уже не подберёт, и убрать станет нечем.
-        if (ok) forget(r.uri)
+        // Забываем запись, если файл исчез — сами мы его удалили или он уже
+        // пропал (стёрли проводником, почистили систему). Держать запись о
+        // несуществующем файле нельзя: он вечно всплывал бы в списке как
+        // «готово», а «удалить» отчитывалось бы «освободилось 0 Б».
+        val gone = ok || !exists(context, r)
+        if (gone) forget(r.uri)
         return if (ok) r.bytes else 0L
     }
+
+    /** Есть ли файл ещё на месте. */
+    fun exists(context: Context, r: Rec): Boolean = runCatching {
+        val u = android.net.Uri.parse(r.uri)
+        if (u.scheme == "content") {
+            context.contentResolver.openFileDescriptor(u, "r")?.use { true } ?: false
+        } else {
+            u.path?.let { java.io.File(it).exists() } ?: false
+        }
+    }.getOrDefault(false)
 
     /** Автоуборка. Выключена по умолчанию: сама удалять чужие файлы нельзя. */
     var autoDelete: Boolean
