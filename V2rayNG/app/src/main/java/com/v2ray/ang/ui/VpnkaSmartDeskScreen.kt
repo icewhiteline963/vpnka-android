@@ -29,7 +29,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -50,7 +49,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import com.v2ray.ang.handler.BrowserHistory
 import com.v2ray.ang.handler.Messenger
 import com.v2ray.ang.handler.SmartDeskSync
 import com.v2ray.ang.handler.SmartDeskStore
@@ -79,7 +77,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import android.content.Context
 import android.content.Intent
@@ -319,7 +316,7 @@ fun VpnkaSmartDeskScreen(
     // Когда панель спрятана (чат, канал, плеер), отводить под неё место
     // нельзя: величина оставалась от прошлого замера, и содержимое
     // поднималось над низом на полторы сотни точек.
-    val bottomOverlay = if (SmartDeskChrome.barHidden) navInset else barHeight + navInset
+    val bottomOverlay = if (SmartDeskChrome.barHidden) navInset else barHeight
     var wallpaper by remember {
         mutableStateOf(MmkvManager.decodeSettingsString("vpnka_smartdesk_wallpaper") ?: "flow")
     }
@@ -436,6 +433,7 @@ fun VpnkaSmartDeskScreen(
         // и остаётся отдельным действием.
         var deskQuery by remember { mutableStateOf("") }
         val deskHits = remember(deskQuery) { SmartDeskSearch.search(deskQuery) }
+        Spacer(Modifier.height(10.dp))
         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp)) {
             OutlinedTextField(
                 value = deskQuery,
@@ -756,94 +754,9 @@ fun VpnkaSmartDeskScreen(
 
         }
 
-        // «Продолжить» — последние страницы браузера, как в макете.
-        //
-        // Берём именно журнал браузера: это единственная вещь, которую человек
-        // бросает на полпути и ищет потом. Инкогнито сюда не попадает — его
-        // страницы в журнал не пишутся вовсе.
-        // Сколько строк показать, зависит от высоты экрана: карточки, метка и
-        // «Продолжить» откусывают у сетки значков, и на невысоком телефоне
-        // три строки оставили бы от неё один ряд.
-        val screenH = LocalConfiguration.current.screenHeightDp
-        val recentMax = when {
-            screenH >= 760 -> 3
-            screenH >= 660 -> 2
-            else -> 0
-        }
-        val recent = remember(deskTick, recentMax) {
-            if (recentMax == 0) emptyList() else BrowserHistory.all().take(recentMax)
-        }
-        if (recent.isNotEmpty()) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 18.dp, bottom = 6.dp),
-                verticalAlignment = Alignment.Bottom,
-            ) {
-                Text(
-                    "ПРОДОЛЖИТЬ",
-                    fontFamily = VpnkaFonts.nunito800, fontSize = 10.sp, letterSpacing = 1.0.sp,
-                    color = ink.copy(alpha = 0.45f), modifier = Modifier.weight(1f),
-                )
-                Text(
-                    "Все", fontFamily = VpnkaFonts.nunito800, fontSize = 11.sp,
-                    color = VpnkaColors.Accent,
-                    modifier = Modifier.clip(RoundedCornerShape(9.dp))
-                        .clickable { CATALOG_BY_ID["browser"]?.let { openApp = it } }
-                        .padding(horizontal = 8.dp, vertical = 2.dp),
-                )
-            }
-            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp)) {
-                recent.forEach { e ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 7.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(VpnkaColors.CardSpeed)
-                            .border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(12.dp))
-                            .clickable {
-                                SmartDeskChrome.pendingUrl = e.url
-                                CATALOG_BY_ID["browser"]?.let { openApp = it }
-                            }
-                            .padding(10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        val host = remember(e.url) {
-                            runCatching { android.net.Uri.parse(e.url).host.orEmpty() }
-                                .getOrDefault("").removePrefix("www.")
-                        }
-                        Box(
-                            modifier = Modifier.size(30.dp)
-                                .clip(RoundedCornerShape(9.dp))
-                                .background(
-                                    Brush.linearGradient(
-                                        listOf(VpnkaColors.AccentLight, VpnkaColors.Accent),
-                                    ),
-                                ),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                host.take(1).uppercase().ifBlank { "•" },
-                                fontFamily = VpnkaFonts.nunito800, fontSize = 13.sp,
-                                color = VpnkaColors.OnAccent,
-                            )
-                        }
-                        Spacer(Modifier.width(11.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                e.title.ifBlank { host.ifBlank { e.url } },
-                                fontFamily = VpnkaFonts.nunito800, fontSize = 12.sp,
-                                color = VpnkaColors.TextStrong,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                host, fontFamily = VpnkaFonts.manrope600, fontSize = 10.sp,
-                                color = VpnkaColors.TextFaint,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
-                }
-            }
-        }
+        // «Продолжить» (последние страницы браузера) со стола убрано по
+        // просьбе владельца: журнал остался в самом браузере, а на столе он
+        // отнимал место у значков и лез в глаза там, где его не искали.
 
         // Место под нижний блок — он рисуется поверх, у самого низа окна.
         Spacer(Modifier.height(bottomOverlay))
@@ -906,10 +819,7 @@ fun VpnkaSmartDeskScreen(
         // и подсказки — и они накрывали низ любого экрана.
         val density = LocalDensity.current
         Column(
-            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                // Панель системной навигации: без этого отступа кнопки панели
-                // оказывались ПОД тремя системными кнопками Android.
-                .navigationBarsPadding(),
+            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
         ) {
                 // Мини-плеер: фоновый звук продолжает играть, когда «Видео»
                 // закрыто, и до сих пор остановить его можно было, только
@@ -978,6 +888,10 @@ fun VpnkaSmartDeskScreen(
                         },
                     ) {
                     SmartDeskTabBar(
+                        // Отступ под системную навигацию отдаём ВНУТРЬ панели:
+                        // её фон должен доходить до самой грани экрана, а не
+                        // висеть в паре сантиметров над ней.
+                        bottomInset = navInset,
                         current = openApp?.id,
                         onDesk = { openApp = null; deskTick++ },
                         onApp = { id, ytTab ->
@@ -1029,11 +943,18 @@ private val BAR_HEIGHT = 58.dp
  */
 @Composable
 private fun SmartDeskTabBar(
+    bottomInset: androidx.compose.ui.unit.Dp,
     current: String?,
     onDesk: () -> Unit,
     onApp: (String, Int?) -> Unit,
 ) {
-    Column(modifier = Modifier.fillMaxWidth().background(VpnkaColors.BgOffCentre)) {
+    Column(
+        modifier = Modifier.fillMaxWidth()
+            .background(VpnkaColors.BgOffCentre)
+            // Кнопки поднимаем над системной навигацией, а полотно панели
+            // остаётся прижатым к нижней грани.
+            .padding(bottom = bottomInset),
+    ) {
         // Волосяная черта сверху — в макете панель отделена от содержимого
         // именно ею, а не тенью.
         Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(VpnkaColors.Hairline))
@@ -1072,8 +993,11 @@ private fun BarItem(
             .padding(vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(glyph, fontSize = 16.sp, color = tint)
-        Spacer(Modifier.height(5.dp))
+        // Значок крупнее подписи: по панели попадают в него, а не в слово.
+        // Было 16 sp — на ощупь это точка, особенно у эмодзи, которые сами по
+        // себе рисуются мельче собственного кегля.
+        Text(glyph, fontSize = 22.sp, color = tint)
+        Spacer(Modifier.height(4.dp))
         Text(
             label,
             fontFamily = if (selected) VpnkaFonts.nunito800 else VpnkaFonts.manrope600,
