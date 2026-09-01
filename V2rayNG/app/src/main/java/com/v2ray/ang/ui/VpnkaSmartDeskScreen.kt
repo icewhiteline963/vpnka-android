@@ -15,6 +15,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -573,16 +574,11 @@ fun VpnkaSmartDeskScreen(
         // ANYWHERE on the grid opens the shade (left half) or control centre
         // (right half) — it starts mid-screen, not at the top edge, so it
         // doesn't fight Android's own status-bar pull-down.
-        // Высота полосы значков — она нужна, чтобы не дать утащить значок в
-        // невидимый ряд. Внутри жеста `size` — это размер самого значка, а не
-        // сетки, поэтому меряем здесь.
-        var gridHPx by remember { mutableStateOf(0) }
-        Box(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
                 .weight(1f)
                 .padding(top = 14.dp, start = 12.dp, end = 12.dp)
-                .onSizeChanged { gridHPx = it.height }
                 .pointerInput(Unit) {
                     detectTapGestures(onLongPress = { showSettings = true })
                 }
@@ -602,10 +598,14 @@ fun VpnkaSmartDeskScreen(
                 },
         ) {
             val density = LocalDensity.current
-            // Non-square cells: width keeps all 4 columns on-screen, height is
-            // taller so each row has more room (fits one row fewer — fine).
-            val cellW = 88.dp
-            val cellH = 106.dp
+            // Ячейка считается от РЕАЛЬНОЙ ширины полосы, а не задана числом.
+            //
+            // Было 88 dp на столбец: четыре столбца требуют 352 dp, а после
+            // отступов на обычном телефоне остаётся около 336 — правый ряд
+            // значков срезало краем экрана. На узких аппаратах срезало сильнее.
+            val cellW = maxWidth / COLUMNS
+            val cellH = cellW * 1.2f
+            val gridHPx = with(density) { maxHeight.toPx() }.toInt()
             val cellWPx = with(density) { cellW.toPx() }
             val cellHPx = with(density) { cellH.toPx() }
 

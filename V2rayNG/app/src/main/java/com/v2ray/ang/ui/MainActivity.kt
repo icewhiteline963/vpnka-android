@@ -1684,10 +1684,14 @@ class MainActivity : HelperBaseComponentActivity() {
                         val trialDays = subInfo?.subscriptions.orEmpty()
                             .filter { !it.frozen && it.isTrial }
                             .mapNotNull { it.daysLeft }
-                        trialDays.isEmpty() || (trialDays.minOrNull() ?: 0) <= 1
+                        // По самому дальнему пробному: вопрос «можно ли взять
+                        // следующий месяц» — про тот, что кончится последним.
+                        trialDays.isEmpty() || (trialDays.maxOrNull() ?: 0) <= 1
                     },
                 freeMonthWaiting = subInfo?.subscriptions.orEmpty()
-                    .any { !it.frozen && it.isTrial && (it.daysLeft ?: 0) <= 1 },
+                    .filter { !it.frozen && it.isTrial }
+                    .mapNotNull { it.daysLeft }
+                    .maxOrNull()?.let { it <= 1 } == true,
                 claimingFreeMonth = claimingFreeMonth,
                 onClaimFreeMonth = {
                     // No Telegram behind the account → this card is the
@@ -1751,13 +1755,18 @@ class MainActivity : HelperBaseComponentActivity() {
                 // Green dot only while the tunnel is actually up.
                 smartDeskOnline = smartDeskOnline && uiState.isRunning,
                 onSmartDesk = { showSmartDesk = true },
-                // The plan that runs out first is the one worth warning
-                // about; a longer one behind it does not make the gap
-                // any less of an outage.
+                // Предупреждаем о том дне, когда доступ кончится СОВСЕМ, то
+                // есть по самому дальнему плану.
+                //
+                // Раньше брался ближайший — и человек, только что получивший
+                // новый бесплатный месяц, читал «подписка кончается завтра»
+                // про прежний, уже заменённый. Полоса подписана «подписка
+                // кончается», а кончается она тогда, когда истечёт последняя;
+                // пока действует хоть одна, ВПН работает.
                 expiryDaysLeft = subInfo?.subscriptions.orEmpty()
                     .filter { !it.frozen }
                     .mapNotNull { it.daysLeft }
-                    .minOrNull(),
+                    .maxOrNull(),
                 onRenew = { goBuyOrLink() },
                 // The plan the traffic is actually on, not merely the first
                 // one: the row names that subscription, so the numbers under
