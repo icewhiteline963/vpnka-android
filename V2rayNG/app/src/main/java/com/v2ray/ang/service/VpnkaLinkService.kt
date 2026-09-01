@@ -155,7 +155,69 @@ class VpnkaLinkService : Service() {
             .build()
     }
 
+    /** Звонок и вибрация — пока идёт вызов. */
+    private var ringtone: android.media.Ringtone? = null
+    private var vibrator: android.os.Vibrator? = null
+
+    /**
+     * Позвонить по-настоящему.
+     *
+     * Раньше звонка НЕ БЫЛО ВОВСЕ: при открытом мессенджере вызов был
+     * беззвучным, при закрытом — один короткий сигнал канала уведомлений на
+     * всё шестидесятисекундное окно дозвона. То есть входящий звонок можно
+     * было увидеть, только глядя на экран.
+     *
+     * Уважаем режим телефона: в беззвучном не звоним, в «только вибрация» —
+     * только вибрируем. Своей громкости не навязываем.
+     */
+    private fun startRinging() {
+        val am = getSystemService(Context.AUDIO_SERVICE) as? android.media.AudioManager
+        val mode = am?.ringerMode ?: android.media.AudioManager.RINGER_MODE_NORMAL
+        if (mode == android.media.AudioManager.RINGER_MODE_NORMAL) {
+            runCatching {
+                val uri = android.media.RingtoneManager
+                    .getActualDefaultRingtoneUri(this, android.media.RingtoneManager.TYPE_RINGTONE)
+                    ?: android.media.RingtoneManager
+                        .getDefaultUri(android.media.RingtoneManager.TYPE_RINGTONE)
+                ringtone = android.media.RingtoneManager.getRingtone(this, uri)?.apply {
+                    audioAttributes = android.media.AudioAttributes.Builder()
+                        .setUsage(android.media.AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) isLooping = true
+                    play()
+                }
+            }
+        }
+        if (mode != android.media.AudioManager.RINGER_MODE_SILENT) {
+            runCatching {
+                val v = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    (getSystemService(Context.VIBRATOR_MANAGER_SERVICE)
+                        as? android.os.VibratorManager)?.defaultVibrator
+                } else {
+                    @Suppress("DEPRECATION")
+                    getSystemService(Context.VIBRATOR_SERVICE) as? android.os.Vibrator
+                }
+                vibrator = v
+                val pattern = longArrayOf(0, 800, 900)
+                v?.vibrate(
+                    android.os.VibrationEffect.createWaveform(pattern, 0),
+                )
+            }
+        }
+    }
+
+    private fun stopRingingSound() {
+        runCatching { ringtone?.stop() }
+        ringtone = null
+        runCatching { vibrator?.cancel() }
+        vibrator = null
+    }
+
     private fun ring(name: String) {
+        // Звучим в любом случае: даже когда мессенджер открыт и рисует свой
+        // экран звонка, звук нужен — человек мог отложить телефон.
+        startRinging()
         // The messenger draws its own full call screen; a heads-up on top of it
         // would just be the same call twice. Everywhere else — home screen,
         // another app, screen off — the notification is the only thing there is.
@@ -188,6 +250,7 @@ class VpnkaLinkService : Service() {
     }
 
     private fun stopRinging() {
+        stopRingingSound()
         runCatching {
             NotificationManagerCompat.from(this)
                 .cancel(NotificationChannelType.CALL_INCOMING.notificationId)

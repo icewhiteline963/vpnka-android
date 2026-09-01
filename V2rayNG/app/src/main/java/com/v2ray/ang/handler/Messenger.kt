@@ -419,7 +419,7 @@ object Messenger {
         ensureKey(contactId)
         val c = contact(contactId) ?: return@withContext false
         val u = java.util.UUID.randomUUID().toString()
-        val ct = try { seal(signedJson(MsgPayload(u = u, k = "text", t = text)), c.pubKey) }
+        val ct = try { seal(signedJson(MsgPayload(ts = System.currentTimeMillis(), u = u, k = "text", t = text)), c.pubKey) }
             catch (e: Exception) { return@withContext false }
         val mid = postMessage(contactId, ct) ?: return@withContext false
         appendMessage(contactId, Msg(id = mid, mine = true, text = text, ts = System.currentTimeMillis(), u = u))
@@ -690,6 +690,16 @@ object Messenger {
          * Пустая строка = пакет от старой версии: показываем, но помечаем.
          */
         val sig: String = "",
+        /**
+         * Когда отправлено, по часам отправителя.
+         *
+         * Раньше времени в пакете не было вовсе, и получатель ставил своё —
+         * момент разбора. Телефон, полежавший день без сети, получал всю пачку
+         * с сегодняшним временем, а список чатов сортируется по этому же полю.
+         *
+         * 0 = пакет от старой версии: тогда, как и раньше, берём своё время.
+         */
+        val ts: Long = 0,
     )
 
     // AES-GCM for media blobs — {iv,ct} envelope, byte-compatible with the web.
@@ -793,14 +803,14 @@ object Messenger {
         val mediaId = uploadMedia(contactId, aesGcm(k, jpeg), onProgress) ?: return@withContext false
         val keyB = Base64.encodeToString(k, b64f)
         val ct = try {
-            seal(signedJson(MsgPayload(u = u, k = "image", media = mediaId, key = keyB, mime = "image/jpeg")), c.pubKey)
+            seal(signedJson(MsgPayload(ts = System.currentTimeMillis(), u = u, k = "image", media = mediaId, key = keyB, mime = "image/jpeg")), c.pubKey)
         } catch (e: Exception) { return@withContext false }
         val mid = postMessage(contactId, ct) ?: return@withContext false
         appendMessage(contactId, Msg(id = mid, mine = true, text = "", ts = System.currentTimeMillis(), u = u, k = "image", img = Base64.encodeToString(jpeg, b64f)))
         val myId = myClientId()
         if (myId > 0) {
             try {
-                val self = signedJson(MsgPayload(u = u, k = "image", media = mediaId, key = keyB, mime = "image/jpeg", peer = contactId, self = true, mid = mid))
+                val self = signedJson(MsgPayload(ts = System.currentTimeMillis(), u = u, k = "image", media = mediaId, key = keyB, mime = "image/jpeg", peer = contactId, self = true, mid = mid))
                 postMessage(myId, seal(self, myPublicKey()))
             } catch (e: Exception) { /* best-effort sync */ }
         }
@@ -821,14 +831,14 @@ object Messenger {
         val mediaId = uploadMedia(contactId, aesGcm(k, m4a), onProgress) ?: return@withContext false
         val keyB = Base64.encodeToString(k, b64f)
         val ct = try {
-            seal(signedJson(MsgPayload(u = u, k = "voice", media = mediaId, key = keyB, mime = "audio/mp4", dur = durSec)), c.pubKey)
+            seal(signedJson(MsgPayload(ts = System.currentTimeMillis(), u = u, k = "voice", media = mediaId, key = keyB, mime = "audio/mp4", dur = durSec)), c.pubKey)
         } catch (e: Exception) { return@withContext false }
         val mid = postMessage(contactId, ct) ?: return@withContext false
         appendMessage(contactId, Msg(id = mid, mine = true, text = "", ts = System.currentTimeMillis(), u = u, k = "voice", img = Base64.encodeToString(m4a, b64f), dur = durSec))
         val myId = myClientId()
         if (myId > 0) {
             try {
-                val self = signedJson(MsgPayload(u = u, k = "voice", media = mediaId, key = keyB, mime = "audio/mp4", dur = durSec, peer = contactId, self = true, mid = mid))
+                val self = signedJson(MsgPayload(ts = System.currentTimeMillis(), u = u, k = "voice", media = mediaId, key = keyB, mime = "audio/mp4", dur = durSec, peer = contactId, self = true, mid = mid))
                 postMessage(myId, seal(self, myPublicKey()))
             } catch (e: Exception) { /* best-effort sync */ }
         }
@@ -849,14 +859,14 @@ object Messenger {
         val mediaId = uploadMedia(contactId, aesGcm(k, mp4), onProgress) ?: return@withContext false
         val keyB = Base64.encodeToString(k, b64f)
         val ct = try {
-            seal(signedJson(MsgPayload(u = u, k = "video", media = mediaId, key = keyB, mime = "video/mp4", dur = durSec)), c.pubKey)
+            seal(signedJson(MsgPayload(ts = System.currentTimeMillis(), u = u, k = "video", media = mediaId, key = keyB, mime = "video/mp4", dur = durSec)), c.pubKey)
         } catch (e: Exception) { return@withContext false }
         val mid = postMessage(contactId, ct) ?: return@withContext false
         appendMessage(contactId, Msg(id = mid, mine = true, text = "", ts = System.currentTimeMillis(), u = u, k = "video", img = Base64.encodeToString(mp4, b64f), dur = durSec))
         val myId = myClientId()
         if (myId > 0) {
             try {
-                val self = signedJson(MsgPayload(u = u, k = "video", media = mediaId, key = keyB, mime = "video/mp4", dur = durSec, peer = contactId, self = true, mid = mid))
+                val self = signedJson(MsgPayload(ts = System.currentTimeMillis(), u = u, k = "video", media = mediaId, key = keyB, mime = "video/mp4", dur = durSec, peer = contactId, self = true, mid = mid))
                 postMessage(myId, seal(self, myPublicKey()))
             } catch (e: Exception) { /* best-effort sync */ }
         }
@@ -954,6 +964,14 @@ object Messenger {
                     // Авторство проверяем ПОСЛЕ того, как узнали отправителя:
                     // подпись сверяется его публичным ключом из наших
                     // контактов, а не тем, что назвал сервер.
+                    // Время берём отправительское, но не слепо: часы у людей
+                    // сбиты, а сообщение «из будущего» встанет в списке чатов
+                    // выше всех навсегда. Отклонение больше суток вперёд или
+                    // года назад считаем мусором и берём своё.
+                    val nowMs = System.currentTimeMillis()
+                    val stamp = if (
+                        o.ts > nowMs - 365L * 24 * 3600 * 1000 && o.ts < nowMs + 24L * 3600 * 1000
+                    ) o.ts else nowMs
                     val senderKey =
                         if (o.self) myPublicKey() else contact(m.fromClient)?.pubKey.orEmpty()
                     val ok = o.self || verified(raw, senderKey)
@@ -991,7 +1009,7 @@ object Messenger {
                         val img = try {
                             Base64.encodeToString(aesGcmDec(Base64.decode(o.key, b64f), blob), b64f)
                         } catch (e: Exception) { "" }
-                        added = appendMessage(chat, Msg(id = id, mine = mine, text = "", ts = System.currentTimeMillis(), u = o.u, k = "image", img = img, verified = ok))
+                        added = appendMessage(chat, Msg(id = id, mine = mine, text = "", ts = stamp, u = o.u, k = "image", img = img, verified = ok))
                         preview = "📷 Фото"
                     } else if (o.k == "voice" && o.media > 0 && o.key.isNotEmpty()) {
                         val blob = downloadMedia(o.media)
@@ -1004,7 +1022,7 @@ object Messenger {
                         val audio = try {
                             Base64.encodeToString(aesGcmDec(Base64.decode(o.key, b64f), blob), b64f)
                         } catch (e: Exception) { "" }
-                        added = appendMessage(chat, Msg(id = id, mine = mine, text = "", ts = System.currentTimeMillis(), u = o.u, k = "voice", img = audio, dur = o.dur, verified = ok))
+                        added = appendMessage(chat, Msg(id = id, mine = mine, text = "", ts = stamp, u = o.u, k = "voice", img = audio, dur = o.dur, verified = ok))
                         preview = "🎤 Голосовое"
                     } else if (o.k == "video" && o.media > 0 && o.key.isNotEmpty()) {
                         val blob = downloadMedia(o.media)
@@ -1017,10 +1035,10 @@ object Messenger {
                         val vid = try {
                             Base64.encodeToString(aesGcmDec(Base64.decode(o.key, b64f), blob), b64f)
                         } catch (e: Exception) { "" }
-                        added = appendMessage(chat, Msg(id = id, mine = mine, text = "", ts = System.currentTimeMillis(), u = o.u, k = "video", img = vid, dur = o.dur, verified = ok))
+                        added = appendMessage(chat, Msg(id = id, mine = mine, text = "", ts = stamp, u = o.u, k = "video", img = vid, dur = o.dur, verified = ok))
                         preview = "🎬 Видео"
                     } else {
-                        added = appendMessage(chat, Msg(id = id, mine = mine, text = o.t, ts = System.currentTimeMillis(), u = o.u, verified = ok))
+                        added = appendMessage(chat, Msg(id = id, mine = mine, text = o.t, ts = stamp, u = o.u, verified = ok))
                         preview = o.t
                     }
                     // Only genuinely-new messages from other people are worth a

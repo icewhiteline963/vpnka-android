@@ -100,8 +100,27 @@ private fun avatarBrush(name: String): Brush {
     return Brush.linearGradient(palettes[idx])
 }
 
-private fun msgTime(ts: Long): String =
-    if (ts <= 0L) "" else SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(ts))
+/**
+ * Время сообщения: часы для сегодняшних, дата для остальных.
+ *
+ * Показывались только часы. Пока время ставилось по моменту получения, это
+ * было почти безобидно; теперь в пакете едет время ОТПРАВКИ, и пачка,
+ * пришедшая после суток без сети, честно вчерашняя — а «14:30» без даты об
+ * этом не скажет.
+ */
+private fun msgTime(ts: Long): String {
+    if (ts <= 0L) return ""
+    val now = java.util.Calendar.getInstance()
+    val then = java.util.Calendar.getInstance().apply { timeInMillis = ts }
+    val sameDay = now.get(java.util.Calendar.YEAR) == then.get(java.util.Calendar.YEAR) &&
+        now.get(java.util.Calendar.DAY_OF_YEAR) == then.get(java.util.Calendar.DAY_OF_YEAR)
+    val pattern = when {
+        sameDay -> "HH:mm"
+        now.get(java.util.Calendar.YEAR) == then.get(java.util.Calendar.YEAR) -> "d MMM, HH:mm"
+        else -> "dd.MM.yy, HH:mm"
+    }
+    return SimpleDateFormat(pattern, Locale.getDefault()).format(Date(ts))
+}
 
 
 /** Bottom tabs, Telegram-style. Nested screens (a chat, a channel) hide the bar
