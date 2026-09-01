@@ -152,16 +152,6 @@ private fun wallpaperBrush(id: String): Brush = when (id) {
     else -> Brush.linearGradient(listOf(Color(0xFFFFDCA8), Color(0xFFFFB27A), Color(0xFFF5926E)))
 }
 
-/** One swatch colour for the picker chip. */
-private fun wallpaperSwatch(id: String): Color = when (id) {
-    "flow" -> Color(0xFF1B160F)
-    "aurora" -> Color(0xFF9D50BB)
-    "ocean" -> Color(0xFF1A94A8)
-    "night" -> Color(0xFF213A44)
-    "forest" -> Color(0xFF2E7D53)
-    else -> Color(0xFFFFB27A)
-}
-
 /** Warm wallpaper is light → dark ink; the rest are dark → white ink. */
 private fun wallpaperLightInk(id: String): Boolean = id != "warm"
 
@@ -312,7 +302,9 @@ fun VpnkaSmartDeskScreen(
     // отводим содержимому. Мини-плеер и подсказка сюда НЕ входят: они
     // всплывают поверх и не должны отнимать у стола ряды значков.
     val navInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    var barHeight by remember { mutableStateOf(BAR_HEIGHT) }
+    // Начальное приближение — с системной вставкой: без неё первый кадр
+    // резервировал меньше, чем панель занимает, и стол дёргался.
+    var barHeight by remember { mutableStateOf(BAR_HEIGHT + navInset) }
     // Когда панель спрятана (чат, канал, плеер), отводить под неё место
     // нельзя: величина оставалась от прошлого замера, и содержимое
     // поднималось над низом на полторы сотни точек.
@@ -634,7 +626,14 @@ fun VpnkaSmartDeskScreen(
             // отступов на обычном телефоне остаётся около 336 — правый ряд
             // значков срезало краем экрана. На узких аппаратах срезало сильнее.
             val cellW = maxWidth / COLUMNS
-            val cellH = cellW * 1.2f
+            // Пол по содержимому: плитка 62 + отступ 6 + две строки подписи.
+            //
+            // Правку я объявлял раньше и НЕ сделал — в коде оставалось голое
+            // cellW*1.2. На узком экране это 85 dp при нужных 96, и вторая
+            // строка («VPNka мессенджер») срезалась по верхушкам букв. Пол
+            // растёт вместе с системным шрифтом: при крупном подписи выше.
+            val labelLine = 14.dp * density.fontScale
+            val cellH = maxOf(cellW * 1.2f, 68.dp + labelLine * 2)
             val gridHPx = with(density) { maxHeight.toPx() }.toInt()
             val cellWPx = with(density) { cellW.toPx() }
             val cellHPx = with(density) { cellH.toPx() }
@@ -796,7 +795,12 @@ fun VpnkaSmartDeskScreen(
             lastApp?.let { app ->
               // Приложение рисуется НАД панелью, поэтому оставляем ей место:
               // иначе нижняя строка приложения уходила бы под панель.
-              Box(modifier = Modifier.padding(bottom = bottomOverlay)) {
+              // Фон приложения ДО края, отступ внутри: иначе под ним
+              // проглядывала подложка стола на высоту системной навигации.
+              Box(
+                  modifier = Modifier.background(VpnkaColors.BgOffMid)
+                      .padding(bottom = bottomOverlay),
+              ) {
                 VpnkaSmartDeskAppScreen(
                     appId = app.id,
                     onBack = { openApp = null; deskTick++ },
@@ -845,6 +849,12 @@ fun VpnkaSmartDeskScreen(
                     Row(
                         modifier = Modifier.fillMaxWidth()
                             .padding(horizontal = 10.dp, vertical = 4.dp)
+                            // Когда панель спрятана (плеер, чат), подсказка
+                            // остаётся у самого низа — и без этого отступа
+                            // ложилась ПОД системную навигацию: на трёх
+                            // кнопках текст и «Открыть» пропадали, а касание
+                            // уходило системе.
+                            .padding(bottom = if (SmartDeskChrome.barHidden) navInset else 0.dp)
                             .clip(RoundedCornerShape(12.dp))
                             .background(VpnkaColors.BgOffCentre)
                             .padding(horizontal = 14.dp, vertical = 10.dp),
@@ -931,7 +941,7 @@ fun VpnkaSmartDeskScreen(
  * forces a sync if anything is still pending.
  */
 /** Высота нижней панели — под неё отводится место и на столе, и в приложении. */
-private val BAR_HEIGHT = 58.dp
+private val BAR_HEIGHT = 66.dp
 
 /**
  * Нижняя панель супер-приложения по макету: Стол · Видео · Чаты · Браузер ·

@@ -140,16 +140,6 @@ object SmartDeskChrome {
         return p
     }
 
-    /** Адрес, который браузер должен открыть первым (с домашнего экрана). */
-    @Volatile
-    var pendingUrl: String? = null
-
-    fun consumePendingUrl(): String? {
-        val u = pendingUrl
-        pendingUrl = null
-        return u
-    }
-
     /**
      * Куда открыть «Видео»: 2 — сразу на вкладку загрузок (нижняя панель).
      *
@@ -1328,8 +1318,6 @@ private fun BrowserApp() {
     }
 
     val home = "https://duckduckgo.com/"
-    // С домашнего экрана могли попросить конкретную страницу («Продолжить»).
-    val firstUrl = remember { SmartDeskChrome.consumePendingUrl() ?: home }
     // Загрузка со страницы идёт нашим загрузчиком: системный менеджер пошёл
     // бы в сеть напрямую, мимо туннеля.
     val onPageDownload: (String, String) -> Unit = { u, name ->
@@ -1337,7 +1325,7 @@ private fun BrowserApp() {
         SmartDeskToast.show("Файл добавлен в загрузки", "Открыть", "downloads")
     }
     val tabs = remember {
-        mutableStateListOf(BrowserTab(context, 0, firstUrl, onOfferSave, false, onPageDownload))
+        mutableStateListOf(BrowserTab(context, 0, home, onOfferSave, false, onPageDownload))
     }
     var nextId by remember { mutableIntStateOf(1) }
     var activeId by remember { mutableIntStateOf(0) }

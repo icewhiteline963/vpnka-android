@@ -1778,9 +1778,15 @@ class MainActivity : HelperBaseComponentActivity() {
                         val soonest = live.minByOrNull { it.daysLeft ?: 0 } ?: return@let null
                         val last = live.maxOfOrNull { it.daysLeft ?: 0 } ?: return@let null
                         val days = soonest.daysLeft ?: return@let null
-                        // Молчим, пока запас есть, и когда кончаются все разом.
-                        if (days > 7 || days >= last) return@let null
-                        (soonest.tariff ?: "Подписка") to days
+                        // Молчим, пока запас есть, когда кончаются все разом
+                        // и когда уже говорит тревожная полоса выше.
+                        //
+                        // Без последнего условия выходила пара строк, спорящих
+                        // друг с другом: красное «кончается меньше чем через
+                        // сутки» и тут же спокойное «связь не прервётся» — а
+                        // назавтра переставало работать всё.
+                        if (days > 7 || days >= last || last <= 3) return@let null
+                        (soonest.tariff?.takeIf { it.isNotBlank() } ?: "Подписка") to days
                     },
                 onRenew = { goBuyOrLink() },
                 // The plan the traffic is actually on, not merely the first
