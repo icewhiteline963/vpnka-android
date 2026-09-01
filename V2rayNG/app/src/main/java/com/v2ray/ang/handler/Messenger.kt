@@ -192,7 +192,10 @@ object Messenger {
 
     // Deep-link target: the notifier sets the chat to open, the messenger UI
     // consumes it on first composition. 0 = nothing pending.
-    @Volatile private var pendingChat: Long = 0L
+    // Состояние Compose: просьба открыть чат приходит из уведомления, когда
+    // мессенджер уже на экране, — обычное поле никто не перечитывал.
+    var pendingChat by androidx.compose.runtime.mutableStateOf(0L)
+        private set
 
     /** Ask the UI to open a given chat next time SmartDesk/messenger draws. */
     fun requestOpenChat(id: Long) { pendingChat = id }
@@ -411,6 +414,10 @@ object Messenger {
     fun clearHistory() {
         store.allKeys()?.filter { it.startsWith("msg_") }?.forEach { store.removeValueForKey(it) }
         store.remove(KEY_CONTACTS)
+        // Журнал звонков — тоже переписка, только голосом: после «очистить
+        // историю на устройстве» вкладка «Звонки» продолжала перечислять
+        // всех, с кем человек говорил, вместе с их именами.
+        ChatPrefs.clearCalls()
     }
 
     /** Tell the server we've read messages from `peer` up to `upTo` (✓✓). */

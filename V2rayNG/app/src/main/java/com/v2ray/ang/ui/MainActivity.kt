@@ -258,11 +258,31 @@ class MainActivity : HelperBaseComponentActivity() {
         openDeskFromIntent(intent)
     }
 
+    /**
+     * Убрать с дороги всё, что рисуется ПОВЕРХ рабочего стола.
+     *
+     * Экраны выбираются цепочкой ранних возвратов, и стол в ней последний:
+     * если открыт магазин, поддержка или настройки, просьба «покажи стол»
+     * ничего не меняла — уведомление о звонке или сообщении не открывало
+     * ничего. Гасим верхние экраны, иначе просьба до стола не доходит.
+     */
+    private fun clearOverlaysForDesk() {
+        showShop = false
+        showTopUp = false
+        showSupport = false
+        showTickets = false
+        showSettings = false
+        showSubscription = false
+        showRecovery = false
+        showPlansList = false
+    }
+
     /** A home-screen app shortcut was tapped: open SmartDesk on that app. */
     private fun openDeskFromIntent(intent: Intent) {
         val open = intent.getStringExtra(EXTRA_OPEN) ?: return
         if (!open.startsWith(OPEN_DESK_PREFIX)) return
         com.v2ray.ang.ui.SmartDeskChrome.pendingAppId = open.removePrefix(OPEN_DESK_PREFIX)
+        clearOverlaysForDesk()
         showSmartDesk = true
     }
 
@@ -271,6 +291,7 @@ class MainActivity : HelperBaseComponentActivity() {
      *  as long as it rings — so opening Messages is all it takes. */
     private fun openCallFromIntent() {
         com.v2ray.ang.ui.SmartDeskChrome.pendingAppId = "messages"
+        clearOverlaysForDesk()
         showSmartDesk = true
     }
 
@@ -278,6 +299,7 @@ class MainActivity : HelperBaseComponentActivity() {
     private fun openMessengerFromIntent(intent: Intent) {
         val chat = intent.getLongExtra(EXTRA_CHAT, 0L)
         if (chat != 0L) com.v2ray.ang.handler.Messenger.requestOpenChat(chat)
+        clearOverlaysForDesk()
         showSmartDesk = true
     }
 

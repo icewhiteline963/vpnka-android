@@ -129,8 +129,11 @@ object SmartDeskChrome {
     // A home-screen shortcut (see VpnkaSmartDeskScreen "Добавить на рабочий
     // стол") deep-links here via MainActivity with the target app id; the
     // desktop consumes it on launch and opens that app.
-    @Volatile
-    var pendingAppId: String? = null
+    // Compose-состояние, а не обычное поле: просьба приходит из уведомления,
+    // когда рабочий стол УЖЕ на экране, и новой композиции не будет —
+    // однократное чтение при рождении её не замечало, а потом она
+    // «выстреливала» при следующем заходе на стол, уводя в давно протухший чат.
+    var pendingAppId by mutableStateOf<String?>(null)
 
     /** Что открыть в плеере: мини-плеер вёл в список, а не к играющему. */
     var pendingPlayback by mutableStateOf<YouTubeService.Playback?>(null)

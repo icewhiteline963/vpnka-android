@@ -78,6 +78,7 @@ object MessengerVoice {
         if (bytes.isEmpty()) return
         val f = File(context.cacheDir, "voice_play.m4a")
         runCatching { f.writeBytes(bytes) }.getOrElse { return }
+        playFile = f
         val mp = MediaPlayer()
         try {
             mp.setDataSource(f.absolutePath); mp.prepare(); mp.start()
@@ -91,5 +92,15 @@ object MessengerVoice {
     fun stopPlayback() {
         player?.let { runCatching { it.stop() }; runCatching { it.release() } }
         player = null; playingId = null
+        // Расшифрованное голосовое стираем с диска.
+        //
+        // Файл писался в кэш и НЕ удалялся никогда: последнее прослушанное
+        // сообщение лежало открытым текстом бессрочно — в приложении, которое
+        // обещает сквозное шифрование.
+        runCatching { playFile?.delete() }
+        playFile = null
     }
+
+    /** Времянка последнего проигранного — чтобы её было чем удалить. */
+    private var playFile: File? = null
 }

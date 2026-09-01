@@ -284,12 +284,14 @@ fun VpnkaSmartDeskScreen(
 
     // Opened by tapping a message notification: jump straight into the
     // messenger. The chat itself is consumed inside VpnkaMessengerApp.
-    LaunchedEffect(Unit) {
+    // Ключи — сами просьбы: они приходят из уведомления, когда стол уже на
+    // экране, и однократное чтение при рождении их не замечало.
+    LaunchedEffect(Messenger.pendingChat) {
         if (Messenger.peekPendingChat() != 0L) {
             CATALOG_BY_ID["messages"]?.let { openApp = it }
         }
-        // A home-screen shortcut («Добавить на рабочий стол») deep-linked us to
-        // a specific app — open it straight away.
+    }
+    LaunchedEffect(SmartDeskChrome.pendingAppId) {
         SmartDeskChrome.consumePendingApp()?.let { id -> CATALOG_BY_ID[id]?.let { openApp = it } }
     }
 

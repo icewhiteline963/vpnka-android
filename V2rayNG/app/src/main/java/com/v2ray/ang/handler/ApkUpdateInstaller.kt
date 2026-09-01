@@ -174,6 +174,13 @@ object ApkUpdateInstaller {
         // that happens to live in the cache.
         val target = cacheFile(context)
         target.parentFile?.mkdirs()
+        // Пометку «готово к установке» снимаем ДО перезаписи файла.
+        //
+        // Файл тот же самый, а пометка меняется только после успеха: пока
+        // качается новая версия (на нашем канале это минуты), приложение
+        // показывало «обновление готово» и предлагало установить наполовину
+        // переписанный пакет — Android отвечал «повреждённый пакет».
+        runCatching { clearReady(context) }
         target.parentFile?.listFiles()?.forEach { it.delete() }
 
         val client = OkHttpClient.Builder()

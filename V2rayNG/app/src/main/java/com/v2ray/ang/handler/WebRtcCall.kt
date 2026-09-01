@@ -70,6 +70,17 @@ object CallManager {
     private val gson = Gson()
     private val main = Handler(Looper.getMainLooper())
 
+    /** Связь не вернулась за отведённое время — только тогда кладём трубку. */
+    private val dropIfStillDown = Runnable {
+        val st = pc?.connectionState()
+        if (phase == Phase.ACTIVE &&
+            st != PeerConnection.PeerConnectionState.CONNECTED
+        ) {
+            endReason = "Связь прервалась"
+            cleanup(Phase.ENDED)
+        }
+    }
+
     private var factory: PeerConnectionFactory? = null
     private var eglBase: EglBase? = null
     private var pc: PeerConnection? = null
@@ -150,6 +161,11 @@ object CallManager {
         cleanup(Phase.ENDED)
     }
 
+    /** Убрать экран завершённого звонка, не дожидаясь автосброса. */
+    fun reset() {
+        if (phase == Phase.ENDED) phase = Phase.IDLE
+    }
+
     fun toggleMute() {
         muted = !muted
         localTrack?.setEnabled(!muted)
@@ -184,6 +200,27 @@ object CallManager {
                             ts = System.currentTimeMillis(),
                         ),
                     )
+                    return@post
+                }
+                // Звонить может только тот, кто у нас в контактах.
+                //
+                // Раньше предложение принималось от кого угодно и показывало
+                // присланное имя как есть: любой аккаунт мог звонить любому,
+                // подставляя произвольную подпись, и телефон звонил минуту с
+                // открытым микрофоном. Соединение всё равно не состоялось бы
+                // — сигналы уходят только контактам, — то есть это был чистый
+                // способ донимать человека.
+                if (Messenger.contacts().none { it.id == from }) {
+                    return@post
+                }
+                // Повторное предложение по ТОМУ ЖЕ звонку игнорируем: оно
+                // приходит до десяти раз при недоставке, а `setState`
+                // сбрасывал признак снятой трубки — второе нажатие «принять»
+                // создавало второй PeerConnection поверх первого (открытый
+                // микрофон, который уже никто не закроет), а принятый звонок
+                // мог записаться в журнал «пропущенным».
+                if (phase == Phase.INCOMING && sig.call == callId && from == peerId) {
+                    pendingOffer = SessionDescription(SessionDescription.Type.OFFER, sig.sdp)
                     return@post
                 }
                 callId = sig.call
@@ -274,11 +311,26 @@ object CallManager {
         override fun onConnectionChange(state: PeerConnection.PeerConnectionState) {
             main.post {
                 when (state) {
-                    PeerConnection.PeerConnectionState.CONNECTED ->
-                        if (phase != Phase.ACTIVE) { phase = Phase.ACTIVE; connectedAt = System.currentTimeMillis() }
+                    PeerConnection.PeerConnectionState.CONNECTED -> {
+                        main.removeCallbacks(dropIfStillDown)
+                        if (phase != Phase.ACTIVE) {
+                            phase = Phase.ACTIVE; connectedAt = System.currentTimeMillis()
+                        }
+                    }
                     PeerConnection.PeerConnectionState.FAILED,
-                    PeerConnection.PeerConnectionState.CLOSED,
-                    PeerConnection.PeerConnectionState.DISCONNECTED -> if (phase == Phase.ACTIVE) cleanup(Phase.ENDED)
+                    PeerConnection.PeerConnectionState.CLOSED ->
+                        if (phase == Phase.ACTIVE) cleanup(Phase.ENDED)
+                    // DISCONNECTED — состояние ПЕРЕХОДНОЕ: переход с Wi-Fi на
+                    // мобильную сеть, короткая потеря пакетов. Обычно связь
+                    // восстанавливается сама. Раньше отсюда сразу шёл отбой, и
+                    // выход из дома на улицу гарантированно рвал разговор.
+                    // Даём десять секунд.
+                    PeerConnection.PeerConnectionState.DISCONNECTED -> {
+                        if (phase == Phase.ACTIVE) {
+                            main.removeCallbacks(dropIfStillDown)
+                            main.postDelayed(dropIfStillDown, 10_000)
+                        }
+                    }
                     else -> {}
                 }
             }
@@ -474,6 +526,7 @@ object CallManager {
         }
         main.removeCallbacks(offerRetry)
         main.removeCallbacks(ringTimeout)
+        main.removeCallbacks(dropIfStillDown)
         offerJson = ""; offerTries = 0
         try { pc?.dispose() } catch (e: Exception) {}
         try { localTrack?.dispose() } catch (e: Exception) {}

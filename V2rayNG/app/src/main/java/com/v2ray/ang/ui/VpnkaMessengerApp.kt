@@ -68,6 +68,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.v2ray.ang.handler.ChatPrefs
@@ -155,6 +156,10 @@ fun VpnkaMessengerApp() {
             // разбирало стек под звонком: закрывался чат, потом вкладка,
             // потом весь мессенджер — а разговор продолжался без единого
             // элемента управления.
+            // В фазе «завершён» «назад» должно закрывать экран, а не молчать:
+            // иначе после конца разговора нажатие мертво ещё несколько секунд,
+            // а при зависшей фазе — навсегда.
+            CallManager.phase == CallManager.Phase.ENDED -> { CallManager.reset(); true }
             CallManager.phase != CallManager.Phase.IDLE -> true
             // Профиль с ключом переехал в лист действий и рисуется на весь
             // экран. Без этой ветки системная «назад» из него выбрасывала
@@ -182,13 +187,20 @@ fun VpnkaMessengerApp() {
     // or device name), then poll for incoming while this app is open. A
     // WebSocket rides alongside for instant wake + "typing"; polling stays as
     // the fallback so a dropped socket never loses messages.
+    // Опрос идёт, только пока экран на переднем плане.
+    //
+    // Compose не разрушает композицию при сворачивании, поэтому цикл бил по
+    // сети каждые 2,5 секунды всё время, пока мессенджер оставался открытым
+    // в фоне. Фоновые уведомления за это отвечают отдельно.
+    val pollOwner = LocalLifecycleOwner.current
     LaunchedEffect(Unit) {
         CallManager.attach()  // route incoming call signaling into the engine
         Messenger.refreshMyId()
         handle = Messenger.register("${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
         myChannels = Channels.mine()
+        pollOwner.repeatOnLifecycle(Lifecycle.State.RESUMED) {
         while (true) {
-            if (VpnkaColors.connected) {
+            run {
                 Messenger.connectWs { type, from ->
                     when (type) {
                         "wake" -> scope.launch {
@@ -203,6 +215,7 @@ fun VpnkaMessengerApp() {
                 if (changed) tick++
             }
             delay(2500)
+        }
         }
     }
     // Leaving the messenger no longer kills the socket: the link service holds
@@ -237,7 +250,9 @@ fun VpnkaMessengerApp() {
     // Opened from a message notification: jump into that chat. The contact may
     // not be loaded yet on a cold start — poll() above adds it, and the tick
     // bump then lets openId resolve to it.
-    LaunchedEffect(Unit) {
+    // Ключ — сама просьба: уведомление может прийти, когда мессенджер уже
+    // открыт, и однократное чтение её не заметит.
+    LaunchedEffect(Messenger.pendingChat) {
         val pending = Messenger.consumePendingChat()
         if (pending != 0L) openId = pending
     }
@@ -261,7 +276,12 @@ fun VpnkaMessengerApp() {
         // звонка она только мешала.
         DisposableEffect(Unit) {
             SmartDeskChrome.barHidden = true
-            onDispose {}
+            // Снимать флаг обязательно: ветка звонка — ранний выход, и пока
+            // она на экране, основной эффект мессенджера из композиции
+            // отсутствует. Если приложение умрёт во время разговора, флаг
+            // останется поднятым НАВСЕГДА — панель на рабочем столе
+            // пропадёт до перезапуска.
+            onDispose { SmartDeskChrome.barHidden = false }
         }
         CallScreen()
         return
@@ -877,7 +897,25 @@ private fun ChannelScreen(channel: Channels.Channel) {
     var refresh by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(refresh) {
-        if (subscribed) posts = Channels.feed(channel.id)
+        if (!subscribed) return@LaunchedEffect
+        // Догружаем ленту постранично.
+        //
+        // Клиент всегда просил «с нуля», а сервер отдаёт сотню по возрастанию
+        // — после сотого поста новые записи не видел НИКТО и никогда. Идём
+        // страницами от последнего известного, пока сервер не перестанет
+        // отдавать новое.
+        val acc = posts.toMutableList()
+        var since = acc.maxOfOrNull { it.id } ?: 0L
+        var guard = 0
+        while (guard++ < 20) {
+            val page = Channels.feed(channel.id, since)
+            if (page.isEmpty()) break
+            acc.addAll(page.filterNot { p -> acc.any { it.id == p.id } })
+            val newest = page.maxOf { it.id }
+            if (newest <= since) break
+            since = newest
+        }
+        posts = acc.sortedBy { it.id }
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
