@@ -125,6 +125,14 @@ object WebDavManager {
      */
     private fun buildRemoteUrl(remoteFileName: String): String {
         val base = cfg?.baseUrl?.trimEnd('/') ?: ""
+        // Только https. Пароль уходит basic-авторизацией, то есть в открытом
+        // виде, а по http его прочтёт кто угодно на пути — и вместе с ним
+        // копию настроек. Пустой адрес приведёт к обычной ошибке загрузки,
+        // а не к тихой отправке в открытую.
+        if (base.isNotEmpty() && !base.startsWith("https://")) {
+            android.util.Log.w("WebDav", "адрес не https — отказано")
+            return ""
+        }
         // Use configured remoteBasePath when not empty; otherwise fallback to AppConfig.WEBDAV_BACKUP_DIR
         val basePathConfigured = cfg?.remoteBasePath?.trim('/')?.takeIf { it.isNotEmpty() }
         val basePath = basePathConfigured ?: AppConfig.WEBDAV_BACKUP_DIR

@@ -131,10 +131,62 @@ class BackupActivity : HelperBaseComponentActivity() {
             return Pair(false, "")
         }
 
+        // Секреты в копию НЕ КЛАДЁМ.
+        //
+        // `backupAllToDirectory` выгребает все контейнеры подряд, а архив
+        // потом уходит куда угодно: в любое приложение через «Поделиться», в
+        // выбранную человеком папку и на произвольный WebDAV. В нём лежали
+        // мастер-ключ сейфа, токен сессии, пароли от сайтов, переписка
+        // мессенджера и журнал посещений — то есть один файл отдавал и
+        // аккаунт, и всё «зашифрованное на устройстве».
+        //
+        // Копия нужна для СЕРВЕРОВ и настроек — они и остаются. Личное
+        // восстанавливается входом в аккаунт, а не файлом.
+        val secretContainers = listOf(
+            "vpnka_vault",       // мастер-ключ и обёрнутая личность
+            "vpnka_messenger",   // переписка и контакты
+            "vpnka_passwords",   // пароли от сайтов
+            "vpnka_smartdesk",   // заметки, контакты, календарь
+        )
+        java.io.File(backupDir).listFiles()?.forEach { f ->
+            if (secretContainers.any { f.name == it || f.name.startsWith("$it.") }) {
+                f.delete()
+            }
+        }
+        // Из общих настроек вычищаем отдельные ключи — там же лежат токен
+        // аккаунта, ключи шифрования контейнеров и журнал браузера.
+        stripSecretsFromSettings(backupDir)
+
         if (ZipUtil.zipFromFolder(backupDir, outputZipFilePath)) {
             return Pair(true, outputZipFilePath)
         } else {
             return Pair(false, "")
+        }
+    }
+
+    /**
+     * Вычистить секреты из выгруженного контейнера настроек.
+     *
+     * Открываем копию как отдельный MMKV, удаляем чувствительные ключи и
+     * закрываем. Так в архив попадают настройки и подписки, но не то, чем
+     * можно войти в аккаунт или прочитать личные данные.
+     */
+    private fun stripSecretsFromSettings(backupDir: String) {
+        runCatching {
+            val copy = MMKV.mmkvWithID("SETTING", MMKV.SINGLE_PROCESS_MODE, null, backupDir)
+            listOf(
+                "vpnka_account_token",
+                "vpnka_recovery_code",
+                "vpnka_vault_cryptkey",
+                "vpnka_messenger_cryptkey",
+                "vpnka_smartdesk_cryptkey",
+                "vpnka_pwd_cryptkey",
+                "vpnka_browser_passwords",
+                "browser_history",
+                "chat_calls",
+                "webdav_password",
+            ).forEach { copy.removeValueForKey(it) }
+            copy.close()
         }
     }
 
