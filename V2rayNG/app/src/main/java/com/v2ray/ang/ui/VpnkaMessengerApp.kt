@@ -105,9 +105,6 @@ private fun msgTime(ts: Long): String =
 
 /** Bottom tabs, Telegram-style. Nested screens (a chat, a channel) hide the bar
  *  and come back to whichever tab was open. */
-/** Высота липкой шапки чата/канала. */
-private val CHAT_BAR_HEIGHT = 52.dp
-
 private enum class MsgTab { CHATS, CALLS, CONTACTS, SETTINGS, PROFILE }
 
 /** Полки списка чатов. «Группы» из макета не заводим: групповых чатов у нас
@@ -130,6 +127,7 @@ fun VpnkaMessengerApp() {
     var showCreate by remember { mutableStateOf(false) }
     var filter by remember { mutableStateOf(ChatFilter.ALL) }
     var sheetFor by remember { mutableStateOf<Messenger.Contact?>(null) }
+    var openProfile by remember { mutableStateOf<Messenger.Contact?>(null) }
     var confirm by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
     // Отдельный счётчик для локальных пометок (закрепить/без звука/архив):
     // общий tick перечитывает и переписку, а тут меняется только полка.
@@ -260,6 +258,11 @@ fun VpnkaMessengerApp() {
 
     openChannel?.let { ch ->
         ChannelScreen(channel = ch, onBack = { openChannel = null; tick++ })
+        return
+    }
+
+    openProfile?.let { c ->
+        ContactProfileScreen(contact = c, onBack = { openProfile = null })
         return
     }
 
@@ -534,6 +537,10 @@ fun VpnkaMessengerApp() {
             title = { Text(c.name, fontFamily = VpnkaFonts.nunito800, color = VpnkaColors.TextStrong) },
             text = {
                 Column {
+                    // Профиль с отпечатком ключа открывался по имени в шапке.
+                    // Шапки больше нет — значит место ему здесь, иначе
+                    // проверить ключ собеседника стало бы нечем.
+                    SheetAction("🪪  Профиль и ключ") { sheetFor = null; openProfile = c }
                     SheetAction(if (pinnedNow) "📌  Открепить" else "📌  Закрепить") {
                         ChatPrefs.setPinned(c.id, !pinnedNow); prefsTick++; sheetFor = null
                     }
@@ -851,32 +858,8 @@ private fun ChannelScreen(channel: Channels.Channel, onBack: () -> Unit) {
         if (subscribed) posts = Channels.feed(channel.id)
     }
 
-    // Шапка канала — такая же липкая, как в чате.
-    val channelHeader: @Composable () -> Unit = {
-        Row(
-            modifier = Modifier.fillMaxWidth()
-                .height(CHAT_BAR_HEIGHT)
-                .background(VpnkaColors.BgOffMid.copy(alpha = 0.85f))
-                .padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("‹", fontSize = 24.sp, color = VpnkaColors.TextStrong,
-                modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onBack).padding(horizontal = 8.dp, vertical = 4.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("📢", fontSize = 20.sp)
-            Spacer(Modifier.width(8.dp))
-            Column {
-                Text(channel.title, fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.TextStrong)
-                Text("@${channel.handle}", fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp, color = VpnkaColors.TextMuted)
-            }
-        }
-    }
-
     Column(modifier = Modifier.fillMaxSize()) {
         if (!subscribed) {
-            // Пока не подписан — шапка обычная: под ней ничего не прокручивается,
-            // и полупрозрачность здесь была бы украшением без причины.
-            channelHeader()
             Box(modifier = Modifier.fillMaxSize().weight(1f).padding(24.dp), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("Подпишитесь, чтобы читать канал", fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp, color = VpnkaColors.TextMuted)
@@ -893,7 +876,7 @@ private fun ChannelScreen(channel: Channels.Channel, onBack: () -> Unit) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                    top = CHAT_BAR_HEIGHT + 4.dp, bottom = 6.dp,
+                    top = 8.dp, bottom = 6.dp,
                 ),
             ) {
                 if (posts.isEmpty()) item {
@@ -908,7 +891,6 @@ private fun ChannelScreen(channel: Channels.Channel, onBack: () -> Unit) {
                     }
                 }
             }
-            Box(modifier = Modifier.align(Alignment.TopCenter)) { channelHeader() }
             }
             if (channel.isOwner) {
                 Row(modifier = Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -963,7 +945,6 @@ private fun ChatScreen(
     // null = no photo being sent; 0..100 = upload progress; -1 = failed.
     var sendPct by remember { mutableStateOf<Int?>(null) }
     val listState = rememberLazyListState()
-    var showProfile by remember { mutableStateOf(false) }
     // Follow the conversation: when a message is sent OR arrives (msgs grows),
     // and while a photo uploads, keep the newest row on screen.
 
@@ -1053,60 +1034,13 @@ private fun ChatScreen(
         onDispose { MessengerVoice.stopPlayback(); if (MessengerVoice.isRecording) MessengerVoice.cancelRecording() }
     }
 
-    if (showProfile) {
-        ContactProfileScreen(contact = contact, onBack = { showProfile = false })
-        return
-    }
-
-    // Шапка чата — липкая: лежит поверх переписки на полупрозрачном полотне,
-    // сообщения уезжают под неё. Список получает верхний отступ, поэтому
-    // ни одно сообщение не оказывается спрятанным навсегда.
-    val chatHeader: @Composable () -> Unit = {
-        Row(
-            modifier = Modifier.fillMaxWidth()
-                .height(CHAT_BAR_HEIGHT)
-                .background(VpnkaColors.BgOffMid.copy(alpha = 0.85f))
-                .padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("‹", fontSize = 24.sp, color = VpnkaColors.TextStrong,
-                modifier = Modifier.clip(RoundedCornerShape(10.dp)).clickable(onClick = onBack).padding(horizontal = 8.dp, vertical = 4.dp))
-            Spacer(Modifier.width(4.dp))
-            MsgAvatar(contact.name)
-            Spacer(Modifier.width(10.dp))
-            // Tapping the name (or the "typing…" line under it) opens the
-            // contact's profile with the E2E key fingerprint.
-            Column(modifier = Modifier.clickable { showProfile = true }) {
-                Text(contact.name, fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, color = VpnkaColors.TextStrong)
-                if (typing) {
-                    Text("печатает…", fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp, color = VpnkaColors.Accent)
-                }
-            }
-            Spacer(Modifier.weight(1f))
-            Box(
-                modifier = Modifier.size(40.dp).clip(CircleShape)
-                    .background(VpnkaColors.CardSettings)
-                    .clickable {
-                        if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO)
-                            == android.content.pm.PackageManager.PERMISSION_GRANTED
-                        ) {
-                            CallManager.startCall(context, contact.id, contact.name)
-                        } else {
-                            callMicLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
-                        }
-                    },
-                contentAlignment = Alignment.Center,
-            ) { Text("📞", fontSize = 18.sp) }
-        }
-    }
-
     Column(modifier = Modifier.fillMaxSize()) {
         Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                top = CHAT_BAR_HEIGHT + 4.dp, bottom = 6.dp,
+                top = 8.dp, bottom = 6.dp,
             ),
         ) {
             // Outgoing messages all carry id=0 and can share a millisecond, so
@@ -1253,12 +1187,31 @@ private fun ChatScreen(
                 }
             }
         }
-        Box(modifier = Modifier.align(Alignment.TopCenter)) { chatHeader() }
         }
         Row(
             modifier = Modifier.fillMaxWidth().padding(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // Звонок переехал сюда из убранной шапки: строка ввода — это
+            // единственное, что есть на экране чата всегда.
+            if (!recording) {
+                Box(
+                    modifier = Modifier.size(40.dp).clip(CircleShape)
+                        .background(VpnkaColors.CardSettings)
+                        .clickable {
+                            if (ContextCompat.checkSelfPermission(
+                                    context, android.Manifest.permission.RECORD_AUDIO
+                                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                            ) {
+                                CallManager.startCall(context, contact.id, contact.name)
+                            } else {
+                                callMicLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+                            }
+                        },
+                    contentAlignment = Alignment.Center,
+                ) { Text("📞", fontSize = 17.sp) }
+                Spacer(Modifier.width(6.dp))
+            }
             if (recording) {
                 Text("🔴", fontSize = 18.sp, modifier = Modifier.padding(start = 8.dp))
                 Spacer(Modifier.width(10.dp))
