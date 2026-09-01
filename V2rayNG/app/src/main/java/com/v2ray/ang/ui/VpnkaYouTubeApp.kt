@@ -263,10 +263,10 @@ fun YouTubeApp() {
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    "Видео", fontFamily = VpnkaFonts.nunito800, fontSize = 17.sp,
-                    color = VpnkaColors.TextStrong, modifier = Modifier.weight(1f),
-                )
+                // Названия экрана здесь нет: человек только что сам открыл
+                // «Видео» с рабочего стола, и повторять это слово поперёк
+                // всей строки незачем.
+                Spacer(Modifier.weight(1f))
                 if (activeDls > 0) {
                     Row(
                         modifier = Modifier.clip(RoundedCornerShape(9.dp))
@@ -287,7 +287,7 @@ fun YouTubeApp() {
                 Box(
                     modifier = Modifier.size(32.dp).clip(RoundedCornerShape(9.dp))
                         .background(if (showSearch) VpnkaColors.Accent else VpnkaColors.CardServer)
-                        .clickable { searchOpen = !showSearch; if (!showSearch) tab = 0 },
+                        .clickable { tab = 0; searchOpen = !showSearch },
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
@@ -301,11 +301,12 @@ fun YouTubeApp() {
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                YtTabChip("Поиск", tab == 0) { tab = 0 }
+                // Отдельной вкладки «Поиск» нет: на ленту возвращает лупа в
+                // шапке и повторное нажатие по уже выбранной полке — держать
+                // ради этого третий чип не за чем.
+                YtTabChip("Плейлисты", tab == 1) { tab = if (tab == 1) 0 else 1; openPl = null; plTick++ }
                 Spacer(Modifier.width(7.dp))
-                YtTabChip("Плейлисты", tab == 1) { tab = 1; openPl = null; plTick++ }
-                Spacer(Modifier.width(7.dp))
-                YtTabChip("Загрузки", tab == 2) { tab = 2 }
+                YtTabChip("Загрузки", tab == 2) { tab = if (tab == 2) 0 else 2 }
                 // Сортировка уехала сюда же: своя строка ради одного чипа —
                 // роскошь, которой на этом экране не осталось места.
                 if (tab == 0 && results.isNotEmpty()) {
@@ -942,11 +943,19 @@ private fun sortItems(list: List<YouTubePlaylists.Item>, s: YtSort): List<YouTub
 private fun YtSortChip(current: YtSort, options: List<YtSort>, onPick: (YtSort) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
+        // Форма и высота — как у соседних чипов (радиус 7, кегль 11, 11×6):
+        // со своими 12/12×8 он стоял в одном ряду с ними и выбивался.
         Box(
-            modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(VpnkaColors.CardServer).border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(12.dp))
-                .clickable { open = true }.padding(horizontal = 12.dp, vertical = 8.dp),
+            modifier = Modifier.clip(RoundedCornerShape(7.dp))
+                .background(VpnkaColors.CardServer)
+                .clickable { open = true }
+                .padding(horizontal = 11.dp, vertical = 6.dp),
+            contentAlignment = Alignment.Center,
         ) {
-            Text("⇅  ${current.label}", fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp, color = VpnkaColors.TextStrong)
+            Text(
+                "⇅  ${current.label}", fontFamily = VpnkaFonts.nunito800,
+                fontSize = 11.sp, color = VpnkaColors.TextMuted, maxLines = 1,
+            )
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             options.forEach { o ->
