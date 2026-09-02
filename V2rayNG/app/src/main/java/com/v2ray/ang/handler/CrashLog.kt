@@ -66,8 +66,14 @@ object CrashLog {
         context?.let { runCatching { flushSystemExits(it) } }
         val raw = MmkvManager.decodeSettingsString(KEY) ?: return
         if (raw.isBlank()) return
-        MmkvManager.encodeSettings(KEY, "")
-        send(raw)
+        // Стираем ТОЛЬКО после успешной отправки.
+        //
+        // Сначала было наоборот — «не дошло, потеряли один отчёт». Но именно
+        // это и произошло бы в самом частом случае: приложение падает,
+        // человек открывает его снова сразу, сети ещё нет — и единственная
+        // трассировка, ради которой всё затевалось, исчезает молча. Не
+        // ушло — попробуем при следующем запуске.
+        if (send(raw)) MmkvManager.encodeSettings(KEY, "")
     }
 
     private const val KEY_EXIT = "vpnka_last_exit_ts"
@@ -105,14 +111,15 @@ object CrashLog {
                 .put("at", e.timestamp)
                 .put("kind", "система: ${e.reason} ${e.description.orEmpty()}".take(256))
                 .put("stack", (trace.ifBlank { e.description.orEmpty() }).take(MAX_STACK))
-            send(obj.toString())
-            if (e.timestamp > newest) newest = e.timestamp
+            // Отметку двигаем только по ОТПРАВЛЕННЫМ: иначе неудачная
+            // попытка (нет сети) навсегда объявляла бы аварию прочитанной.
+            if (send(obj.toString()) && e.timestamp > newest) newest = e.timestamp
         }
         if (newest > last) MmkvManager.encodeSettings(KEY_EXIT, newest.toString())
     }
 
-    private fun send(body: String) {
-        runCatching {
+    /** Отправить. `true` — сервер принял. */
+    private fun send(body: String): Boolean = runCatching {
             val client = OkHttpClient.Builder()
                 .connectTimeout(10, TimeUnit.SECONDS)
                 .callTimeout(20, TimeUnit.SECONDS)
@@ -122,7 +129,6 @@ object CrashLog {
                     .url("https://get.vpnka.io/app/diag/crash")
                     .post(body.toRequestBody("application/json".toMediaType()))
                     .build()
-            ).execute().close()
-        }
-    }
+            ).execute().use { it.isSuccessful }
+    }.getOrDefault(false)
 }
