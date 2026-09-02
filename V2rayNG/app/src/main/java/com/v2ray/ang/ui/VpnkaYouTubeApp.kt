@@ -46,7 +46,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -87,6 +89,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.media3.common.C
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.util.UnstableApi
@@ -146,8 +151,18 @@ fun YouTubeApp() {
         scope.launch {
             loading = true; error = null
             val r = withContext(Dispatchers.IO) { runCatching { YouTubeService.search(q) } }
-            r.onSuccess { results = it }
-                .onFailure { error = "Не удалось загрузить: ${it.message ?: it.javaClass.simpleName}. Включён ли VPN?" }
+            r.onSuccess { results = it; error = null }
+                .onFailure {
+                    // Прошлую выдачу ОЧИЩАЕМ.
+                    //
+                    // Ошибка показывалась только при пустом списке, поэтому
+                    // при отвалившемся туннеле человек искал «собаки» и
+                    // молча оставался на выдаче про кошек — ни признака, что
+                    // запрос не прошёл, ни причины.
+                    results = emptyList()
+                    error = "Не удалось загрузить: " +
+                        "${it.message ?: it.javaClass.simpleName}. Включён ли VPN?"
+                }
             loading = false
         }
     }
@@ -206,7 +221,15 @@ fun YouTubeApp() {
                 playing = it
                 // Запоминаем НАЗВАНИЕ, а не только адрес: по картам позиций
                 // и досмотренного список не покажешь — там одни ссылки.
-                YouTubeHistory.rememberSeen(it.pageUrl, it.title, it.uploader)
+                // Запись истории — на фоне: это чтение MMKV, разбор и
+                // повторная сериализация до двух сотен объектов, и делать
+                // это на главном потоке при каждом открытии ролика значит
+                // подвешивать экран ровно в момент нажатия.
+                scope.launch(Dispatchers.IO) {
+                    runCatching {
+                        YouTubeHistory.rememberSeen(it.pageUrl, it.title, it.uploader)
+                    }
+                }
             }
                 .onFailure { error = "Видео недоступно: ${it.message ?: it.javaClass.simpleName}" }
             resolving = false
@@ -286,6 +309,15 @@ fun YouTubeApp() {
         }
     }
 
+    // Сортировки — ДО раннего возврата, вместе с остальным состоянием.
+    //
+    // Они объявлялись внутри столбца, то есть ниже `return` на плеер: пока
+    // играл ролик, их группа не выполнялась и выбор терялся. Ровно та же
+    // поломка, что была у вкладки и открытого плейлиста, — их подняли, а
+    // сортировки пропустили.
+    var searchSort by remember { mutableStateOf(YtSort.DEFAULT) }
+    var plSort by remember { mutableStateOf(YtSort.DEFAULT) }
+
     // Плеер поверх списка — но ПОСЛЕ объявления всего состояния.
     //
     // Раньше здесь стоял ранний `return`, и вкладка, открытый плейлист и
@@ -317,8 +349,6 @@ fun YouTubeApp() {
                 // вплотную и последняя карточка пряталась за ними.
                 .padding(bottom = barHeight),
         ) {
-            var searchSort by remember { mutableStateOf(YtSort.DEFAULT) }
-            var plSort by remember { mutableStateOf(YtSort.DEFAULT) }
 
             // Поиск — ТОЛЬКО на главной.
             //
@@ -649,6 +679,17 @@ fun YouTubeApp() {
                 var dlFilter by remember { mutableStateOf("Все") }
                 val storage = remember(laterTick, dls.size) { DeviceStorage.read(context) }
 
+                // Вся полка «Загрузки» ПРОКРУЧИВАЕТСЯ.
+                //
+                // Она рисовалась обычным столбцом, а очередь «позже» и список
+                // загрузок выводятся целиком, не лениво: после «скачать
+                // позже» на паре десятков роликов блок памяти, правила
+                // очереди и сами загрузки выдавливались за нижнюю грань, и
+                // добраться до них было нечем.
+                Column(
+                    modifier = Modifier.fillMaxSize()
+                        .verticalScroll(rememberScrollState()),
+                ) {
                 // Блок памяти — первым, как в макете. Человек, который качает
                 // видео, упирается в место раньше всего остального, а узнаёт
                 // об этом обычно из невнятной ошибки посреди загрузки.
@@ -907,9 +948,18 @@ fun YouTubeApp() {
                         }
                     }
                     val shown = if (dlFilter == "Все") dls else dls.filter { it.kind == dlFilter }
-                    LazyColumn(modifier = Modifier.fillMaxSize().padding(top = 6.dp)) {
-                        items(shown, key = { it.id }) { e -> DownloadRow(e) }
+                    // Обычный столбец, а не ленивый список.
+                    //
+                    // Ленивый нельзя вложить в прокручиваемый родитель — он
+                    // меряется бесконечной высотой и роняет разметку. А
+                    // прокрутка здесь нужнее ленивости: загрузок десятки, а
+                    // не тысячи, зато выше них живут блок памяти и правила
+                    // очереди, и без прокрутки они выдавливали список за
+                    // нижнюю грань.
+                    Column(modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
+                        shown.forEach { e -> key(e.id) { DownloadRow(e) } }
                     }
+                }
                 }
             }
         }
@@ -1122,7 +1172,19 @@ internal fun NowPlayingBar(onOpen: (YouTubeService.Playback) -> Unit) {
                 }
                 c.pause(); c.clearMediaItems()
             }
-            YouTubeNowPlaying.current = null
+            // Строку убираем ТОЛЬКО если было чем остановить.
+            //
+            // `current = null` стоял снаружи, поэтому при неподключённом
+            // контроллере (окно подключения, отказ службы) нажатие прятало
+            // единственное управление, а звук шёл дальше — остановить его в
+            // приложении становилось нечем, только системной шторкой. Ради
+            // этого случая строка и заводилась.
+            if (ctl != null) {
+                YouTubeNowPlaying.current = null
+                YouTubeNowPlaying.stalled = false
+            } else {
+                SmartDeskToast.show("Плеер ещё подключается — попробуйте ещё раз")
+            }
         }
     }
 }
@@ -1469,6 +1531,30 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
     LaunchedEffect(bgPlay) {
         MmkvManager.encodeSettings("yt_background_play", if (bgPlay) "1" else "0")
     }
+    // Выключатель называется «В фоне» — значит он про ФОН.
+    //
+    // Остановка висела на разрушении композиции, а оно происходит только при
+    // уходе с экрана внутри приложения. Кнопка «Домой», список недавних,
+    // переход в другое приложение композицию не разрушают — и звук
+    // продолжал идти при выключенном переключателе. То есть он управлял не
+    // фоном, а внутренней навигацией.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val bgPlayNow by rememberUpdatedState(bgPlay)
+    DisposableEffect(lifecycleOwner) {
+        val obs = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP && !bgPlayNow) {
+                runCatching {
+                    playerRef.value?.pause()
+                    playerRef.value?.stop()
+                    playerRef.value?.clearMediaItems()
+                }
+                YouTubeNowPlaying.current = null
+                YouTubeNowPlaying.stalled = false
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(obs)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(obs) }
+    }
     DisposableEffect(Unit) {
         val token = SessionToken(
             context,
@@ -1490,8 +1576,15 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                 runCatching {
                     player?.pause()
                     player?.stop()
+                    // И убираем элемент: `stop()` оставляет его вместе с
+                    // позицией, и следующий ролик подхватывал чужое место.
+                    player?.clearMediaItems()
                 }
                 YouTubeNowPlaying.current = null
+                // Признак обрыва принадлежал прошлому ролику: иначе на
+                // исправно играющем следующем висело «воспроизведение
+                // прервалось».
+                YouTubeNowPlaying.stalled = false
             }
             MediaController.releaseFuture(future)
             player = null
@@ -1503,14 +1596,18 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
     // передачу между процессами, а обычный tag — нет.
     LaunchedEffect(player, pbState.streamUrl, pbState.audioUrl) {
         val c = player ?: return@LaunchedEffect
-        // Если в службе УЖЕ играет ровно это — не трогаем.
+        // Что именно сейчас в службе — спрашиваем У СЕБЯ, а не у плеера.
         //
-        // Иначе каждый вход на экран сбрасывал позицию и запускал заново:
-        // вышел на 40-й минуте лекции, вернулся — снова ноль, да ещё и
-        // играет, хотя ставил на паузу. Именно ради этого плеер и переехал
-        // в службу, и было бы глупо ломать это здесь.
-        val already = c.currentMediaItem
-            ?.localConfiguration?.uri?.toString() == pbState.streamUrl
+        // Раньше сравнивался `currentMediaItem.localConfiguration.uri`, но
+        // через границу медиасессии это поле не передаётся, да и адреса
+        // потоков googlevideo подписаны и на каждый разбор новые. Значит
+        // «уже играет ровно это» не срабатывало НИКОГДА: каждый вход
+        // пересобирал элемент и включал воспроизведение — вернулся к
+        // поставленному на паузу ролику, а он заиграл сам и перекачал поток.
+        val nowPage = YouTubeNowPlaying.current?.pageUrl
+        val already = nowPage == pb.pageUrl &&
+            YouTubeNowPlaying.current?.streamUrl == pbState.streamUrl &&
+            c.currentMediaItem != null
         if (already) return@LaunchedEffect
 
         val extras = Bundle().apply {
@@ -1527,8 +1624,14 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                 MediaItem.RequestMetadata.Builder().setExtras(extras).build()
             )
             .build()
-        // Снимаем позицию до пересборки: setMediaItem её обнуляет.
-        val resumeFrom = if (already) 0L else c.currentPosition
+        // Позицию продолжаем ТОЛЬКО у того же ролика.
+        //
+        // Брали `c.currentPosition` без разбора, а это позиция ТОГО ролика,
+        // что играл до сих пор: открываешь новый — он стартует с сороковой
+        // минуты предыдущего, а если новый короче, перемотка улетает за
+        // конец и он «заканчивается» сразу. Своя позиция нужна при смене
+        // качества и пересборке протухшего потока — там страница та же.
+        val resumeFrom = if (nowPage == pb.pageUrl) c.currentPosition else 0L
         c.setMediaItem(item)
         c.prepare()
         // Продолжаем с ТЕКУЩЕГО места, если оно есть, иначе с сохранённого.
@@ -1537,6 +1640,8 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
         // строится заново, а позиция бралась только из истории — её при
         // первом просмотре нет вовсе, и лекция начиналась с начала. Текущую
         // снимаем ДО setMediaItem: после него она уже ноль.
+        // Новый поток — новый счёт: прошлый обрыв к нему отношения не имеет.
+        YouTubeNowPlaying.stalled = false
         val saved = YouTubeHistory.position(pb.pageUrl)
         when {
             resumeFrom > 1000L -> c.seekTo(resumeFrom)
@@ -2187,7 +2292,16 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
             // сколько ролика уже лежит впереди и как быстро прибавляется —
             // «1,8× » значит, что за секунду ожидания загружается почти две
             // секунды видео, то есть догонит; «0,3×» — что не догонит.
-            if (buffering || bufferedAheadMs < 3000) {
+            // Показываем, только пока РЕАЛЬНО грузится.
+            //
+            // Условие «впереди меньше трёх секунд» само по себе истинно и в
+            // конце ролика (там впереди ноль), и в последние секунды любого
+            // воспроизведения, и пока контроллер ещё не подключился — из-за
+            // чего крутилка «Загрузка» оставалась под досмотренным роликом
+            // навсегда. Нехватка буфера считается поводом, только когда
+            // человек ждёт: плеер хочет играть, но не играет.
+            val starving = wantsPlay && !isPlaying && bufferedAheadMs < 3000
+            if (player != null && (buffering || starving)) {
                 Row(
                     modifier = Modifier.fillMaxWidth()
                         .padding(horizontal = 16.dp)
