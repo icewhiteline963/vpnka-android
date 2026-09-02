@@ -20,8 +20,14 @@ object YouTubeLater {
     private val gson = Gson()
 
     data class Item(
-        val url: String,
-        val title: String,
+        // У ВСЕХ полей значения по умолчанию — намеренно: иначе Kotlin не
+        // создаёт беспараметрический конструктор, Gson собирает объект в
+        // обход конструктора, и поля, которых нет в старых записях,
+        // получают НЕ котлиновское умолчание, а пустое значение JVM (для
+        // строки — null). Именно так падало открытие «Видео»: у записи без
+        // `mime` в конструктор приезжал null. См. DownloadRecords.
+        val url: String = "",
+        val title: String = "",
         val uploader: String = "",
         val addedAt: Long = 0L,
         /** Качество, выбранное для ЭТОЙ строки: «720p», «1080p», «4K», «audio». */

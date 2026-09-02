@@ -77,9 +77,10 @@ object Messenger {
     private val store: MMKV by lazy { MMKV.mmkvWithID(ID_STORE, MMKV.SINGLE_PROCESS_MODE, cryptKey()) }
 
     data class Contact(
-        val id: Long,
-        val name: String,
-        val pubKey: String,
+        // Умолчания у всех полей — см. пояснение у `Msg` ниже.
+        val id: Long = 0,
+        val name: String = "",
+        val pubKey: String = "",
         /** Ключ собеседника сменился и человек этого ещё не подтвердил. */
         val keyChanged: Boolean = false,
     )

@@ -32,12 +32,54 @@ object DownloadRecords {
         val kind: String = "Видео",
     )
 
+    /**
+     * Как запись выглядит В ФАЙЛЕ — где угодно может не быть чего угодно.
+     *
+     * Gson НЕ применяет умолчания Kotlin: поля, которых нет в JSON, он
+     * оставляет пустыми (для строки — null), сколько бы значений по
+     * умолчанию ни стояло в объявлении. Записи, сохранённые до появления
+     * `mime` и `kind`, этих полей не содержат — и в `Rec` с необнуляемыми
+     * полями приезжал null.
+     *
+     * Стоило это падения приложения при открытии «Видео»: восстановление
+     * списка загрузок переехало на путь открытия, и NullPointerException в
+     * конструкторе `Entry` ронял процесс — со стороны «открываю YouTube, всё
+     * сворачивается». Поэтому читаем в тип, где обнуляемо ВСЁ, и собираем
+     * настоящую запись сами.
+     */
+    private data class RawRec(
+        val uri: String? = null,
+        val name: String? = null,
+        val sourceUrl: String? = null,
+        val bytes: Long? = null,
+        val savedAt: Long? = null,
+        val mime: String? = null,
+        val kind: String? = null,
+    )
+
     fun all(): List<Rec> {
         val raw = MmkvManager.decodeSettingsString(KEY) ?: return emptyList()
-        return try {
-            gson.fromJson<List<Rec>>(raw, object : TypeToken<List<Rec>>() {}.type) ?: emptyList()
+        val parsed = try {
+            gson.fromJson<List<RawRec?>>(
+                raw, object : TypeToken<List<RawRec?>>() {}.type,
+            ) ?: emptyList()
         } catch (e: Exception) {
             emptyList()
+        }
+        return parsed.mapNotNull { r ->
+            // Без адреса и имени запись бесполезна — такую пропускаем, а не
+            // подставляем ей выдумку. Остальное восполняем умолчаниями.
+            val uri = r?.uri ?: return@mapNotNull null
+            val name = r.name ?: return@mapNotNull null
+            Rec(
+                uri = uri,
+                name = name,
+                sourceUrl = r.sourceUrl,
+                bytes = r.bytes ?: 0L,
+                savedAt = r.savedAt ?: 0L,
+                mime = r.mime ?: "application/octet-stream",
+                kind = r.kind ?: "Видео",
+            )
         }
     }
 

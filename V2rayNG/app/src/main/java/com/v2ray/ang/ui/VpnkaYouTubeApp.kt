@@ -207,8 +207,12 @@ fun YouTubeApp() {
         // Оба действия — на фоне: восстановление читает MMKV и разбирает до
         // трёхсот записей, а это теперь на пути открытия приложения.
         withContext(Dispatchers.IO) {
-            YouTubeDownloads.restore()
-            YouTubeService.sweepTemp(context)
+            // Страховка второго слоя: что бы ни лежало в списке загрузок,
+            // открытие «Видео» не должно ронять приложение. Исключение в
+            // корутине LaunchedEffect убивает процесс целиком — человек
+            // видит, что приложение просто исчезло.
+            runCatching { YouTubeDownloads.restore() }
+            runCatching { YouTubeService.sweepTemp(context) }
         }
     }
 

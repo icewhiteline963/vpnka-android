@@ -15,13 +15,26 @@ object YouTubePlaylists {
     private val gson = Gson()
 
     data class Item(
-        val url: String,
-        val title: String,
+        // У ВСЕХ полей значения по умолчанию — намеренно: иначе Kotlin не
+        // создаёт беспараметрический конструктор, Gson собирает объект в
+        // обход конструктора, и поля, которых нет в старых записях,
+        // получают НЕ котлиновское умолчание, а пустое значение JVM (для
+        // строки — null). Именно так падало открытие «Видео»: у записи без
+        // `mime` в конструктор приезжал null. См. DownloadRecords.
+        val url: String = "",
+        val title: String = "",
         val uploader: String = "",
         val durationSec: Long = 0L,
         val addedAt: Long = 0L,
     )
-    data class Playlist(val id: String, var name: String, val videos: MutableList<Item> = mutableListOf())
+    // Умолчания у всех полей — см. пояснение у `Item` выше. Здесь важнее
+    // всего `videos`: без конструктора Gson оставлял бы список null, и
+    // открытие плейлиста роняло приложение.
+    data class Playlist(
+        val id: String = "",
+        var name: String = "",
+        val videos: MutableList<Item> = mutableListOf(),
+    )
 
     private fun load(): MutableList<Playlist> {
         val raw = MmkvManager.decodeSettingsString(KEY)
