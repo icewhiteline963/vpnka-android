@@ -151,19 +151,42 @@ fun YouTubeApp() {
     }
     fun runSearch() = runSearchFor(query)
 
-    // Главная открывается ПОСЛЕДНИМ запросом человека, а не «electronic
-    // music».
-    //
-    // Зашитая строка означала, что русскоязычный человек, открыв наш
-    // YouTube, видел стену англоязычной электроники — приложение начинало
-    // разговор с того, что ему неинтересно. Первый запуск, когда истории
-    // ещё нет, открывается нейтральной подборкой.
-    LaunchedEffect(Unit) {
-        if (query.isBlank() && results.isEmpty()) {
-            val last = YouTubeHistory.lastQuery()
-            query = last ?: ""
-            runSearchFor(last ?: "популярное")
+    /** Открыть главную — подборку YouTube, а не чей-то прошлый запрос. */
+    fun loadHome() {
+        scope.launch {
+            loading = true; error = null
+            val r = withContext(Dispatchers.IO) { runCatching { YouTubeService.trending() } }
+            r.onSuccess { results = it }
+                .onFailure {
+                    // Киоск может быть недоступен (YouTube меняет разметку
+                    // чаще, чем выходит extractor). Тогда не оставляем
+                    // человека с пустым экраном — показываем нейтральную
+                    // подборку поиском.
+                    val f = withContext(Dispatchers.IO) {
+                        runCatching { YouTubeService.search("популярное") }
+                    }
+                    f.onSuccess { v -> results = v }
+                        .onFailure { e ->
+                            error = "Не удалось загрузить: " +
+                                "${e.message ?: e.javaClass.simpleName}. Включён ли VPN?"
+                        }
+                }
+            loading = false
         }
+    }
+
+    // Открываем ГЛАВНУЮ, а не последний запрос.
+    //
+    // Сначала здесь было зашито «electronic music» — русскоязычный человек
+    // видел стену англоязычной электроники. Потом подставлялся последний
+    // запрос; но человек заходит «посмотреть, что нового», а получал
+    // вчерашний поиск, который уже закрыл, да ещё и в поле ввода. Личной
+    // ленты у нас быть не может (аккаунта нет), поэтому показываем то же,
+    // что YouTube показывает гостю, — подборку «В тренде».
+    //
+    // Прошлые запросы никуда не делись: они подсказками под полем поиска.
+    LaunchedEffect(Unit) {
+        if (query.isBlank() && results.isEmpty()) loadHome()
     }
 
     fun open(videoUrl: String) {
@@ -1894,45 +1917,89 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
             )
 
-            // Все действия — ОДИН прокручиваемый ряд одинаковых чипов.
-            Box(modifier = Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .padding(start = 16.dp, end = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(7.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+            // Действия: ПЯТЬ на виду, остальное — за «Ещё».
+            //
+            // Был один ряд из девяти одинаковых чипов с прокруткой вбок.
+            // Половина действий пряталась за краем, добраться до них можно
+            // было только листанием вслепую, а сам ряд читался как лента
+            // текста — из-за чего и выбивался из остального экрана.
+            //
+            // Теперь на виду то, что делают чаще всего, — иконка и короткая
+            // подпись под ней, все пять равной ширины и без прокрутки. Редкое
+            // (очередь, закладка, заметка, звук файлом, субтитры) уходит в
+            // список за «Ещё»: там у каждого пункта есть место на понятное
+            // название, а не на сокращение в одну строку.
+            var moreOpen by remember { mutableStateOf(false) }
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top,
+            ) {
+                YtQuickAction("⬇", "Скачать", enabled = !busy) { openQualities() }
+                YtQuickAction(
+                    "♪", "Только звук", active = audioOnly,
+                ) { audioOnly = !audioOnly }
+                YtQuickAction(
+                    if (fav) "★" else "☆", if (fav) "В избранном" else "В избранное",
+                    active = fav,
                 ) {
-                    YtActionChip("⬇  Скачать", enabled = !busy) { openQualities() }
-                    YtActionChip(if (inLater) "⏱  В очереди" else "⏱  Позже", enabled = true) {
-                        if (inLater) {
-                            YouTubeLater.remove(pb.pageUrl)
-                            SmartDeskToast.show("Убрано из очереди")
-                        } else {
-                            YouTubeLater.add(pb.pageUrl, pb.title)
-                            SmartDeskToast.show("Скачаем позже", "Открыть", "downloads")
-                        }
-                        laterTick++
-                    }
-                    YtActionChip(if (audioOnly) "♪  Только звук ✓" else "♪  Только звук", enabled = true) {
-                        audioOnly = !audioOnly
-                    }
-                    YtActionChip("◆  Закладка", enabled = true) {
-                        YouTubeMarks.addMark(pb.pageUrl, position / 1000, pb.title)
-                        marksTick++; ptab = 3
-                        SmartDeskToast.show("Закладка на ${fmtDuration(position / 1000)}")
-                    }
-                    YtActionChip("✎  Заметка", enabled = true) { noteAt = position / 1000 }
-                    YtActionChip("🎵  Аудио", enabled = !busy) { downloadAudio() }
-                    YtActionChip("📝  Субтитры", enabled = !busy) { openSubs() }
-                    YtActionChip("＋  Плейлист", enabled = true) {
-                        addToPlayer = YouTubePlaylists.Item(pb.pageUrl, pb.title)
-                    }
-                    YtActionChip(if (fav) "★  В избранном" else "☆  В избранное", enabled = true) {
-                        fav = YouTubeFavorites.toggle(YouTubeFavorites.Fav(pb.pageUrl, pb.title, "", 0L))
-                    }
+                    fav = YouTubeFavorites.toggle(
+                        YouTubeFavorites.Fav(pb.pageUrl, pb.title, "", 0L),
+                    )
                 }
-                YtEdgeFade(Modifier.align(Alignment.CenterEnd))
+                YtQuickAction("＋", "Плейлист") {
+                    addToPlayer = YouTubePlaylists.Item(pb.pageUrl, pb.title)
+                }
+                YtQuickAction("⋯", "Ещё", active = moreOpen) { moreOpen = true }
+            }
+
+            if (moreOpen) {
+                AlertDialog(
+                    onDismissRequest = { moreOpen = false },
+                    confirmButton = {},
+                    dismissButton = {
+                        TextButton(onClick = { moreOpen = false }) { Text("Закрыть") }
+                    },
+                    containerColor = VpnkaColors.BgOffMid,
+                    title = {
+                        Text(
+                            "Ещё", fontFamily = VpnkaFonts.nunito800,
+                            color = VpnkaColors.TextStrong,
+                        )
+                    },
+                    text = {
+                        Column {
+                            YtMoreItem(
+                                if (inLater) "⏱" else "⏱",
+                                if (inLater) "Убрать из очереди" else "Скачать позже",
+                            ) {
+                                if (inLater) {
+                                    YouTubeLater.remove(pb.pageUrl)
+                                    SmartDeskToast.show("Убрано из очереди")
+                                } else {
+                                    YouTubeLater.add(pb.pageUrl, pb.title)
+                                    SmartDeskToast.show("Скачаем позже", "Открыть", "downloads")
+                                }
+                                laterTick++; moreOpen = false
+                            }
+                            YtMoreItem("◆", "Закладка на ${fmtDuration(position / 1000)}") {
+                                YouTubeMarks.addMark(pb.pageUrl, position / 1000, pb.title)
+                                marksTick++; ptab = 3
+                                SmartDeskToast.show("Закладка на ${fmtDuration(position / 1000)}")
+                                moreOpen = false
+                            }
+                            YtMoreItem("✎", "Заметка к этому месту") {
+                                noteAt = position / 1000; moreOpen = false
+                            }
+                            YtMoreItem("🎵", "Скачать только звук", enabled = !busy) {
+                                downloadAudio(); moreOpen = false
+                            }
+                            YtMoreItem("📝", "Субтитры", enabled = !busy) {
+                                openSubs(); moreOpen = false
+                            }
+                        }
+                    },
+                )
             }
 
             // Вкладки содержимого. Главы и транскрипт грузятся лениво —
@@ -2296,24 +2363,78 @@ private fun YtPlayerTab(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun YtActionChip(label: String, enabled: Boolean, onClick: () -> Unit) {
-    // Один размер на все действия: высота 34, кегль 12, отступ 12 — по эталону.
-    // Раньше рядом стояли узкие квадраты и широкие овалы, и ряд читался как
-    // случайный набор.
-    Box(
-        modifier = Modifier
-            .height(34.dp)
-            .clip(RoundedCornerShape(9.dp))
-            .background(VpnkaColors.CardServer)
-            .border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(9.dp))
+/**
+ * Действие под видео: значок в кружке и короткая подпись под ним.
+ *
+ * Пять таких в ряд занимают ширину экрана без прокрутки — в отличие от
+ * прежнего ряда чипов, где половина действий пряталась за краем. Подпись
+ * ставим под значком, а не рядом: так каждая кнопка узкая, и в строку их
+ * помещается впятеро больше.
+ */
+@Composable
+private fun YtQuickAction(
+    icon: String,
+    label: String,
+    active: Boolean = false,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.width(64.dp)
+            .clip(RoundedCornerShape(12.dp))
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 12.dp),
-        contentAlignment = Alignment.Center,
+            .padding(vertical = 6.dp),
     ) {
+        Box(
+            modifier = Modifier.size(38.dp).clip(CircleShape)
+                .background(if (active) VpnkaColors.Accent else VpnkaColors.CardServer),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                icon, fontSize = 16.sp,
+                color = when {
+                    !enabled -> VpnkaColors.TextFaint
+                    active -> VpnkaColors.OnAccent
+                    else -> VpnkaColors.TextStrong
+                },
+            )
+        }
+        Spacer(Modifier.height(5.dp))
         Text(
-            label, fontFamily = VpnkaFonts.nunito800, fontSize = 12.sp,
+            label, fontFamily = VpnkaFonts.manrope700, fontSize = 10.sp,
+            lineHeight = 12.sp, textAlign = TextAlign.Center, maxLines = 2,
+            color = if (enabled) VpnkaColors.TextMuted else VpnkaColors.TextFaint,
+        )
+    }
+}
+
+/** Строка списка «Ещё»: значок, название во всю ширину, крупная область нажатия. */
+@Composable
+private fun YtMoreItem(
+    icon: String,
+    label: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(11.dp))
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier.size(30.dp).clip(CircleShape)
+                .background(VpnkaColors.CardServer),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(icon, fontSize = 14.sp, color = VpnkaColors.TextStrong)
+        }
+        Spacer(Modifier.width(11.dp))
+        Text(
+            label, fontFamily = VpnkaFonts.nunito800, fontSize = 13.sp,
             color = if (enabled) VpnkaColors.TextStrong else VpnkaColors.TextFaint,
-            maxLines = 1,
         )
     }
 }

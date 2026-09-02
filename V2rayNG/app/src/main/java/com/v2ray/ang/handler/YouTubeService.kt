@@ -16,6 +16,7 @@ import java.io.IOException
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.downloader.Downloader
+import org.schabi.newpipe.extractor.kiosk.KioskInfo
 import org.schabi.newpipe.extractor.downloader.Request as NpRequest
 import org.schabi.newpipe.extractor.downloader.Response as NpResponse
 import org.schabi.newpipe.extractor.search.SearchInfo
@@ -99,6 +100,34 @@ object YouTubeService {
             if (inited) return
             NewPipe.init(VpnkaDownloader(proxiedClient()))
             inited = true
+        }
+    }
+
+    /**
+     * Главная страница — то, что YouTube показывает без входа в аккаунт.
+     *
+     * Приложение открывалось ПОСЛЕДНИМ запросом: человек заходил «посмотреть,
+     * что нового», а получал вчерашний поиск, который уже закрыл. Личной
+     * ленты у нас быть не может — аккаунта нет, — поэтому берём то же, что
+     * YouTube показывает гостю: подборку «В тренде» его сервиса.
+     *
+     * Blocking — вызывать вне главного потока.
+     */
+    fun trending(): List<Video> {
+        ensureInit()
+        val yt = ServiceList.YouTube
+        val kiosks = yt.kioskList
+        val id = kiosks.defaultKioskId
+        val url = kiosks.getListLinkHandlerFactoryByType(id).fromId(id).url
+        val info = KioskInfo.getInfo(yt, url)
+        return info.relatedItems.filterIsInstance<StreamInfoItem>().map {
+            Video(
+                url = it.url,
+                title = it.name,
+                uploader = it.uploaderName ?: "",
+                durationSec = it.duration,
+                thumb = it.thumbnails.firstOrNull()?.url,
+            )
         }
     }
 
