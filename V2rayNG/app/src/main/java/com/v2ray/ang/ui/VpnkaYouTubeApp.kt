@@ -316,18 +316,18 @@ fun YouTubeApp() {
             var searchSort by remember { mutableStateOf(YtSort.DEFAULT) }
             var plSort by remember { mutableStateOf(YtSort.DEFAULT) }
 
-            // Шапка по макету: название, счётчик загрузок, лупа. Раньше верх
-            // экрана занимали четыре строки подряд — вкладки, поле с крупной
-            // кнопкой «Найти», ряд подсказок и сортировка, — и на содержимое
-            // оставалась половина экрана. Поиск нужен в начале и почти не
-            // нужен потом, поэтому он ПРЯЧЕТСЯ за лупу и раскрывается сам,
-            // пока искать ещё нечего.
+            // Поиск — ТОЛЬКО на главной.
+            //
+            // В плейлистах, истории и загрузках искать нечего: строка стояла
+            // там по инерции и отнимала верх экрана у самих списков.
             val activeDls = YouTubeDownloads.entries.count {
                 it.state == YouTubeDownloads.State.RUNNING ||
                     it.state == YouTubeDownloads.State.QUEUED
             }
             // Подсказки под полем нужны, пока искать ещё нечего.
             val showHints = tab == 0 && results.isEmpty() && !loading
+
+            if (tab == 0) {
 
             // Поиск — САМА верхняя строка, а не значок в её углу.
             //
@@ -430,6 +430,7 @@ fun YouTubeApp() {
                         }
                     }
                 }
+            }
             }
 
             // Мини-плеер — ПОД поиском, а не над ним.
@@ -2112,7 +2113,8 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                 fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, lineHeight = 21.sp,
                 color = VpnkaColors.TextStrong, maxLines = 2, overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.fillMaxWidth()
-                    .padding(horizontal = 16.dp, top = 14.dp, bottom = 6.dp),
+                    .padding(horizontal = 16.dp)
+                    .padding(top = 14.dp, bottom = 6.dp),
             )
 
             // Просмотры и оценки.
@@ -2148,7 +2150,8 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
             if (buffering || bufferedAheadMs < 3000) {
                 Row(
                     modifier = Modifier.fillMaxWidth()
-                        .padding(horizontal = 16.dp, top = 8.dp),
+                        .padding(horizontal = 16.dp)
+                        .padding(top = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     CircularProgressIndicator(
