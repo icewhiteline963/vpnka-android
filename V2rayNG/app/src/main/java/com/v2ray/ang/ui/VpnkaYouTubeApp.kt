@@ -345,10 +345,12 @@ fun YouTubeApp() {
                 // остального на экране. Здесь — 30 dp и своя рамка.
                 Row(
                     modifier = Modifier.weight(1f)
-                        .height(30.dp)
-                        .clip(RoundedCornerShape(15.dp))
+                        // 34, а не 30: при 30 текст сидел вплотную к нижней
+                        // грани — сверху отступ был, снизу нет.
+                        .height(34.dp)
+                        .clip(RoundedCornerShape(17.dp))
                         .background(VpnkaColors.CardServer)
-                        .border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(15.dp))
+                        .border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(17.dp))
                         .padding(horizontal = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -366,16 +368,12 @@ fun YouTubeApp() {
                         cursorBrush = SolidColor(VpnkaColors.Accent),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                         keyboardActions = KeyboardActions(onSearch = { runSearch() }),
-                        decorationBox = { inner ->
-                            if (query.isEmpty()) {
-                                Text(
-                                    "Поиск на YouTube", fontSize = 13.sp,
-                                    fontFamily = VpnkaFonts.manrope700,
-                                    color = VpnkaColors.TextMuted,
-                                )
-                            }
-                            inner()
-                        },
+                        // Подписи в пустом поле НЕТ.
+                        //
+                        // «Поиск на YouTube» не помещалось в половину строки
+                        // и обрывалось на «Поиск на» — обрубок объяснял
+                        // меньше, чем значок лупы слева, и мешал больше.
+                        decorationBox = { inner -> inner() },
                         modifier = Modifier.weight(1f)
                             // Курсор в поле означает «ищу»: если человек стоял
                             // на «Загрузках», возвращаем его на ленту, иначе
@@ -409,9 +407,9 @@ fun YouTubeApp() {
                     modifier = Modifier.weight(1f),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (tab == 0 && results.isNotEmpty()) {
-                        YtSortChip(searchSort, searchSortOptions) { searchSort = it }
-                    }
+                    // Сортировка — у самого правого края, счётчик загрузок
+                    // левее её: так у строки есть край, а не два предмета,
+                    // висящих где придётся.
                     Spacer(Modifier.weight(1f))
                     if (activeDls > 0) {
                         Row(
@@ -428,6 +426,10 @@ fun YouTubeApp() {
                                 fontSize = 11.sp, color = VpnkaColors.TextStrong,
                             )
                         }
+                        Spacer(Modifier.width(7.dp))
+                    }
+                    if (tab == 0 && results.isNotEmpty()) {
+                        YtSortChip(searchSort, searchSortOptions) { searchSort = it }
                     }
                 }
             }
