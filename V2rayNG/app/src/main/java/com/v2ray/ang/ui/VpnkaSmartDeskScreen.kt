@@ -29,7 +29,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
@@ -307,11 +306,11 @@ fun VpnkaSmartDeskScreen(
     val navInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
     // Начальное приближение — с системной вставкой: без неё первый кадр
     // резервировал меньше, чем панель занимает, и стол дёргался.
-    var barHeight by remember { mutableStateOf(BAR_HEIGHT + navInset) }
     // Когда панель спрятана (чат, канал, плеер), отводить под неё место
     // нельзя: величина оставалась от прошлого замера, и содержимое
     // поднималось над низом на полторы сотни точек.
-    val bottomOverlay = if (SmartDeskChrome.barHidden) navInset else barHeight
+    // Панели нет — отводим только системную вставку навигации.
+    val bottomOverlay = navInset
     // Пока открыта клавиатура, место под панель НЕ отводим.
     //
     // Приложение внутри поднимает себя над клавиатурой само (`imePadding`),
@@ -860,12 +859,14 @@ fun VpnkaSmartDeskScreen(
                     Row(
                         modifier = Modifier.fillMaxWidth()
                             .padding(horizontal = 10.dp, vertical = 4.dp)
-                            // Когда панель спрятана (плеер, чат), подсказка
-                            // остаётся у самого низа — и без этого отступа
-                            // ложилась ПОД системную навигацию: на трёх
-                            // кнопках текст и «Открыть» пропадали, а касание
-                            // уходило системе.
-                            .padding(bottom = if (SmartDeskChrome.barHidden) navInset else 0.dp)
+                            // Вставку навигации подсказка отводит СЕБЕ.
+                            //
+                            // Раньше её давала нижняя панель, и отступ был
+                            // нужен только когда панель спрятана. Панели
+                            // больше нет — значит нужен всегда, иначе на
+                            // трёх кнопках текст и «Открыть» пропадают под
+                            // системной навигацией, а касание уходит ей.
+                            .padding(bottom = navInset)
                             .clip(RoundedCornerShape(12.dp))
                             .background(VpnkaColors.BgOffCentre)
                             .padding(horizontal = 14.dp, vertical = 10.dp),
@@ -893,35 +894,18 @@ fun VpnkaSmartDeskScreen(
                         }
                     }
                 }
-                if (!SmartDeskChrome.barHidden) {
-                    // Место содержимому отводим по ПАНЕЛИ, а не по всему
-                    // нижнему блоку, и меряем её вместе со вставкой навигации.
-                    //
-                    // Мерка стояла правее navigationBarsPadding и отдавала
-                    // высоту БЕЗ неё: панель занимала на 24-48 dp больше, и
-                    // ровно столько нижнего края содержимого оказывалось под
-                    // ней. А мини-плеер и подсказка попадали в ту же мерку и
-                    // отнимали у сетки целые ряды значков — при появлении
-                    // подсказки стол прыгал.
-                    Box(
-                        modifier = Modifier.onSizeChanged {
-                            barHeight = with(density) { it.height.toDp() }
-                        },
-                    ) {
-                    SmartDeskTabBar(
-                        // Отступ под системную навигацию отдаём ВНУТРЬ панели:
-                        // её фон должен доходить до самой грани экрана, а не
-                        // висеть в паре сантиметров над ней.
-                        bottomInset = navInset,
-                        current = openApp?.id,
-                        onDesk = { openApp = null; deskTick++ },
-                        onApp = { id, ytTab ->
-                            SmartDeskChrome.pendingYtTab = ytTab
-                            CATALOG_BY_ID[id]?.let { openApp = it }
-                        },
-                    )
-                    }
-                }
+                // Нижней панели больше нет — по решению владельца 02.09.
+                //
+                // Она дублировала то, что и так есть: «⌂ Стол» повторяет
+                // системную «назад», а значки приложений — сам стол, до
+                // которого от неё одно нажатие. Взамен она забирала 66 dp
+                // плюс вставку навигации у КАЖДОГО экрана и заставляла
+                // считать этот отступ в трёх местах (стол, приложение,
+                // клавиатура) — половина здешних правок про панель и была.
+                //
+                // Возврат на стол остаётся системной «назад»: она уже идёт
+                // через `smartDeskBack`, сначала закрывая открытое внутри
+                // приложения и только потом сам стол.
         }
         // Лист настроек рисуется на уровне ВСЕГО экрана. Внутри полосы сетки
         // значков ему оставалось 250-300 dp: вместо нижнего листа выходила
@@ -951,51 +935,6 @@ fun VpnkaSmartDeskScreen(
  * wiped after each sync and lives only in the encrypted cloud. Tapping also
  * forces a sync if anything is still pending.
  */
-/** Высота нижней панели — под неё отводится место и на столе, и в приложении. */
-private val BAR_HEIGHT = 66.dp
-
-/**
- * Нижняя панель супер-приложения по макету: Стол · Видео · Чаты · Браузер ·
- * Загрузки, и отдельно выход на главный экран VPNka.
- *
- * «Загрузки» ведут в то же приложение «Видео», сразу на нужную вкладку —
- * отдельного приложения загрузок у нас нет, и заводить его ради одной кнопки
- * незачем.
- */
-@Composable
-private fun SmartDeskTabBar(
-    bottomInset: androidx.compose.ui.unit.Dp,
-    current: String?,
-    onDesk: () -> Unit,
-    onApp: (String, Int?) -> Unit,
-) {
-    Column(
-        modifier = Modifier.fillMaxWidth()
-            .background(VpnkaColors.BgOffCentre)
-            // Кнопки поднимаем над системной навигацией, а полотно панели
-            // остаётся прижатым к нижней грани.
-            .padding(bottom = bottomInset),
-    ) {
-        // Волосяная черта сверху — в макете панель отделена от содержимого
-        // именно ею, а не тенью.
-        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(VpnkaColors.Hairline))
-    Row(
-        modifier = Modifier.fillMaxWidth()
-            .padding(horizontal = 4.dp, vertical = 5.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // РОВНО пять пунктов, как в эталоне. Шестым висел «Выход», из-за него
-        // подписи жались и панель читалась как свалка. Выход остался у
-        // системной кнопки «назад» с рабочего стола и в центре управления.
-        BarItem("⌂", "Стол", current == null, Modifier.weight(1f)) { onDesk() }
-        BarItem("▶", "Видео", current == "youtube", Modifier.weight(1f)) { onApp("youtube", null) }
-        BarItem("✎", "Чаты", current == "messages", Modifier.weight(1f)) { onApp("messages", null) }
-        BarItem("◍", "Браузер", current == "browser", Modifier.weight(1f)) { onApp("browser", null) }
-        BarItem("↓", "Загрузки", false, Modifier.weight(1f)) { onApp("youtube", 2) }
-    }
-    }
-}
-
 @Composable
 private fun BarItem(
     glyph: String,

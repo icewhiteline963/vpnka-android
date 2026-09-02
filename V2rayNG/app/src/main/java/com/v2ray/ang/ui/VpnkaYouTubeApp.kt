@@ -1935,7 +1935,23 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.Top,
             ) {
+                // «Скачать» и «Скачать позже» — соседи: это одно и то же
+                // решение, отложенное на потом. Разносить их по разным
+                // местам значит заставлять искать второе, когда первое
+                // не подошло.
                 YtQuickAction("⬇", "Скачать", enabled = !busy) { openQualities() }
+                YtQuickAction(
+                    "⏱", if (inLater) "В очереди" else "Позже", active = inLater,
+                ) {
+                    if (inLater) {
+                        YouTubeLater.remove(pb.pageUrl)
+                        SmartDeskToast.show("Убрано из очереди")
+                    } else {
+                        YouTubeLater.add(pb.pageUrl, pb.title)
+                        SmartDeskToast.show("Скачаем позже", "Открыть", "downloads")
+                    }
+                    laterTick++
+                }
                 YtQuickAction(
                     "♪", "Только звук", active = audioOnly,
                 ) { audioOnly = !audioOnly }
@@ -1946,9 +1962,6 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                     fav = YouTubeFavorites.toggle(
                         YouTubeFavorites.Fav(pb.pageUrl, pb.title, "", 0L),
                     )
-                }
-                YtQuickAction("＋", "Плейлист") {
-                    addToPlayer = YouTubePlaylists.Item(pb.pageUrl, pb.title)
                 }
                 YtQuickAction("⋯", "Ещё", active = moreOpen) { moreOpen = true }
             }
@@ -1969,18 +1982,9 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                     },
                     text = {
                         Column {
-                            YtMoreItem(
-                                if (inLater) "⏱" else "⏱",
-                                if (inLater) "Убрать из очереди" else "Скачать позже",
-                            ) {
-                                if (inLater) {
-                                    YouTubeLater.remove(pb.pageUrl)
-                                    SmartDeskToast.show("Убрано из очереди")
-                                } else {
-                                    YouTubeLater.add(pb.pageUrl, pb.title)
-                                    SmartDeskToast.show("Скачаем позже", "Открыть", "downloads")
-                                }
-                                laterTick++; moreOpen = false
+                            YtMoreItem("＋", "Добавить в плейлист") {
+                                addToPlayer = YouTubePlaylists.Item(pb.pageUrl, pb.title)
+                                moreOpen = false
                             }
                             YtMoreItem("◆", "Закладка на ${fmtDuration(position / 1000)}") {
                                 YouTubeMarks.addMark(pb.pageUrl, position / 1000, pb.title)
