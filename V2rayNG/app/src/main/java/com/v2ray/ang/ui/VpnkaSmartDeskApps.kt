@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -243,11 +244,82 @@ fun VpnkaSmartDeskAppScreen(
             }
             }
         }
-        // Своей нижней панели у приложения больше нет: обе кнопки —
-        // «Рабочий стол» и «На главный экран» — теперь в общей панели
-        // супер-приложения, и две панели друг над другом только мешали.
+        // Общие вкладки приложения — как в макете «Поток».
+        //
+        // Раньше из «Видео» в «Чаты» можно было попасть только через
+        // главный экран: закрыть приложение, найти значок, открыть. Пять
+        // разделов, между которыми люди ходят чаще всего, стоят внизу и
+        // переключаются одним нажатием.
+        //
+        // Панель прячется, когда приложение занимает экран целиком (чат,
+        // плеер) — там свои элементы у нижнего края, и вторая полоса поверх
+        // них мешала бы.
+        if (!SmartDeskChrome.barHidden) {
+            SmartDeskAppTabs(
+                current = appId,
+                onOpen = { id ->
+                    when (id) {
+                        "home" -> onBack()
+                        // «Загрузки» — не отдельное приложение, а полка
+                        // внутри «Видео»: очередь и скачанное живут там.
+                        // Вкладка открывает «Видео» сразу на ней.
+                        "downloads" -> {
+                            SmartDeskChrome.pendingYtTab = 2
+                            SmartDeskChrome.pendingAppId = "youtube"
+                        }
+                        else -> SmartDeskChrome.pendingAppId = id
+                    }
+                },
+            )
+        }
     }
         SmartDeskStatusScrim()
+    }
+}
+
+/**
+ * Нижние вкладки супер-приложения: пять разделов из макета.
+ *
+ * «Главная» возвращает на экран с подключением — там же подписка,
+ * настройки и остальные значки. Отдельного экрана профиля не заводим:
+ * всё, что макет кладёт в профиль, у нас уже есть на главном.
+ */
+@Composable
+private fun SmartDeskAppTabs(current: String, onOpen: (String) -> Unit) {
+    val navInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val items = listOf(
+        Triple("youtube", "▶", "Видео"),
+        Triple("messages", "✎", "Чаты"),
+        Triple("browser", "◍", "Браузер"),
+        Triple("downloads", "↓", "Загрузки"),
+        Triple("home", "⌂", "Главная"),
+    )
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .background(VpnkaColors.BgOffCentre)
+            .padding(top = 3.dp, bottom = 3.dp + navInset),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        items.forEach { (id, glyph, label) ->
+            val selected = id == current
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.clip(RoundedCornerShape(10.dp))
+                    .clickable { if (!selected) onOpen(id) }
+                    .padding(horizontal = 12.dp, vertical = 3.dp),
+            ) {
+                Text(
+                    glyph, fontSize = 14.sp,
+                    color = if (selected) VpnkaColors.Accent else VpnkaColors.TextMuted,
+                )
+                Text(
+                    label, fontFamily = VpnkaFonts.manrope700, fontSize = 9.5.sp,
+                    lineHeight = 11.sp,
+                    color = if (selected) VpnkaColors.Accent else VpnkaColors.TextMuted,
+                )
+            }
+        }
     }
 }
 

@@ -331,23 +331,18 @@ fun YouTubeApp() {
         return
     }
 
-    // Высота собственной панели «Видео» — под неё отводится место, чтобы
-    // список не заезжал под кнопки.
+    // Своей нижней панели у «Видео» больше нет.
     //
-    // Вставку системной навигации здесь НЕ добавляем: её уже отвёл рабочий
-    // стол открытому приложению (`appBottomOverlay`). Обычный `padding`
-    // вставку не «съедает», поэтому она считалась ДВАЖДЫ — и под кнопками
-    // висела пустая полоса высотой ещё одной системной панели. Отсюда и
-    // ощущение, что панель слишком высокая.
-    val barHeight = 40.dp
+    // Полки переехали чипами в шапку, а внизу теперь общая панель
+    // супер-приложения (Видео · Чаты · Браузер · Загрузки · Главная) — из
+    // «Видео» стало можно уйти в чаты, не возвращаясь на главный экран.
+    // Двух панелей друг над другом мы уже наелись.
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
             modifier = Modifier.fillMaxSize()
                 .padding(horizontal = 14.dp)
-                // Место под панель: без него лента доезжала до кнопок
-                // вплотную и последняя карточка пряталась за ними.
-                .padding(bottom = barHeight),
+
         ) {
 
             // Поиск — ТОЛЬКО на главной.
@@ -467,6 +462,27 @@ fun YouTubeApp() {
                     }
                 }
             }
+            }
+
+            // Полки — чипами в шапке.
+            //
+            // Раньше они были нижней панелью «Видео», но внизу теперь общая
+            // панель супер-приложения, и две полосы друг над другом мы уже
+            // проходили. Наверху им и место: это выбор того, ЧТО показать в
+            // списке, а не переход в другой раздел.
+            Row(
+                modifier = Modifier.fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+            ) {
+                YtTabChip("Лента", tab == 0) { tab = 0 }
+                YtTabChip("Избранное", tab == 3) { tab = if (tab == 3) 0 else 3; favTick++ }
+                YtTabChip("Плейлисты", tab == 1) {
+                    tab = if (tab == 1) 0 else 1; openPl = null; plTick++
+                }
+                YtTabChip("История", tab == 4) { tab = if (tab == 4) 0 else 4; seenTick++ }
+                YtTabChip("Загрузки", tab == 2) { tab = if (tab == 2) 0 else 2 }
             }
 
             // Мини-плеер — ПОД поиском, а не над ним.
@@ -1032,63 +1048,6 @@ fun YouTubeApp() {
             )
         }
 
-        // Своя нижняя панель «Видео».
-        //
-        // Общая панель рабочего стола убрана, а полки — избранное,
-        // плейлисты, история, загрузки — нужны под рукой: раньше они были
-        // чипами в шапке и отнимали строку у поиска, причём «Избранного» и
-        // «Истории» среди них не было вовсе. Панель прижата к нижней грани,
-        // системную вставку навигации отводит себе (иначе подписи ложатся
-        // под три кнопки Android).
-        Row(
-            modifier = Modifier.align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .background(VpnkaColors.BgOffCentre)
-                // Кнопки прижаты к нижней грани. Вставку навигации панель
-                // себе не берёт — её отвёл стол (см. `barHeight` выше).
-                .padding(top = 2.dp, bottom = 1.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            // Повторное нажатие по выбранной полке возвращает на главную —
-            // иначе с «Истории» на ленту можно было бы попасть только через
-            // поиск.
-            // «Видео» — главная лента. Первой кнопкой: с любой полки
-            // возвращает на неё, и не приходится искать обходной путь через
-            // строку поиска.
-            YtBottomTab("▶", "Видео", tab == 0) { tab = 0 }
-            YtBottomTab("★", "Избранное", tab == 3) {
-                tab = if (tab == 3) 0 else 3; favTick++
-            }
-            YtBottomTab("☰", "Плейлисты", tab == 1) {
-                tab = if (tab == 1) 0 else 1; openPl = null; plTick++
-            }
-            YtBottomTab("🕘", "История", tab == 4) {
-                tab = if (tab == 4) 0 else 4; seenTick++
-            }
-            YtBottomTab("↓", "Загрузки", tab == 2) { tab = if (tab == 2) 0 else 2 }
-        }
-    }
-}
-
-/** Кнопка нижней панели «Видео»: значок и подпись под ним. */
-@Composable
-private fun YtBottomTab(icon: String, label: String, selected: Boolean, onClick: () -> Unit) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.clip(RoundedCornerShape(10.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 1.dp),
-    ) {
-        Text(
-            icon, fontSize = 13.sp,
-            color = if (selected) VpnkaColors.Accent else VpnkaColors.TextMuted,
-        )
-        Text(
-            label, fontFamily = VpnkaFonts.manrope700, fontSize = 9.sp,
-            lineHeight = 11.sp,
-            color = if (selected) VpnkaColors.Accent else VpnkaColors.TextMuted,
-        )
     }
 }
 
