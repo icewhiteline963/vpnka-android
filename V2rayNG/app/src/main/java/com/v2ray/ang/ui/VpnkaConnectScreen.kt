@@ -421,21 +421,30 @@ fun VpnkaConnectScreen(
                         onChange = onChangeServer,
                     )
                 }
-                if (paidSubscription) {
-                    serverCard()
-                    planRow()
-                } else {
-                    planRow()
-                    serverCard()
-                }
-                // «Качалка» — сразу под подпиской, на главном экране.
+                // «Качалка» — ВПЛОТНУЮ под карточкой подписки.
                 //
                 // Она жила значком внутри рабочего стола: чтобы до неё
                 // добраться, надо было знать, что стол вообще есть, и открыть
                 // его. Это самая заметная вещь, которую приложение умеет
                 // помимо ВПН, и прятать её за два нажатия — терять её.
-                if (smartDeskEnabled) {
-                    VpnkaYouTubeRow(onClick = onYouTube)
+                //
+                // Стояла ниже карточки серверов — и на телефоне уходила за
+                // нижний край: экран прокручивается, но искать её там никто
+                // не станет. Место у неё одно: сразу за подпиской, о чём и
+                // была просьба.
+                val youtubeRow: @Composable () -> Unit = {
+                    if (smartDeskEnabled) {
+                        VpnkaYouTubeRow(onClick = onYouTube)
+                    }
+                }
+                if (paidSubscription) {
+                    serverCard()
+                    planRow()
+                    youtubeRow()
+                } else {
+                    planRow()
+                    youtubeRow()
+                    serverCard()
                 }
                 VpnkaPerAppRow(onClick = onPerAppProxy)
                 if (smartDeskEnabled) {
