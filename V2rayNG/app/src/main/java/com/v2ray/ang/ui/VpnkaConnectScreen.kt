@@ -437,7 +437,12 @@ fun VpnkaConnectScreen(
                 // была просьба.
                 val youtubeRow: @Composable () -> Unit = {
                     if (smartDeskEnabled) {
-                        VpnkaYouTubeRow(onClick = onYouTube)
+                        VpnkaHomeRow(
+                            icon = "▶",
+                            label = "Youtube качалка",
+                            right = "без рекламы",
+                            onClick = onYouTube,
+                        )
                     }
                 }
                 // Приложения — прямо на главном, как в макете «Поток».
@@ -460,11 +465,31 @@ fun VpnkaConnectScreen(
                     youtubeRow()
                     serverCard()
                 }
-                VpnkaPerAppRow(onClick = onPerAppProxy)
+                // Дальше — строки, а не карточки.
+                //
+                // Каждый пункт был карточкой с заголовком и двумя строками
+                // пояснения; такие занимали экран целиком, и до значков
+                // приложений приходилось листать. В макете это компактные
+                // строки со значением справа, а пояснение живёт внутри
+                // самого раздела, где его читают по делу.
+                VpnkaHomeRow(
+                    icon = "⇄",
+                    label = "Прокси для приложений",
+                    onClick = onPerAppProxy,
+                )
                 if (smartDeskEnabled) {
-                    VpnkaSmartDeskRow(online = smartDeskOnline, onClick = onSmartDesk)
+                    VpnkaHomeRow(
+                        icon = "☁",
+                        label = "VPNka облако",
+                        right = if (smartDeskOnline) "на связи" else "нет связи",
+                        onClick = onSmartDesk,
+                    )
                 }
-                VpnkaReviewRow(onClick = onLeaveReview)
+                VpnkaHomeRow(
+                    icon = "✎",
+                    label = "Оставить отзыв",
+                    onClick = onLeaveReview,
+                )
             }
         }
     }
@@ -607,87 +632,6 @@ private fun VpnkaAppGrid(onOpen: (String) -> Unit) {
                 repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
-    }
-}
-
-@Composable
-private fun VpnkaYouTubeRow(onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(VpnkaColors.CardSpeed)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(text = "▶", fontSize = 17.sp, color = VpnkaColors.Accent)
-        Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = "Youtube качалка",
-                fontFamily = VpnkaFonts.nunito800,
-                fontWeight = VpnkaWeight.Extra,
-                fontSize = 15.sp,
-                color = VpnkaColors.TextStrong,
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = "Без рекламы, в хорошем качестве и бесплатно.",
-                fontFamily = VpnkaFonts.manrope600,
-                fontWeight = VpnkaWeight.Semi,
-                fontSize = 12.sp,
-                color = VpnkaColors.TextFaint,
-            )
-        }
-        Spacer(Modifier.width(10.dp))
-        Text(text = "›", fontSize = 18.sp, color = VpnkaColors.TextFaint)
-    }
-}
-
-@Composable
-private fun VpnkaSmartDeskRow(online: Boolean, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(VpnkaColors.CardSpeed)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // Status dot: green when our server answered its ping, red otherwise.
-        // Work still opens offline (saved to the encrypted container), so the
-        // dot means "syncing now" vs "will sync later", not "unavailable".
-        Box(
-            modifier = Modifier
-                .size(10.dp)
-                .clip(CircleShape)
-                .background(if (online) VpnkaColors.Green else VpnkaColors.Warning),
-        )
-        Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = "VPNka облако",
-                fontFamily = VpnkaFonts.nunito800,
-                fontWeight = VpnkaWeight.Extra,
-                fontSize = 15.sp,
-                color = VpnkaColors.TextStrong,
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = if (online)
-                    "Рабочий стол: календарь, контакты, почта. Сервер на связи."
-                else
-                    "Рабочий стол: календарь, контакты, почта. Нет связи — сохраним и синхронизируем позже.",
-                fontFamily = VpnkaFonts.manrope600,
-                fontWeight = VpnkaWeight.Semi,
-                fontSize = 12.sp,
-                color = VpnkaColors.TextFaint,
-            )
-        }
-        Spacer(Modifier.width(10.dp))
-        Text(text = "›", fontSize = 18.sp, color = VpnkaColors.TextFaint)
     }
 }
 
@@ -919,84 +863,66 @@ private fun VpnkaExpiryBanner(daysLeft: Int, onRenew: () -> Unit) {
 }
 
 /**
- * Per-app routing, on the main screen rather than buried in settings.
+ * Строка главного экрана — как в макете «Поток».
  *
- * It is the setting people actually need — banking and government apps
- * refuse a foreign address, so without it the choice is «VPN» or «bank»,
- * and users resolve that by disconnecting. The line under the title says
- * what it does, because «прокси для приложений» does not.
+ * Раньше каждый пункт был карточкой с заголовком и двумя строками
+ * пояснения: пять таких занимали экран целиком, и до значков приложений
+ * приходилось листать. В макете это компактные строки — значок слева,
+ * название, значение справа, шеврон. Пояснение переезжает внутрь самого
+ * раздела, где его читают по делу, а не поверх всего.
+ *
+ * `primary` — заливка акцентом, для единственного действия, которое сейчас
+ * важнее прочих (вход через Телеграм у непривязанного).
  */
 @Composable
-private fun VpnkaPerAppRow(onClick: () -> Unit) {
+private fun VpnkaHomeRow(
+    icon: String,
+    label: String,
+    right: String = "",
+    primary: Boolean = false,
+    onClick: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(VpnkaColors.CardSpeed)
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (primary) VpnkaColors.Accent else VpnkaColors.CardSpeed)
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 12.dp, vertical = if (primary) 12.dp else 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.weight(1f)) {
+        Text(
+            text = icon,
+            fontSize = 14.sp,
+            color = if (primary) VpnkaColors.OnAccent else VpnkaColors.Accent,
+        )
+        Spacer(Modifier.width(11.dp))
+        Text(
+            text = label,
+            fontFamily = VpnkaFonts.manrope700,
+            fontWeight = VpnkaWeight.Semi,
+            fontSize = 12.5.sp,
+            color = if (primary) VpnkaColors.OnAccent else VpnkaColors.TextStrong,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        if (right.isNotBlank()) {
             Text(
-                text = "Прокси для приложений",
-                fontFamily = VpnkaFonts.nunito800,
-                fontWeight = VpnkaWeight.Extra,
-                fontSize = 15.sp,
-                color = VpnkaColors.TextStrong,
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = "Выберите, какие приложения идут через VPN. Банки и " +
-                    "госуслуги лучше оставить без него.",
+                text = right,
                 fontFamily = VpnkaFonts.manrope600,
                 fontWeight = VpnkaWeight.Semi,
-                fontSize = 12.sp,
-                color = VpnkaColors.TextFaint,
+                fontSize = 11.5.sp,
+                color = if (primary) VpnkaColors.OnAccent else VpnkaColors.TextMuted,
+                maxLines = 1,
             )
+            Spacer(Modifier.width(8.dp))
         }
-        Spacer(Modifier.width(10.dp))
-        Text(text = "›", fontSize = 18.sp, color = VpnkaColors.TextFaint)
-    }
-}
-
-/** Bottom-of-screen invitation to rate the service.
- *
- *  Deliberately the last row: it must never compete with connecting, but the
- *  people who scroll to the end of the home screen are exactly the ones with
- *  an opinion worth reading.
- */
-@Composable
-private fun VpnkaReviewRow(onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(VpnkaColors.CardSpeed)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = "Оставить отзыв",
-                fontFamily = VpnkaFonts.nunito800,
-                fontWeight = VpnkaWeight.Extra,
-                fontSize = 15.sp,
-                color = VpnkaColors.TextStrong,
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = "Расскажите, как работает ВПН — это помогает нам " +
-                    "чинить то, что мешает именно вам.",
-                fontFamily = VpnkaFonts.manrope600,
-                fontWeight = VpnkaWeight.Semi,
-                fontSize = 12.sp,
-                color = VpnkaColors.TextFaint,
-            )
-        }
-        Spacer(Modifier.width(10.dp))
-        Text(text = "★", fontSize = 18.sp, color = VpnkaColors.Accent)
+        Text(
+            text = "›",
+            fontSize = 16.sp,
+            color = if (primary) VpnkaColors.OnAccent else VpnkaColors.TextFaint,
+        )
     }
 }
 
