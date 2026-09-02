@@ -830,6 +830,25 @@ object MmkvManager {
         return id
     }
 
+    private const val KEY_BETA_CHANNEL = "vpnka_beta_channel"
+
+    /**
+     * Получать ли тестовые сборки вместо боевых.
+     *
+     * По умолчанию НЕТ: клиенту недоделанная версия не нужна. Владелец
+     * включает у себя и получает бету тем же автообновлением — поверх, с
+     * теми же данными, а не вторым приложением.
+     */
+    fun betaChannel(): Boolean = decodeSettingsBool(KEY_BETA_CHANNEL, false)
+
+    fun setBetaChannel(on: Boolean) {
+        settingsStorage.encode(KEY_BETA_CHANNEL, on)
+        // Готовая к установке сборка была из ДРУГОГО канала — забываем её,
+        // иначе после переключения предлагалось бы ровно то, от чего человек
+        // только что отказался.
+        settingsStorage.encode("vpnka_update_ready_version", "")
+    }
+
     private const val KEY_VPNKA_INSTALL_ID = "vpnka_install_id"
 
     /**

@@ -583,6 +583,9 @@ class MainActivity : HelperBaseComponentActivity() {
     private var showTopUp by mutableStateOf(false)
     // SmartDesk full-screen surface + the reachability state behind its dot.
     private var showSmartDesk by mutableStateOf(false)
+
+    /** Получать ли тестовые сборки. Читается из хранилища при первом обращении. */
+    private var betaChannel by mutableStateOf(MmkvManager.betaChannel())
     private var smartDeskOnline by mutableStateOf(false)
     // Privacy toggle: hide the SmartDesk entry; a 5-tap corner gesture reveals it.
     private var smartDeskHidden by mutableStateOf(MmkvManager.decodeSettingsBool("vpnka_smartdesk_hidden"))
@@ -1178,6 +1181,11 @@ class MainActivity : HelperBaseComponentActivity() {
                 onSmartDeskHiddenChange = { hidden ->
                     smartDeskHidden = hidden
                     MmkvManager.encodeSettings("vpnka_smartdesk_hidden", hidden)
+                },
+                betaChannel = betaChannel,
+                onBetaChannelChange = { on ->
+                    betaChannel = on
+                    MmkvManager.setBetaChannel(on)
                 },
                 onBack = { showSettings = false },
             )
