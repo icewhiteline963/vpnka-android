@@ -1819,6 +1819,12 @@ class MainActivity : HelperBaseComponentActivity() {
                 // Green dot only while the tunnel is actually up.
                 smartDeskOnline = smartDeskOnline && uiState.isRunning,
                 onSmartDesk = { showSmartDesk = true },
+                onYouTube = {
+                    // Открываем стол сразу на «Видео»: человек просил
+                    // качалку, а не рабочий стол.
+                    com.v2ray.ang.ui.SmartDeskChrome.pendingAppId = "youtube"
+                    showSmartDesk = true
+                },
                 // Предупреждаем о том дне, когда доступ кончится СОВСЕМ, то
                 // есть по самому дальнему плану.
                 //

@@ -1454,6 +1454,18 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
     // Приёмник команд из маленького окна живёт дольше одной композиции —
     // держим ссылку на текущий плеер в коробке, а не захватываем значение.
     val playerRef = remember { mutableStateOf<MediaController?>(null) }
+    // Фоновое воспроизведение — ПО УМОЛЧАНИЮ ВЫКЛЮЧЕНО.
+    //
+    // Плеер живёт в службе и переживал уход с экрана всегда: человек
+    // выходил из ролика, а звук продолжал идти, и остановить его можно было
+    // только через мини-плеер или шторку Android. Для музыки это нужно, для
+    // случайного ролика — нет, поэтому теперь спрашиваем явно.
+    var bgPlay by remember {
+        mutableStateOf(MmkvManager.decodeSettingsString("yt_background_play") == "1")
+    }
+    LaunchedEffect(bgPlay) {
+        MmkvManager.encodeSettings("yt_background_play", if (bgPlay) "1" else "0")
+    }
     DisposableEffect(Unit) {
         val token = SessionToken(
             context,
@@ -1465,8 +1477,19 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
             ContextCompat.getMainExecutor(context),
         )
         onDispose {
-            // Отпускаем ТОЛЬКО контроллер: плеер остаётся в службе и играет
-            // дальше. В этом и смысл — уход с экрана больше не тишина.
+            // Играет ли дальше — решает переключатель «В фоне».
+            //
+            // Раньше плеер оставался в службе ВСЕГДА: человек выходил из
+            // ролика, звук продолжал идти, и остановить его можно было только
+            // мини-плеером или шторкой Android. Для музыки это нужно, для
+            // случайного ролика — нет, поэтому по умолчанию выключено.
+            if (!bgPlay) {
+                runCatching {
+                    player?.pause()
+                    player?.stop()
+                }
+                YouTubeNowPlaying.current = null
+            }
             MediaController.releaseFuture(future)
             player = null
         }
@@ -2129,16 +2152,28 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                 if (pb.likes >= 0) add("👍 ${fmtCount(pb.likes)}")
                 if (pb.dislikes >= 0) add("👎 ${fmtCount(pb.dislikes)}")
             }
-            if (stats.isNotEmpty() || pb.uploader.isNotBlank()) {
+            // Автор и оценки — РАЗНЫМИ строками.
+            //
+            // В одну строку они не влезали: имя канала бывает длинным, и
+            // просмотры с лайками обрезались многоточием — то есть пропадало
+            // именно то, ради чего строку и заводили.
+            if (pb.uploader.isNotBlank()) {
                 Text(
-                    listOfNotNull(
-                        pb.uploader.takeIf { it.isNotBlank() },
-                        stats.takeIf { it.isNotEmpty() }?.joinToString(" · "),
-                    ).joinToString(" · "),
+                    pb.uploader,
                     fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp,
                     color = VpnkaColors.TextMuted, maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                )
+            }
+            if (stats.isNotEmpty()) {
+                Text(
+                    stats.joinToString(" · "),
+                    fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp,
+                    color = VpnkaColors.TextMuted, maxLines = 1,
+                    modifier = Modifier.fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                        .padding(top = 3.dp),
                 )
             }
 
@@ -2228,6 +2263,7 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                         YouTubeFavorites.Fav(pb.pageUrl, pb.title, "", 0L),
                     )
                 }
+                YtQuickAction("🔊", "В фоне", active = bgPlay) { bgPlay = !bgPlay }
                 YtQuickAction("⋯", "Ещё", active = moreOpen) { moreOpen = true }
             }
 
@@ -2649,7 +2685,9 @@ private fun YtQuickAction(
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.width(64.dp)
+        // 56, а не 64: кнопок стало шесть, и на узком экране ряд
+        // переставал помещаться целиком.
+        modifier = Modifier.width(56.dp)
             .clip(RoundedCornerShape(12.dp))
             .clickable(enabled = enabled, onClick = onClick)
             .padding(vertical = 6.dp),

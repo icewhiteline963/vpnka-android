@@ -153,6 +153,8 @@ fun VpnkaConnectScreen(
     smartDeskEnabled: Boolean,
     smartDeskOnline: Boolean,
     onSmartDesk: () -> Unit,
+    /** Открыть «Видео» сразу, минуя рабочий стол. */
+    onYouTube: () -> Unit,
     expiryDaysLeft: Int?,
     /**
      * План, который кончается РАНЬШЕ остальных, когда за ним есть другой:
@@ -426,6 +428,15 @@ fun VpnkaConnectScreen(
                     planRow()
                     serverCard()
                 }
+                // «Качалка» — сразу под подпиской, на главном экране.
+                //
+                // Она жила значком внутри рабочего стола: чтобы до неё
+                // добраться, надо было знать, что стол вообще есть, и открыть
+                // его. Это самая заметная вещь, которую приложение умеет
+                // помимо ВПН, и прятать её за два нажатия — терять её.
+                if (smartDeskEnabled) {
+                    VpnkaYouTubeRow(onClick = onYouTube)
+                }
                 VpnkaPerAppRow(onClick = onPerAppProxy)
                 if (smartDeskEnabled) {
                     VpnkaSmartDeskRow(online = smartDeskOnline, onClick = onSmartDesk)
@@ -514,6 +525,41 @@ private fun VpnkaActiveExit() {
                 else -> VpnkaColors.TextMuted
             },
         )
+    }
+}
+
+@Composable
+private fun VpnkaYouTubeRow(onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(VpnkaColors.CardSpeed)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text = "▶", fontSize = 17.sp, color = VpnkaColors.Accent)
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Youtube качалка",
+                fontFamily = VpnkaFonts.nunito800,
+                fontWeight = VpnkaWeight.Extra,
+                fontSize = 15.sp,
+                color = VpnkaColors.TextStrong,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = "Без рекламы, в хорошем качестве и бесплатно.",
+                fontFamily = VpnkaFonts.manrope600,
+                fontWeight = VpnkaWeight.Semi,
+                fontSize = 12.sp,
+                color = VpnkaColors.TextFaint,
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        Text(text = "›", fontSize = 18.sp, color = VpnkaColors.TextFaint)
     }
 }
 
