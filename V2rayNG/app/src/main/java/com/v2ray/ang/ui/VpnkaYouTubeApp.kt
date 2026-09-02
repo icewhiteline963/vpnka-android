@@ -11,6 +11,11 @@ import android.app.PendingIntent
 import android.content.Intent
 import com.v2ray.ang.R
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
@@ -149,8 +154,6 @@ fun YouTubeApp() {
             loading = false
         }
     }
-    fun runSearch() = runSearchFor(query)
-
     /** Открыть главную — подборку YouTube, а не чей-то прошлый запрос. */
     fun loadHome() {
         scope.launch {
@@ -175,6 +178,15 @@ fun YouTubeApp() {
         }
     }
 
+    // Пустой запрос — это «покажи главную», а не «ничего не делай».
+    //
+    // Раньше Enter на пустом поле молчал: человек стирал прошлый запрос,
+    // жал ввод и оставался на его выдаче. Теперь возвращает ленту — тот же
+    // список, с которого приложение открывается.
+    fun runSearch() {
+        if (query.isBlank()) loadHome() else runSearchFor(query)
+    }
+
     // Открываем ГЛАВНУЮ, а не последний запрос.
     //
     // Сначала здесь было зашито «electronic music» — русскоязычный человек
@@ -193,7 +205,12 @@ fun YouTubeApp() {
         scope.launch {
             resolving = true; error = null
             val r = withContext(Dispatchers.IO) { runCatching { YouTubeService.resolve(videoUrl) } }
-            r.onSuccess { playing = it }
+            r.onSuccess {
+                playing = it
+                // Запоминаем НАЗВАНИЕ, а не только адрес: по картам позиций
+                // и досмотренного список не покажешь — там одни ссылки.
+                YouTubeHistory.rememberSeen(it.pageUrl, it.title)
+            }
                 .onFailure { error = "Видео недоступно: ${it.message ?: it.javaClass.simpleName}" }
             resolving = false
         }
@@ -204,6 +221,8 @@ fun YouTubeApp() {
     var tab by remember { mutableStateOf(SmartDeskChrome.consumePendingYtTab() ?: 0) }
     var laterTick by remember { mutableStateOf(0) }
     var plTick by remember { mutableStateOf(0) }
+    var favTick by remember { mutableStateOf(0) }
+    var seenTick by remember { mutableStateOf(0) }
     var openPl by remember { mutableStateOf<String?>(null) }
     // Просьба открыть вкладку может прийти, когда «Видео» УЖЕ на экране —
     // тогда новой композиции нет, и одного чтения при рождении мало.
@@ -281,8 +300,19 @@ fun YouTubeApp() {
         return
     }
 
+    // Высота собственной панели «Видео» — под неё отводится место, чтобы
+    // список не заезжал под кнопки.
+    val navInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val barHeight = 52.dp + navInset
+
     Box(modifier = Modifier.fillMaxSize()) {
-        Column(modifier = Modifier.fillMaxSize().padding(horizontal = 14.dp)) {
+        Column(
+            modifier = Modifier.fillMaxSize()
+                .padding(horizontal = 14.dp)
+                // Место под панель: без него лента доезжала до кнопок
+                // вплотную и последняя карточка пряталась за ними.
+                .padding(bottom = barHeight),
+        ) {
             var searchSort by remember { mutableStateOf(YtSort.DEFAULT) }
             var plSort by remember { mutableStateOf(YtSort.DEFAULT) }
 
@@ -312,41 +342,64 @@ fun YouTubeApp() {
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it; if (tab != 0) tab = 0 },
-                    singleLine = true,
-                    placeholder = { Text("Поиск на YouTube", color = VpnkaColors.TextMuted) },
-                    leadingIcon = { Text("🔎", fontSize = 13.sp) },
-                    textStyle = androidx.compose.material3.LocalTextStyle.current.copy(
-                        color = VpnkaColors.TextStrong,
-                    ),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = { runSearch() }),
-                    shape = RoundedCornerShape(15.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = VpnkaColors.TextStrong,
-                        unfocusedTextColor = VpnkaColors.TextStrong,
-                        cursorColor = VpnkaColors.Accent,
-                        focusedBorderColor = VpnkaColors.Accent,
-                        unfocusedBorderColor = VpnkaColors.CardServer,
-                    ),
-                    // «Найти» внутри поля: Enter и так ищет, а отдельная
-                    // кнопка занимала бы треть строки.
-                    trailingIcon = {
-                        Text(
-                            "➤", fontSize = 16.sp, color = VpnkaColors.Accent,
-                            modifier = Modifier.clip(CircleShape)
-                                .clickable { runSearch() }
-                                .padding(10.dp),
-                        )
-                    },
+                // Поле СВОЁ, а не готовое: у OutlinedTextField высота
+                // жёстко 56 dp, и строка выходила вдвое толще всего
+                // остального на экране. Здесь — 30 dp и своя рамка.
+                Row(
                     modifier = Modifier.weight(1f)
-                        // Курсор в поле означает «ищу»: если человек стоял на
-                        // «Загрузках», возвращаем его на ленту, иначе набор
-                        // уходил бы в пустоту.
-                        .onFocusChanged { if (it.isFocused && tab != 0) tab = 0 },
-                )
+                        .height(30.dp)
+                        .clip(RoundedCornerShape(15.dp))
+                        .background(VpnkaColors.CardServer)
+                        .border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(15.dp))
+                        .padding(horizontal = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("🔎", fontSize = 12.sp)
+                    Spacer(Modifier.width(7.dp))
+                    BasicTextField(
+                        value = query,
+                        onValueChange = { query = it; if (tab != 0) tab = 0 },
+                        singleLine = true,
+                        textStyle = androidx.compose.ui.text.TextStyle(
+                            color = VpnkaColors.TextStrong,
+                            fontSize = 13.sp,
+                            fontFamily = VpnkaFonts.manrope700,
+                        ),
+                        cursorBrush = SolidColor(VpnkaColors.Accent),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = { runSearch() }),
+                        decorationBox = { inner ->
+                            if (query.isEmpty()) {
+                                Text(
+                                    "Поиск на YouTube", fontSize = 13.sp,
+                                    fontFamily = VpnkaFonts.manrope700,
+                                    color = VpnkaColors.TextMuted,
+                                )
+                            }
+                            inner()
+                        },
+                        modifier = Modifier.weight(1f)
+                            // Курсор в поле означает «ищу»: если человек стоял
+                            // на «Загрузках», возвращаем его на ленту, иначе
+                            // набор уходил бы в пустоту.
+                            .onFocusChanged { if (it.isFocused && tab != 0) tab = 0 },
+                    )
+                    if (query.isNotEmpty()) {
+                        Text(
+                            "✕", fontSize = 13.sp, color = VpnkaColors.TextMuted,
+                            modifier = Modifier.clip(CircleShape)
+                                .clickable { query = ""; loadHome() }
+                                .padding(horizontal = 4.dp),
+                        )
+                        Spacer(Modifier.width(4.dp))
+                    }
+                    Text(
+                        "➤", fontSize = 13.sp, color = VpnkaColors.Accent,
+                        modifier = Modifier.clip(CircleShape)
+                            .clickable { runSearch() }
+                            .padding(horizontal = 3.dp),
+                    )
+                }
                 if (activeDls > 0) {
                     Spacer(Modifier.width(7.dp))
                     Row(
@@ -370,16 +423,10 @@ fun YouTubeApp() {
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // Отдельной вкладки «Поиск» нет: на ленту возвращает лупа в
-                // шапке и повторное нажатие по уже выбранной полке — держать
-                // ради этого третий чип не за чем.
-                YtTabChip("Плейлисты", tab == 1) { tab = if (tab == 1) 0 else 1; openPl = null; plTick++ }
-                Spacer(Modifier.width(7.dp))
-                YtTabChip("Загрузки", tab == 2) { tab = if (tab == 2) 0 else 2 }
-                // Сортировка уехала сюда же: своя строка ради одного чипа —
-                // роскошь, которой на этом экране не осталось места.
+                // Полки переехали в нижнюю панель — здесь осталась только
+                // сортировка, и она прижата вправо.
+                Spacer(Modifier.weight(1f))
                 if (tab == 0 && results.isNotEmpty()) {
-                    Spacer(Modifier.weight(1f))
                     YtSortChip(searchSort, searchSortOptions) { searchSort = it }
                 }
             }
@@ -433,6 +480,67 @@ fun YouTubeApp() {
                         items(sortVideos(results, searchSort)) { v ->
                             VideoRow(v, onClick = { open(v.url) },
                                 onAdd = { addTo = YouTubePlaylists.Item(it.url, it.title, it.uploader, it.durationSec) })
+                        }
+                    }
+                }
+            } else if (tab == 3) {
+                // Избранное — тот же список, что копит «★» под видео, просто
+                // показанный своей полкой.
+                val favs = remember(plTick, favTick) { YouTubeFavorites.all() }
+                if (favs.isEmpty()) {
+                    YtEmptyCard(
+                        "Здесь пусто",
+                        "Отмечайте ролики звёздочкой под видео — они соберутся тут.",
+                        null, null,
+                    )
+                } else {
+                    LazyColumn(modifier = Modifier.fillMaxSize().padding(top = 8.dp)) {
+                        items(favs, key = { it.url }) { f ->
+                            VideoRow(
+                                YouTubeService.Video(f.url, f.title, f.uploader, f.durationSec, null),
+                                onClick = { open(f.url) },
+                                onFavChanged = { favTick++ },
+                                onAdd = {
+                                    addTo = YouTubePlaylists.Item(
+                                        it.url, it.title, it.uploader, it.durationSec,
+                                    )
+                                },
+                            )
+                        }
+                    }
+                }
+            } else if (tab == 4) {
+                // История просмотров. Пишется при открытии ролика вместе с
+                // названием — по картам позиций и досмотренного показывать
+                // было бы нечего, кроме ссылок.
+                val seen = remember(seenTick) { YouTubeHistory.seen() }
+                if (seen.isEmpty()) {
+                    YtEmptyCard(
+                        "Пока пусто",
+                        "Здесь появятся ролики, которые вы открывали.",
+                        null, null,
+                    )
+                } else {
+                    LazyColumn(modifier = Modifier.fillMaxSize().padding(top = 8.dp)) {
+                        item {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                                horizontalArrangement = Arrangement.End,
+                            ) {
+                                YtTabChip("Очистить", selected = false) {
+                                    YouTubeHistory.clearSeen(); seenTick++
+                                }
+                            }
+                        }
+                        items(seen, key = { it.url }) { h ->
+                            VideoRow(
+                                YouTubeService.Video(h.url, h.title, h.uploader, 0L, null),
+                                onClick = { open(h.url) },
+                                onAdd = {
+                                    addTo = YouTubePlaylists.Item(it.url, it.title, it.uploader, 0L)
+                                },
+                                onRemove = { YouTubeHistory.forgetSeen(h.url); seenTick++ },
+                            )
                         }
                     }
                 }
@@ -859,6 +967,58 @@ fun YouTubeApp() {
                 containerColor = VpnkaColors.BgOffCentre,
             )
         }
+
+        // Своя нижняя панель «Видео».
+        //
+        // Общая панель рабочего стола убрана, а полки — избранное,
+        // плейлисты, история, загрузки — нужны под рукой: раньше они были
+        // чипами в шапке и отнимали строку у поиска, причём «Избранного» и
+        // «Истории» среди них не было вовсе. Панель прижата к нижней грани,
+        // системную вставку навигации отводит себе (иначе подписи ложатся
+        // под три кнопки Android).
+        Row(
+            modifier = Modifier.align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .background(VpnkaColors.BgOffCentre)
+                .padding(top = 6.dp, bottom = 6.dp + navInset),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // Повторное нажатие по выбранной полке возвращает на главную —
+            // иначе с «Истории» на ленту можно было бы попасть только через
+            // поиск.
+            YtBottomTab("★", "Избранное", tab == 3) {
+                tab = if (tab == 3) 0 else 3; favTick++
+            }
+            YtBottomTab("☰", "Плейлисты", tab == 1) {
+                tab = if (tab == 1) 0 else 1; openPl = null; plTick++
+            }
+            YtBottomTab("🕘", "История", tab == 4) {
+                tab = if (tab == 4) 0 else 4; seenTick++
+            }
+            YtBottomTab("↓", "Загрузки", tab == 2) { tab = if (tab == 2) 0 else 2 }
+        }
+    }
+}
+
+/** Кнопка нижней панели «Видео»: значок и подпись под ним. */
+@Composable
+private fun YtBottomTab(icon: String, label: String, selected: Boolean, onClick: () -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 3.dp),
+    ) {
+        Text(
+            icon, fontSize = 15.sp,
+            color = if (selected) VpnkaColors.Accent else VpnkaColors.TextMuted,
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            label, fontFamily = VpnkaFonts.manrope700, fontSize = 10.sp,
+            color = if (selected) VpnkaColors.Accent else VpnkaColors.TextMuted,
+        )
     }
 }
 

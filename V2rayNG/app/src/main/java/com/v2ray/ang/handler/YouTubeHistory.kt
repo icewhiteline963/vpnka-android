@@ -115,4 +115,50 @@ object YouTubeHistory {
 
     /** Когда досмотрели. 0 — не досматривали. */
     fun watchedAt(url: String): Long = watched()[url] ?: 0L
+
+    // ---- что смотрели (лента «История») ------------------------------
+
+    private const val KEY_SEEN = "vpnka_youtube_seen"
+    private const val SEEN_MAX = 200
+
+    /**
+     * Открытый ролик — с названием.
+     *
+     * Карты позиций и досмотренного хранят ТОЛЬКО адрес: они нужны уборке
+     * скачанного и продолжению с места, и названия им ни к чему. Показать
+     * по ним список нельзя — человек увидел бы столбик ссылок. Поэтому
+     * отдельная запись: адрес, название, когда открывали.
+     */
+    data class Seen(
+        // Умолчания у всех полей: иначе Gson соберёт объект в обход
+        // конструктора и в необнуляемое поле приедет null.
+        val url: String = "",
+        val title: String = "",
+        val uploader: String = "",
+        val at: Long = 0L,
+    )
+
+    fun rememberSeen(url: String, title: String, uploader: String = "") {
+        if (url.isBlank()) return
+        val list = seen().filterNot { it.url == url }.toMutableList()
+        list.add(0, Seen(url, title, uploader, System.currentTimeMillis()))
+        MmkvManager.encodeSettings(KEY_SEEN, gson.toJson(list.take(SEEN_MAX)))
+    }
+
+    fun seen(): List<Seen> {
+        val raw = MmkvManager.decodeSettingsString(KEY_SEEN) ?: return emptyList()
+        return try {
+            gson.fromJson<List<Seen>>(
+                raw, object : TypeToken<List<Seen>>() {}.type,
+            ) ?: emptyList()
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    fun forgetSeen(url: String) {
+        MmkvManager.encodeSettings(KEY_SEEN, gson.toJson(seen().filterNot { it.url == url }))
+    }
+
+    fun clearSeen() = MmkvManager.encodeSettings(KEY_SEEN, "[]")
 }
