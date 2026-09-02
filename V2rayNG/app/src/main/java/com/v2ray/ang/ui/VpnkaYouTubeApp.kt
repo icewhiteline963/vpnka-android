@@ -2362,7 +2362,6 @@ private fun YtPlayerTab(label: String, selected: Boolean, onClick: () -> Unit) {
     }
 }
 
-@Composable
 /**
  * Действие под видео: значок в кружке и короткая подпись под ним.
  *
