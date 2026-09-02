@@ -71,6 +71,7 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -155,6 +156,8 @@ fun VpnkaConnectScreen(
     onSmartDesk: () -> Unit,
     /** Открыть «Видео» сразу, минуя рабочий стол. */
     onYouTube: () -> Unit,
+    /** Открыть приложение стола по его id — со значка на главном экране. */
+    onOpenDeskApp: (String) -> Unit = {},
     expiryDaysLeft: Int?,
     /**
      * План, который кончается РАНЬШЕ остальных, когда за ним есть другой:
@@ -437,6 +440,17 @@ fun VpnkaConnectScreen(
                         VpnkaYouTubeRow(onClick = onYouTube)
                     }
                 }
+                // Приложения — прямо на главном, как в макете «Поток».
+                //
+                // Рабочий стол был отдельным экраном: чтобы попасть в видео,
+                // браузер или чаты, нужно было знать про стол и открыть его.
+                // В макете сетка значков живёт под кнопкой подключения — то
+                // есть стол и главный экран это ОДИН экран, а не два. Бейдж
+                // на значке показывает то, что человеку и нужно знать
+                // издалека: сколько качается и сколько непрочитанных.
+                if (smartDeskEnabled) {
+                    VpnkaAppGrid(onOpen = onOpenDeskApp)
+                }
                 if (paidSubscription) {
                     serverCard()
                     planRow()
@@ -534,6 +548,65 @@ private fun VpnkaActiveExit() {
                 else -> VpnkaColors.TextMuted
             },
         )
+    }
+}
+
+@Composable
+private fun VpnkaAppGrid(onOpen: (String) -> Unit) {
+    // Показываем то, что человек поставил себе на стол, тем же порядком.
+    val installed = remember { com.v2ray.ang.ui.smartDeskInstalledApps() }
+    if (installed.isEmpty()) return
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "ПРИЛОЖЕНИЯ",
+            fontFamily = VpnkaFonts.manrope600,
+            fontWeight = VpnkaWeight.Semi,
+            fontSize = 10.5.sp,
+            letterSpacing = 0.08.em,
+            color = VpnkaColors.TextFaint,
+            modifier = Modifier.padding(start = 4.dp, bottom = 10.dp),
+        )
+        // Четыре в ряд — как в макете. Сетку кладём вручную рядами, а не
+        // LazyVerticalGrid: она внутри прокручиваемого столбца, и ленивая
+        // сетка там меряется бесконечной высотой и роняет разметку.
+        installed.chunked(4).forEach { row ->
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(11.dp),
+            ) {
+                row.forEach { app ->
+                    Column(
+                        modifier = Modifier.weight(1f)
+                            .clip(RoundedCornerShape(14.dp))
+                            .clickable { onOpen(app.id) }
+                            .padding(vertical = 4.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Box(
+                            modifier = Modifier.size(52.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(VpnkaColors.CardSpeed),
+                            contentAlignment = Alignment.Center,
+                        ) { Text(app.glyph, fontSize = 23.sp) }
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            app.label,
+                            fontFamily = VpnkaFonts.manrope600,
+                            fontWeight = VpnkaWeight.Semi,
+                            fontSize = 10.sp,
+                            lineHeight = 12.sp,
+                            color = VpnkaColors.TextMuted,
+                            maxLines = 2,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
+                // Добиваем ряд пустотой, иначе три значка растянутся на всю
+                // ширину и последний ряд поедет по сетке.
+                repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
+            }
+        }
     }
 }
 

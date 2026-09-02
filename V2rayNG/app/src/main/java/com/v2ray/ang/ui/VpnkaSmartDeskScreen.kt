@@ -220,6 +220,15 @@ fun setInstalled(ids: List<String>) {
 
 private fun installedApps(): List<DeskApp> = installedIds().mapNotNull { CATALOG_BY_ID[it] }
 
+/**
+ * То же самое для ГЛАВНОГО экрана.
+ *
+ * Сетка значков переехала туда — стол и главный экран стали одним, — но
+ * список установленного по-прежнему живёт здесь, вместе с каталогом и
+ * порядком. Отдаём его наружу, а не копируем.
+ */
+fun smartDeskInstalledApps(): List<DeskApp> = installedApps()
+
 /** Persist the cell order as "id:cell,id:cell". Only installed apps appear. */
 private fun loadOrder(): MutableList<Pair<DeskApp, Int>> {
     val apps = installedApps()

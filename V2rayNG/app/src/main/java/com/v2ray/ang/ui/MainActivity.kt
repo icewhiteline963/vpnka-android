@@ -1833,6 +1833,12 @@ class MainActivity : HelperBaseComponentActivity() {
                     com.v2ray.ang.ui.SmartDeskChrome.pendingAppId = "youtube"
                     showSmartDesk = true
                 },
+                onOpenDeskApp = { id ->
+                    // Значок на главном ведёт прямо в приложение, а не на
+                    // стол: стол теперь и есть главный экран.
+                    com.v2ray.ang.ui.SmartDeskChrome.pendingAppId = id
+                    showSmartDesk = true
+                },
                 // Предупреждаем о том дне, когда доступ кончится СОВСЕМ, то
                 // есть по самому дальнему плану.
                 //
