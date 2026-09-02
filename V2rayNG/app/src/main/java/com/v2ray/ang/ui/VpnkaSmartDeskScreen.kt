@@ -831,9 +831,15 @@ fun VpnkaSmartDeskScreen(
         // Высоту блока меряем и отдаём содержимому: раньше под него
         // резервировалась константа, а реальная высота растёт от мини-плеера
         // и подсказки — и они накрывали низ любого экрана.
-        val density = LocalDensity.current
         Column(
-            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+            // Вставку системной навигации отводит ВЕСЬ нижний блок.
+            //
+            // Раньше её давала нижняя панель; когда панель убрали, отступ
+            // добавили только подсказке — а мини-плеер остался без него и
+            // на телефонах с тремя кнопками ложился под них: строка видна,
+            // а нажатия достаются системе.
+            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                .padding(bottom = navInset),
         ) {
                 // Мини-плеер: фоновый звук продолжает играть, когда «Видео»
                 // закрыто, и до сих пор остановить его можно было, только
@@ -859,14 +865,6 @@ fun VpnkaSmartDeskScreen(
                     Row(
                         modifier = Modifier.fillMaxWidth()
                             .padding(horizontal = 10.dp, vertical = 4.dp)
-                            // Вставку навигации подсказка отводит СЕБЕ.
-                            //
-                            // Раньше её давала нижняя панель, и отступ был
-                            // нужен только когда панель спрятана. Панели
-                            // больше нет — значит нужен всегда, иначе на
-                            // трёх кнопках текст и «Открыть» пропадают под
-                            // системной навигацией, а касание уходит ей.
-                            .padding(bottom = navInset)
                             .clip(RoundedCornerShape(12.dp))
                             .background(VpnkaColors.BgOffCentre)
                             .padding(horizontal = 14.dp, vertical = 10.dp),
@@ -935,40 +933,6 @@ fun VpnkaSmartDeskScreen(
  * wiped after each sync and lives only in the encrypted cloud. Tapping also
  * forces a sync if anything is still pending.
  */
-@Composable
-private fun BarItem(
-    glyph: String,
-    label: String,
-    selected: Boolean,
-    modifier: Modifier,
-    onClick: () -> Unit,
-) {
-    // Активный пункт — оранжевым ТЕКСТОМ, без заливки. Плашка другого оттенка
-    // выбивалась из панели и читалась как ошибка вёрстки.
-    val tint = if (selected) VpnkaColors.AccentLight else VpnkaColors.TextFaint
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(9.dp))
-            .clickable(onClick = onClick)
-            .padding(vertical = 6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        // Значок крупнее подписи: по панели попадают в него, а не в слово.
-        // Было 16 sp — на ощупь это точка, особенно у эмодзи, которые сами по
-        // себе рисуются мельче собственного кегля.
-        Text(glyph, fontSize = 22.sp, color = tint)
-        Spacer(Modifier.height(4.dp))
-        Text(
-            label,
-            fontFamily = if (selected) VpnkaFonts.nunito800 else VpnkaFonts.manrope600,
-            fontSize = 10.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            color = tint,
-        )
-    }
-}
-
 @Composable
 private fun SmartDeskCloudButton(online: Boolean, ink: Color) {
     val scope = rememberCoroutineScope()

@@ -162,7 +162,16 @@ android {
                     else
                         "universal"
 
-                    output.outputFileName = "vpnka_${variant.versionName}_${abi}.apk"
+                    // У тестовой сборки имя ОТЛИЧАЕТСЯ.
+                    //
+                    // Иначе файл называется в точности как боевой, и на
+                    // зеркале они дерутся: бета с тем же номером затирает
+                    // боевой релиз, а чистка считает её «предыдущей
+                    // версией» и сносит настоящую предыдущую боевую. Плюс
+                    // по имени файла нельзя понять, что скачал.
+                    val devMark = if (variant.productFlavors.any { it.name == "dev" }) "-dev" else ""
+                    output.outputFileName =
+                        "vpnka_${variant.versionName}${devMark}_${abi}.apk"
                     if (versionCodes.containsKey(abi)) {
                         output.versionCodeOverride =
                             (1000000 * versionCodes[abi]!!).plus(variant.versionCode)

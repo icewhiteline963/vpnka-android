@@ -11,9 +11,6 @@ import android.app.PendingIntent
 import android.content.Intent
 import com.v2ray.ang.R
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.foundation.border
@@ -209,15 +206,17 @@ fun YouTubeApp() {
                 playing = it
                 // Запоминаем НАЗВАНИЕ, а не только адрес: по картам позиций
                 // и досмотренного список не покажешь — там одни ссылки.
-                YouTubeHistory.rememberSeen(it.pageUrl, it.title)
+                YouTubeHistory.rememberSeen(it.pageUrl, it.title, it.uploader)
             }
                 .onFailure { error = "Видео недоступно: ${it.message ?: it.javaClass.simpleName}" }
             resolving = false
         }
     }
 
-    // 0 = поиск, 1 = плейлисты, 2 = загрузки, 3 = позже. Нижняя панель
-    // рабочего стола умеет открыть «Видео» сразу на загрузках.
+    // Полки: 0 = главная лента и поиск, 1 = плейлисты, 2 = загрузки,
+    // 3 = избранное, 4 = история просмотров. «Позже» — не отдельная полка,
+    // а раздел внутри загрузок. Ярлык с рабочего стола умеет открыть
+    // «Видео» сразу на нужной полке.
     var tab by remember { mutableStateOf(SmartDeskChrome.consumePendingYtTab() ?: 0) }
     var laterTick by remember { mutableStateOf(0) }
     var plTick by remember { mutableStateOf(0) }
@@ -302,8 +301,13 @@ fun YouTubeApp() {
 
     // Высота собственной панели «Видео» — под неё отводится место, чтобы
     // список не заезжал под кнопки.
-    val navInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    val barHeight = 40.dp + navInset
+    //
+    // Вставку системной навигации здесь НЕ добавляем: её уже отвёл рабочий
+    // стол открытому приложению (`appBottomOverlay`). Обычный `padding`
+    // вставку не «съедает», поэтому она считалась ДВАЖДЫ — и под кнопками
+    // висела пустая полоса высотой ещё одной системной панели. Отсюда и
+    // ощущение, что панель слишком высокая.
+    val barHeight = 40.dp
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -990,10 +994,9 @@ fun YouTubeApp() {
             modifier = Modifier.align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .background(VpnkaColors.BgOffCentre)
-                // Кнопки прижаты к нижней грани: сверху почти ничего, снизу
-                // только системная вставка. Панель была на треть выше и
-                // висела заметной полосой.
-                .padding(top = 2.dp, bottom = 1.dp + navInset),
+                // Кнопки прижаты к нижней грани. Вставку навигации панель
+                // себе не берёт — её отвёл стол (см. `barHeight` выше).
+                .padding(top = 2.dp, bottom = 1.dp),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
