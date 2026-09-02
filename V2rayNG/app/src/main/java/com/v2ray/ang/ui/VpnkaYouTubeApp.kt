@@ -48,6 +48,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -274,18 +275,57 @@ fun YouTubeApp() {
                 it.state == YouTubeDownloads.State.RUNNING ||
                     it.state == YouTubeDownloads.State.QUEUED
             }
-            var searchOpen by remember { mutableStateOf(false) }
-            val showSearch = tab == 0 && (searchOpen || (results.isEmpty() && !loading))
+            // Подсказки под полем нужны, пока искать ещё нечего.
+            val showHints = tab == 0 && results.isEmpty() && !loading
 
+            // Поиск — САМА верхняя строка, а не значок в её углу.
+            //
+            // Был значок-лупа: чтобы начать искать, требовалось два действия
+            // — раскрыть поле и только потом попасть в него. Поле на всю
+            // ширину убирает первое: нажатие сразу ставит курсор и поднимает
+            // клавиатуру. Место под это есть — названия экрана в строке нет,
+            // человек только что сам открыл «Видео» с рабочего стола.
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // Названия экрана здесь нет: человек только что сам открыл
-                // «Видео» с рабочего стола, и повторять это слово поперёк
-                // всей строки незачем.
-                Spacer(Modifier.weight(1f))
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it; if (tab != 0) tab = 0 },
+                    singleLine = true,
+                    placeholder = { Text("Поиск на YouTube", color = VpnkaColors.TextMuted) },
+                    leadingIcon = { Text("🔎", fontSize = 13.sp) },
+                    textStyle = androidx.compose.material3.LocalTextStyle.current.copy(
+                        color = VpnkaColors.TextStrong,
+                    ),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { runSearch() }),
+                    shape = RoundedCornerShape(15.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = VpnkaColors.TextStrong,
+                        unfocusedTextColor = VpnkaColors.TextStrong,
+                        cursorColor = VpnkaColors.Accent,
+                        focusedBorderColor = VpnkaColors.Accent,
+                        unfocusedBorderColor = VpnkaColors.CardServer,
+                    ),
+                    // «Найти» внутри поля: Enter и так ищет, а отдельная
+                    // кнопка занимала бы треть строки.
+                    trailingIcon = {
+                        Text(
+                            "➤", fontSize = 16.sp, color = VpnkaColors.Accent,
+                            modifier = Modifier.clip(CircleShape)
+                                .clickable { runSearch() }
+                                .padding(10.dp),
+                        )
+                    },
+                    modifier = Modifier.weight(1f)
+                        // Курсор в поле означает «ищу»: если человек стоял на
+                        // «Загрузках», возвращаем его на ленту, иначе набор
+                        // уходил бы в пустоту.
+                        .onFocusChanged { if (it.isFocused && tab != 0) tab = 0 },
+                )
                 if (activeDls > 0) {
+                    Spacer(Modifier.width(7.dp))
                     Row(
                         modifier = Modifier.clip(RoundedCornerShape(9.dp))
                             .background(VpnkaColors.CardServer)
@@ -300,18 +340,6 @@ fun YouTubeApp() {
                             fontSize = 12.sp, color = VpnkaColors.TextStrong,
                         )
                     }
-                    Spacer(Modifier.width(7.dp))
-                }
-                Box(
-                    modifier = Modifier.size(32.dp).clip(RoundedCornerShape(9.dp))
-                        .background(if (showSearch) VpnkaColors.Accent else VpnkaColors.CardServer)
-                        .clickable { tab = 0; searchOpen = !showSearch },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        "⌕", fontSize = 15.sp,
-                        color = if (showSearch) VpnkaColors.OnAccent else VpnkaColors.TextStrong,
-                    )
                 }
             }
 
@@ -334,40 +362,10 @@ fun YouTubeApp() {
             }
 
             if (tab == 0) {
-                if (showSearch) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    OutlinedTextField(
-                        value = query,
-                        onValueChange = { query = it },
-                        singleLine = true,
-                        placeholder = { Text("Поиск на YouTube", color = VpnkaColors.TextMuted) },
-                        leadingIcon = { Text("🔎", fontSize = 13.sp) },
-                        textStyle = androidx.compose.material3.LocalTextStyle.current.copy(color = VpnkaColors.TextStrong),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        keyboardActions = KeyboardActions(onSearch = { runSearch() }),
-                        shape = RoundedCornerShape(15.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedTextColor = VpnkaColors.TextStrong, unfocusedTextColor = VpnkaColors.TextStrong,
-                            cursorColor = VpnkaColors.Accent, focusedBorderColor = VpnkaColors.Accent,
-                            unfocusedBorderColor = VpnkaColors.CardServer,
-                        ),
-                        // «Найти» переехала ВНУТРЬ поля: Enter и так ищет, а
-                        // отдельная крупная кнопка занимала треть строки.
-                        trailingIcon = {
-                            Text(
-                                "➤", fontSize = 16.sp, color = VpnkaColors.Accent,
-                                modifier = Modifier.clip(CircleShape)
-                                    .clickable { runSearch(); searchOpen = false }
-                                    .padding(10.dp),
-                            )
-                        },
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-
+                if (showHints) {
+                // Само поле уехало в верхнюю строку — здесь остались только
+                // подсказки под ним.
+                //
                 // Подсказки живут вместе с полем: без него это просто ряд
                 // кнопок непонятно к чему.
                 Row(
