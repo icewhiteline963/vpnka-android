@@ -746,6 +746,10 @@ fun VpnkaSubscriptionScreen(
             if (VpnkaColors.dark) "Светлая тема" else "Тёмная тема",
             {
                 VpnkaColors.dark = !VpnkaColors.dark
+                // «Тёмная» — это и есть палитра макета «Поток». Светлая
+                // остаётся прежней, тёплой: переключатель гасит «Поток», а
+                // не подменяет его вторым тёмным набором.
+                VpnkaColors.flow = VpnkaColors.dark
                 MmkvManager.setDarkTheme(VpnkaColors.dark)
             },
             subtitle = if (VpnkaColors.dark) "Вернуть тёплое оформление"

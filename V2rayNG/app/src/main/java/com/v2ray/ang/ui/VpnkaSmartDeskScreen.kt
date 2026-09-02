@@ -365,12 +365,14 @@ fun VpnkaSmartDeskScreen(
     // erases the local copy. Between sessions the phone holds no SmartDesk data;
     // the next open re-pulls it from the encrypted server. Offline → nothing is
     // wiped (see SmartDeskSync.syncAndWipe), so no edits are lost.
-    // Пока открыт рабочий стол — палитра «Поток» из макетов. Снимается на
-    // выходе: главный экран VPNka остаётся в своей, светлой.
+    // Палитру здесь больше не переключаем.
+    //
+    // Раньше «Поток» включался на входе в стол и снимался на выходе, потому
+    // что главный экран был светлым. Теперь это палитра всего приложения —
+    // трогать её при переходах незачем, а переключение на выходе гасило бы
+    // её и на главном.
     DisposableEffect(Unit) {
-        VpnkaColors.flow = true
         onDispose {
-            VpnkaColors.flow = false
             // Хвост счётчика заблокированного — на диск, иначе последние до
             // двадцати штук пропадают вместе с процессом.
             AdBlocker.flushOnLeave()

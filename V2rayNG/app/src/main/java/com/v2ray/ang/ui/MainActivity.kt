@@ -428,6 +428,9 @@ class MainActivity : HelperBaseComponentActivity() {
         // Before anything draws: the palette is read during composition, and
         // applying it later would show the light screen first and repaint.
         VpnkaColors.dark = MmkvManager.isDarkTheme()
+        // Палитра «Поток» идёт вместе с тёмной темой — она и есть тёмная
+        // тема приложения. Светлая остаётся прежней.
+        VpnkaColors.flow = VpnkaColors.dark
         ExpiryReminder.schedule(this)
         SupportNotifier.schedule(this)
         MessengerNotifier.schedule(this)

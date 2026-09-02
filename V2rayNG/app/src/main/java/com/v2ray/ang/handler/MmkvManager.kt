@@ -997,7 +997,15 @@ object MmkvManager {
     fun setServerPickedByUser(byUser: Boolean) =
         encodeSettings(VPNKA_SERVER_BY_USER, byUser)
 
-    fun isDarkTheme(): Boolean = decodeSettingsBool(VPNKA_DARK_THEME, false)
+    /**
+     * Тёмное оформление. Умолчание — ДА, как в макете «Поток».
+     *
+     * Раньше по умолчанию было светлое: оно и было дизайном. Макет
+     * супер-приложения тёмный, и приложение целиком переехало на его
+     * палитру, поэтому умолчание перевёрнуто. Кто выбрал светлую руками —
+     * останется на светлой: у него значение записано.
+     */
+    fun isDarkTheme(): Boolean = decodeSettingsBool(VPNKA_DARK_THEME, true)
 
     fun setDarkTheme(on: Boolean) = encodeSettings(VPNKA_DARK_THEME, on)
 
