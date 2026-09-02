@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  Имя тестовой сборки.
+
+  Флейворный набор ресурсов перекрывает main, поэтому «VPNka dev» подменяет
+  обычное имя только здесь. Так на телефоне видно, какое из двух приложений
+  боевое, а какое — для проверок.
+-->
 <resources>
-    <item name="app_name" type="string">v2rayNG (DEV)</item>
+    <string name="app_name">VPNka dev</string>
 </resources>

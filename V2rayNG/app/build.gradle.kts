@@ -76,10 +76,38 @@ android {
             dimension = "distribution"
             applicationIdSuffix = ".fdroid"
             buildConfigField("String", "DISTRIBUTION", "\"F-Droid\"")
+            buildConfigField(
+                "String", "UPDATE_MANIFEST",
+                "\"https://dl.vpnka.io/app/latest.json\"",
+            )
         }
         create("playstore") {
             dimension = "distribution"
             buildConfigField("String", "DISTRIBUTION", "\"Play Store\"")
+            // Боевая сборка читает боевой манифест обновлений.
+            buildConfigField(
+                "String", "UPDATE_MANIFEST",
+                "\"https://dl.vpnka.io/app/latest.json\"",
+            )
+        }
+        // Тестовая сборка: ДРУГОЕ имя пакета, поэтому она ставится РЯДОМ с
+        // боевой и не трогает ни её данные, ни её обновления. Сервер тот же
+        // боевой — иначе проверка не про то: живые подписки и живые узлы.
+        //
+        // Обновления читает из своего манифеста: без этого тестовая версия
+        // предлагала бы себе понизиться до боевой.
+        create("dev") {
+            dimension = "distribution"
+            applicationIdSuffix = ".dev"
+            // Суффикса в versionName НЕТ намеренно: проверка обновлений
+            // сравнивает версии через toInt() по каждому куску, и «0-dev»
+            // уронил бы разбор. Отличается имя приложения и имя пакета —
+            // этого достаточно, чтобы не перепутать.
+            buildConfigField("String", "DISTRIBUTION", "\"Dev\"")
+            buildConfigField(
+                "String", "UPDATE_MANIFEST",
+                "\"https://dl.vpnka.io/app/beta.json\"",
+            )
         }
     }
 

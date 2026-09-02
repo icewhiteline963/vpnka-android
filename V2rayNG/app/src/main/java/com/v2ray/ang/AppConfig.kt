@@ -132,7 +132,14 @@ object AppConfig {
     // for exactly the users this app is built for. Same two shapes GitHub
     // returns, so the parsing below is untouched.
     const val APP_API_URL = "https://dl.vpnka.io/app/releases.json"
-    const val APP_API_LATEST_URL = "https://dl.vpnka.io/app/latest.json"
+    /**
+     * Манифест обновлений — СВОЙ у каждой сборки.
+     *
+     * Боевая читает `latest.json`, тестовая — `beta.json`. Иначе тестовая
+     * версия предлагала бы себе понизиться до боевой, а боевая у клиентов
+     * могла бы поймать недоделанную.
+     */
+    val APP_API_LATEST_URL: String = BuildConfig.UPDATE_MANIFEST
     const val APP_ISSUES_URL = "$APP_URL/issues"
     const val APP_WIKI_MODE = "$APP_URL/wiki/Mode"
     const val APP_PRIVACY_POLICY = "$GITHUB_RAW_URL/2dust/v2rayNG/master/CR.md"
