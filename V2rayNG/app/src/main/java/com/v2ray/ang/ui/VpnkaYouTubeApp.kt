@@ -303,7 +303,7 @@ fun YouTubeApp() {
     // Высота собственной панели «Видео» — под неё отводится место, чтобы
     // список не заезжал под кнопки.
     val navInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    val barHeight = 52.dp + navInset
+    val barHeight = 40.dp + navInset
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -400,34 +400,37 @@ fun YouTubeApp() {
                             .padding(horizontal = 3.dp),
                     )
                 }
-                if (activeDls > 0) {
-                    Spacer(Modifier.width(7.dp))
-                    Row(
-                        modifier = Modifier.clip(RoundedCornerShape(9.dp))
-                            .background(VpnkaColors.CardServer)
-                            .clickable { tab = 2 }
-                            .padding(horizontal = 11.dp, vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text("↓", fontSize = 12.sp, color = VpnkaColors.Accent)
-                        Spacer(Modifier.width(6.dp))
-                        Text(
-                            activeDls.toString(), fontFamily = VpnkaFonts.manrope700,
-                            fontSize = 12.sp, color = VpnkaColors.TextStrong,
-                        )
+                // Правая половина строки — то, что раньше стояло ПОД полем.
+                //
+                // Поиск занимал всю ширину, а сортировка висела отдельной
+                // строкой ниже: две строки подряд ради одного чипа. Теперь
+                // поле — ровно левая половина, а сортировка и счётчик
+                // загрузок встают справа на том же уровне.
+                Spacer(Modifier.width(8.dp))
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (tab == 0 && results.isNotEmpty()) {
+                        YtSortChip(searchSort, searchSortOptions) { searchSort = it }
                     }
-                }
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // Полки переехали в нижнюю панель — здесь осталась только
-                // сортировка, и она прижата вправо.
-                Spacer(Modifier.weight(1f))
-                if (tab == 0 && results.isNotEmpty()) {
-                    YtSortChip(searchSort, searchSortOptions) { searchSort = it }
+                    Spacer(Modifier.weight(1f))
+                    if (activeDls > 0) {
+                        Row(
+                            modifier = Modifier.clip(RoundedCornerShape(9.dp))
+                                .background(VpnkaColors.CardServer)
+                                .clickable { tab = 2 }
+                                .padding(horizontal = 9.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("↓", fontSize = 11.sp, color = VpnkaColors.Accent)
+                            Spacer(Modifier.width(5.dp))
+                            Text(
+                                activeDls.toString(), fontFamily = VpnkaFonts.manrope700,
+                                fontSize = 11.sp, color = VpnkaColors.TextStrong,
+                            )
+                        }
+                    }
                 }
             }
 
@@ -980,7 +983,10 @@ fun YouTubeApp() {
             modifier = Modifier.align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .background(VpnkaColors.BgOffCentre)
-                .padding(top = 6.dp, bottom = 6.dp + navInset),
+                // Кнопки прижаты к нижней грани: сверху почти ничего, снизу
+                // только системная вставка. Панель была на треть выше и
+                // висела заметной полосой.
+                .padding(top = 2.dp, bottom = 1.dp + navInset),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -1008,15 +1014,15 @@ private fun YtBottomTab(icon: String, label: String, selected: Boolean, onClick:
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier.clip(RoundedCornerShape(10.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 3.dp),
+            .padding(horizontal = 14.dp, vertical = 1.dp),
     ) {
         Text(
-            icon, fontSize = 15.sp,
+            icon, fontSize = 13.sp,
             color = if (selected) VpnkaColors.Accent else VpnkaColors.TextMuted,
         )
-        Spacer(Modifier.height(2.dp))
         Text(
-            label, fontFamily = VpnkaFonts.manrope700, fontSize = 10.sp,
+            label, fontFamily = VpnkaFonts.manrope700, fontSize = 9.sp,
+            lineHeight = 11.sp,
             color = if (selected) VpnkaColors.Accent else VpnkaColors.TextMuted,
         )
     }
