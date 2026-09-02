@@ -316,8 +316,6 @@ fun YouTubeApp() {
             var searchSort by remember { mutableStateOf(YtSort.DEFAULT) }
             var plSort by remember { mutableStateOf(YtSort.DEFAULT) }
 
-            NowPlayingBar(onOpen = { pb -> playing = pb })
-
             // Шапка по макету: название, счётчик загрузок, лупа. Раньше верх
             // экрана занимали четыре строки подряд — вкладки, поле с крупной
             // кнопкой «Найти», ряд подсказок и сортировка, — и на содержимое
@@ -433,6 +431,12 @@ fun YouTubeApp() {
                     }
                 }
             }
+
+            // Мини-плеер — ПОД поиском, а не над ним.
+            //
+            // Стоял первым в столбце и накрывал строку поиска: пока играет
+            // ролик, набрать новый запрос было некуда.
+            NowPlayingBar(onOpen = { pb -> playing = pb })
 
             if (tab == 0) {
                 if (showHints) {
@@ -993,6 +997,10 @@ fun YouTubeApp() {
             // Повторное нажатие по выбранной полке возвращает на главную —
             // иначе с «Истории» на ленту можно было бы попасть только через
             // поиск.
+            // «Видео» — главная лента. Первой кнопкой: с любой полки
+            // возвращает на неё, и не приходится искать обходной путь через
+            // строку поиска.
+            YtBottomTab("▶", "Видео", tab == 0) { tab = 0 }
             YtBottomTab("★", "Избранное", tab == 3) {
                 tab = if (tab == 3) 0 else 3; favTick++
             }
@@ -1634,6 +1642,9 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
 
 
     // Позиция нужна закладкам и заметкам, а подсветка строки транскрипта —
+    var buffering by remember { mutableStateOf(false) }
+    var bufferedAheadMs by remember { mutableStateOf(0L) }
+    var bufferRate by remember { mutableStateOf(0f) }
     // каждую секунду. Опрашиваем раз в 500 мс: слушателя позиции у Media3
     // нет, а чаще незачем.
     LaunchedEffect(player) {
@@ -1641,10 +1652,30 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
         // Скорость держит служба, а не экран: вернувшись в плеер, человек
         // раньше видел подсвеченную «1×» при фактических 2×.
         speed = c.playbackParameters.speed
+        var prevBufMs = 0L
+        var prevAt = System.currentTimeMillis()
         while (true) {
             isPlaying = c.isPlaying
             wantsPlay = c.playWhenReady
             position = c.currentPosition
+            // Загрузка: сколько секунд ролика уже лежит впереди и с какой
+            // скоростью прибавляется.
+            //
+            // На большом ролике первые секунды экран просто замирал: кадра
+            // нет, полосы нет, и понять «грузится или повисло» нельзя. Теперь
+            // видно и то, и другое. Скорость меряем по приросту буфера, а не
+            // по счётчику сети: нам важно, доедет ли видео, а не сколько
+            // байт прошло мимо.
+            buffering = c.playbackState == androidx.media3.common.Player.STATE_BUFFERING
+            val bufMs = (c.bufferedPosition - c.currentPosition).coerceAtLeast(0L)
+            bufferedAheadMs = bufMs
+            val now = System.currentTimeMillis()
+            val dt = (now - prevAt).coerceAtLeast(1L)
+            // Прирост буфера за секунду реального времени: 2.0 значит «за
+            // секунду ожидания прибавилось две секунды ролика».
+            bufferRate = ((bufMs - prevBufMs).toFloat() / dt).coerceIn(0f, 99f)
+            prevBufMs = bufMs
+            prevAt = now
             // Плеер встал: ссылка на поток протухла (они привязаны ко времени
             // и к адресу выхода) или оборвалась сеть. Раньше об этом не
             // говорилось никак — кадр замирал, кнопка рисовала «играет».
@@ -2080,8 +2111,71 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                 cleanTitle(pb.title),
                 fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, lineHeight = 21.sp,
                 color = VpnkaColors.TextStrong, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+                modifier = Modifier.fillMaxWidth()
+                    .padding(horizontal = 16.dp, top = 14.dp, bottom = 6.dp),
             )
+
+            // Просмотры и оценки.
+            //
+            // Дизлайки YouTube публично не отдаёт с 2021-го, поэтому их почти
+            // всегда нет: показывать «0» было бы враньём — молчим, когда
+            // значение неизвестно.
+            val stats = buildList {
+                if (pb.views >= 0) add("${fmtCount(pb.views)} просмотров")
+                if (pb.likes >= 0) add("👍 ${fmtCount(pb.likes)}")
+                if (pb.dislikes >= 0) add("👎 ${fmtCount(pb.dislikes)}")
+            }
+            if (stats.isNotEmpty() || pb.uploader.isNotBlank()) {
+                Text(
+                    listOfNotNull(
+                        pb.uploader.takeIf { it.isNotBlank() },
+                        stats.takeIf { it.isNotEmpty() }?.joinToString(" · "),
+                    ).joinToString(" · "),
+                    fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp,
+                    color = VpnkaColors.TextMuted, maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                )
+            }
+
+            // Полоса загрузки.
+            //
+            // На большом ролике первые секунды экран замирал: кадра нет,
+            // полосы нет, и понять «грузится или повисло» нельзя. Показываем,
+            // сколько ролика уже лежит впереди и как быстро прибавляется —
+            // «1,8× » значит, что за секунду ожидания загружается почти две
+            // секунды видео, то есть догонит; «0,3×» — что не догонит.
+            if (buffering || bufferedAheadMs < 3000) {
+                Row(
+                    modifier = Modifier.fillMaxWidth()
+                        .padding(horizontal = 16.dp, top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CircularProgressIndicator(
+                        color = VpnkaColors.Accent,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(13.dp),
+                    )
+                    Spacer(Modifier.width(9.dp))
+                    Text(
+                        buildString {
+                            append("Загрузка")
+                            if (bufferedAheadMs > 0) {
+                                append(" · готово ")
+                                append(fmtDuration(bufferedAheadMs / 1000))
+                            }
+                            if (bufferRate > 0.05f) {
+                                append(" · ")
+                                append(String.format(java.util.Locale.US, "%.1f", bufferRate))
+                                append("×")
+                            }
+                        },
+                        fontFamily = VpnkaFonts.manrope600, fontSize = 11.sp,
+                        color = VpnkaColors.TextMuted,
+                    )
+                }
+            }
+            Spacer(Modifier.height(10.dp))
 
             // Действия: ПЯТЬ на виду, остальное — за «Ещё».
             //
@@ -2684,6 +2778,16 @@ private fun cleanTitle(raw: String): String {
         t = t.lowercase().replaceFirstChar { it.uppercase() }
     }
     return t
+}
+
+/** Короткое число: 1,2 млн вместо 1234567. */
+private fun fmtCount(n: Long): String = when {
+    n < 0 -> ""
+    n < 1_000 -> n.toString()
+    n < 1_000_000 -> String.format(java.util.Locale.US, "%.1f тыс.", n / 1_000.0)
+        .replace(".0 ", " ").replace('.', ',')
+    else -> String.format(java.util.Locale.US, "%.1f млн", n / 1_000_000.0)
+        .replace(".0 ", " ").replace('.', ',')
 }
 
 private fun fmtDuration(sec: Long): String {

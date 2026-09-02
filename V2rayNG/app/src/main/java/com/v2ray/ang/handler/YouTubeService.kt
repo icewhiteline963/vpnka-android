@@ -44,7 +44,23 @@ object YouTubeService {
 
     /** streamUrl is video (muxed or video-only); audioUrl != null means the
      *  video track has no sound and must be merged with this separate audio. */
-    data class Playback(val title: String, val streamUrl: String, val pageUrl: String, val audioUrl: String?)
+    data class Playback(
+        val title: String,
+        val streamUrl: String,
+        val pageUrl: String,
+        val audioUrl: String?,
+        /**
+         * Оценки ролика. -1 = «неизвестно», и это НЕ ошибка.
+         *
+         * Дизлайки YouTube перестал отдавать публично в 2021-м, поэтому у
+         * `dislikes` почти всегда -1: показывать «0 дизлайков» было бы
+         * враньём, а не бережливостью. Просмотры и лайки приходят.
+         */
+        val likes: Long = -1,
+        val dislikes: Long = -1,
+        val views: Long = -1,
+        val uploader: String = "",
+    )
 
     /** A downloadable quality. audioUrl == null → muxed single file (save as-is);
      *  otherwise videoUrl is video-only mp4 to be remuxed with audioUrl. */
@@ -163,10 +179,21 @@ object YouTubeService {
         val videoOnly = si.videoOnlyStreams.filter { it.content.isNotBlank() }
         // Prefer the highest H.264/mp4 track at/below the cap; then any track at
         // /below the cap; then the smallest available (all were above the cap).
+        // Порядок предпочтений — РОВНО 720 в первую очередь.
+        //
+        // Раньше бралось «лучшее из того, что не выше потолка», и когда
+        // 720 был только в VP9/AV1, выбор молча съезжал на mp4-480 или
+        // ниже: человек открывал ролик и видел мыло, хотя 720 был доступен.
+        // Теперь сначала ищем именно 720 (сперва mp4, потом любой кодек), и
+        // только если его нет — лучшее из оставшегося.
         val bestVideoOnly =
-            videoOnly.filter {
-                resRank(it.resolution) in 1..PLAY_MAX_RES && isMp4(it.format?.suffix, it.format?.mimeType)
-            }.maxByOrNull { resRank(it.resolution) }
+            videoOnly.firstOrNull {
+                resRank(it.resolution) == PLAY_MAX_RES && isMp4(it.format?.suffix, it.format?.mimeType)
+            }
+                ?: videoOnly.firstOrNull { resRank(it.resolution) == PLAY_MAX_RES }
+                ?: videoOnly.filter {
+                    resRank(it.resolution) in 1..PLAY_MAX_RES && isMp4(it.format?.suffix, it.format?.mimeType)
+                }.maxByOrNull { resRank(it.resolution) }
                 ?: videoOnly.filter { resRank(it.resolution) in 1..PLAY_MAX_RES }
                     .maxByOrNull { resRank(it.resolution) }
                 ?: videoOnly.minByOrNull { resRank(it.resolution) }
@@ -177,7 +204,11 @@ object YouTubeService {
             .maxByOrNull { it.averageBitrate }
             ?: si.audioStreams.filter { it.content.isNotBlank() }.maxByOrNull { it.averageBitrate }
         if (bestVideoOnly != null && bestAudio != null) {
-            return Playback(si.name, bestVideoOnly.content, videoUrl, bestAudio.content)
+            return Playback(
+                si.name, bestVideoOnly.content, videoUrl, bestAudio.content,
+                likes = si.likeCount, dislikes = si.dislikeCount,
+                views = si.viewCount, uploader = si.uploaderName ?: "",
+            )
         }
         // Muxed fallback: prefer H.264 at/below the cap (muxed tops out ~720p).
         val muxedStreams = si.videoStreams.filter { !it.isVideoOnly && it.content.isNotBlank() }
@@ -186,7 +217,11 @@ object YouTubeService {
             ?: muxedStreams.minByOrNull { resRank(it.resolution) }
             ?: si.videoStreams.firstOrNull()
             ?: throw IllegalStateException("no playable stream")
-        return Playback(si.name, muxed.content, videoUrl, null)
+        return Playback(
+            si.name, muxed.content, videoUrl, null,
+            likes = si.likeCount, dislikes = si.dislikeCount,
+            views = si.viewCount, uploader = si.uploaderName ?: "",
+        )
     }
 
     /** Download qualities, best-first. High res comes from mp4 video-only tracks
