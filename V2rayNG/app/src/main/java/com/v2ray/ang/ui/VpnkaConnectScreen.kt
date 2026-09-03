@@ -9,6 +9,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -266,6 +267,7 @@ fun VpnkaConnectScreen(
                     // rather than floating above the button.
                     status = if (isRunning) "ЗАЩИЩЕНО" else "НЕ ЗАЩИЩЕНО",
                     statusColor = accent,
+                    statusOn = isRunning,
                     telegramLinked = telegramLinked,
                 )
 
@@ -290,44 +292,63 @@ fun VpnkaConnectScreen(
             // The button, centred in what is left between the two measured
             // blocks — the two lines above no longer pull it off centre the
             // way they did when they shared one column.
-            Column(
-                modifier = Modifier
-                    // heightIn, not height: a fixed height does not clip in
-                    // Compose, it lets the extra content draw straight over
-                    // whatever comes next — which is how the pill ended up on
-                    // top of «ЗАГРУЖЕНО/ОТДАНО». As a minimum the block still
-                    // centres the button exactly where it was tuned to sit;
-                    // when content outgrows it the block grows and the page
-                    // (already scrollable) absorbs it.
-                    .heightIn(min = middleHeight)
-                    .fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
+            // Блок подключения по макету: цветок СЛЕВА, сводка справа.
+            //
+            // Раньше кнопка стояла по центру, под ней крупный таймер, а
+            // счётчики трафика лежали отдельной парой карточек ниже — из-за
+            // чего на экран не помещалось ничего, кроме них. В макете круг
+            // 146 точек занимает левую колонку, а справа тремя строками
+            // идут время в сети, текущий сервер и оба счётчика.
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                VpnkaConnectButton(
-                    isRunning = isRunning,
-                    isLoading = isLoading,
-                    accent = accent,
-                    onToggle = onToggle,
-                    outerSize = buttonSize,
-                )
-
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = formatSession(sessionSeconds),
-                    fontFamily = VpnkaFonts.nunito900,
-                    fontWeight = VpnkaWeight.Black,
-                    fontSize = 34.sp,
-                    color = VpnkaColors.TextStrong,
-                )
-                // Which node «Авто» is actually on right now — the server card
-                // shows «🌍 Авто», not the node the balancer picked this second.
-                if (isRunning) {
-                    Spacer(Modifier.height(10.dp))
-                    VpnkaActiveExit()
-                    // Clearance from the traffic cards below — without it the
-                    // pill ends flush against them on a short screen.
-                    Spacer(Modifier.height(10.dp))
+                Box(
+                    modifier = Modifier.size(146.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    VpnkaConnectButton(
+                        isRunning = isRunning,
+                        isLoading = isLoading,
+                        accent = accent,
+                        onToggle = onToggle,
+                        outerSize = 146.dp,
+                    )
+                }
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(9.dp),
+                ) {
+                    Column {
+                        Text(
+                            text = "В СЕТИ",
+                            fontFamily = VpnkaFonts.manrope600,
+                            fontWeight = VpnkaWeight.Semi,
+                            fontSize = 9.sp,
+                            letterSpacing = 0.14.em,
+                            color = VpnkaColors.TextFaint,
+                        )
+                        Spacer(Modifier.height(5.dp))
+                        Text(
+                            text = formatSession(sessionSeconds),
+                            fontFamily = VpnkaFonts.nunito900,
+                            fontWeight = VpnkaWeight.Black,
+                            fontSize = 27.sp,
+                            letterSpacing = (-0.5).sp,
+                            color = VpnkaColors.TextStrong,
+                        )
+                    }
+                    // «Сейчас через» — сервер, на котором мы прямо сейчас.
+                    VpnkaHomeServerCard(
+                        name = serverName,
+                        delay = serverDelay,
+                        onClick = onChangeServer,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        VpnkaStatCard("ЗАГРУЖЕНО", downBytes, Modifier.weight(1f))
+                        VpnkaStatCard("ОТДАНО", upBytes, Modifier.weight(1f))
+                    }
                 }
             }
 
@@ -643,6 +664,8 @@ private fun VpnkaHeader(
     topPadding: Dp,
     status: String,
     statusColor: Color,
+    /** Включён ли туннель — от этого зависит цвет точки в пилюле. */
+    statusOn: Boolean,
     telegramLinked: Boolean,
 ) {
     // Remind an unlinked user to sign in — shown on each launch, points at
@@ -659,27 +682,54 @@ private fun VpnkaHeader(
         // above the server, where it sits next to the thing it governs; the
         // trial countdown went with it. A header that repeated either was
         // saying the same thing twice on one screen.
+        // Круги 32 точки и плёнка вместо белого — как в макете.
         Box(
             modifier = Modifier
-                .size(38.dp)
+                .size(32.dp)
                 .clip(CircleShape)
-                .background(Color.White)
+                .background(VpnkaColors.CardSpeed)
+                .border(1.dp, VpnkaColors.Hairline, CircleShape)
                 .clickable(onClick = onOpenProfile),
             contentAlignment = Alignment.Center,
         ) {
             VpnkaPersonGlyph()
         }
 
-        Text(
-            text = status,
-            fontFamily = VpnkaFonts.manrope700,
-            fontWeight = VpnkaWeight.Bold,
-            fontSize = 13.sp,
-            letterSpacing = 2.5.sp,
-            color = statusColor,
-            textAlign = TextAlign.Center,
+        // Статус — ПИЛЮЛЯ с точкой, а не просто надпись в разрядку.
+        //
+        // В макете это скруглённая плашка: точка слева (при включённом ВПН
+        // акцентная и с ореолом) и текст акцентом. Надпись сама по себе
+        // читалась как заголовок экрана, а не как состояние.
+        Row(
             modifier = Modifier.weight(1f),
-        )
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(VpnkaColors.CardSpeed)
+                    .border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(20.dp))
+                    .padding(start = 9.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(7.dp),
+            ) {
+                Box(
+                    modifier = Modifier.size(8.dp).clip(CircleShape)
+                        .background(
+                            if (statusOn) statusColor else VpnkaColors.TextFaint
+                        ),
+                )
+                Text(
+                    text = status,
+                    fontFamily = VpnkaFonts.manrope700,
+                    fontWeight = VpnkaWeight.Bold,
+                    fontSize = 11.sp,
+                    letterSpacing = 0.12.em,
+                    color = statusColor,
+                    maxLines = 1,
+                )
+            }
+        }
 
         // App update, top right. Always present — tapping it re-checks even
         // when we already believe we're current, because the check runs once
@@ -687,9 +737,10 @@ private fun VpnkaHeader(
         // is the only part that depends on what that check found.
         Box(
             modifier = Modifier
-                .size(38.dp)
+                .size(32.dp)
                 .clip(CircleShape)
-                .background(Color.White)
+                .background(VpnkaColors.CardSpeed)
+                .border(1.dp, VpnkaColors.Hairline, CircleShape)
                 .clickable(onClick = onCheckUpdate),
             contentAlignment = Alignment.Center,
         ) {
@@ -859,6 +910,102 @@ private fun VpnkaExpiryBanner(daysLeft: Int, onRenew: () -> Unit) {
             fontSize = 12.sp,
             color = VpnkaColors.TextMuted,
         )
+    }
+}
+
+/**
+ * Карточка «сейчас через» — какой сервер под нами.
+ *
+ * В макете стоит справа от цветка: точка-флаг, мелкая надпись «СЕЙЧАС
+ * ЧЕРЕЗ», имя сервера и шеврон. Прежняя карточка серверов была вдвое выше
+ * и жила отдельной строкой ниже.
+ */
+@Composable
+private fun VpnkaHomeServerCard(name: String, delay: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(11.dp))
+            .background(VpnkaColors.CardSpeed)
+            .border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(11.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 11.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
+        Box(
+            modifier = Modifier.size(16.dp).clip(CircleShape)
+                .background(
+                    Brush.verticalGradient(
+                        listOf(VpnkaColors.FlagCircleStart, VpnkaColors.Accent)
+                    )
+                ),
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "СЕЙЧАС ЧЕРЕЗ",
+                fontFamily = VpnkaFonts.manrope600,
+                fontWeight = VpnkaWeight.Semi,
+                fontSize = 8.5.sp,
+                letterSpacing = 0.1.em,
+                color = VpnkaColors.TextFaint,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = if (delay.isNotBlank()) "$name · $delay" else name,
+                fontFamily = VpnkaFonts.nunito800,
+                fontWeight = VpnkaWeight.Extra,
+                fontSize = 12.sp,
+                color = VpnkaColors.TextStrong,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Text("›", fontSize = 12.sp, color = VpnkaColors.Accent)
+    }
+}
+
+/**
+ * Счётчик трафика в две строки — как в макете.
+ *
+ * Прежняя карточка занимала половину ширины экрана и стояла в своей
+ * строке; здесь их две в узкой правой колонке рядом с цветком.
+ */
+@Composable
+private fun VpnkaStatCard(label: String, bytes: Long, modifier: Modifier = Modifier) {
+    val (value, unit) = formatTraffic(bytes)
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(11.dp))
+            .background(VpnkaColors.CardSpeed)
+            .border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(11.dp))
+            .padding(horizontal = 10.dp, vertical = 9.dp),
+    ) {
+        Text(
+            text = label,
+            fontFamily = VpnkaFonts.manrope600,
+            fontWeight = VpnkaWeight.Semi,
+            fontSize = 10.sp,
+            letterSpacing = 0.06.em,
+            color = VpnkaColors.TextMuted,
+            maxLines = 1,
+        )
+        Spacer(Modifier.height(5.dp))
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(
+                text = value,
+                fontFamily = VpnkaFonts.nunito800,
+                fontWeight = VpnkaWeight.Extra,
+                fontSize = 13.sp,
+                color = VpnkaColors.TextStrong,
+            )
+            Spacer(Modifier.width(3.dp))
+            Text(
+                text = unit,
+                fontFamily = VpnkaFonts.manrope600,
+                fontSize = 10.sp,
+                color = VpnkaColors.TextMuted,
+            )
+        }
     }
 }
 
