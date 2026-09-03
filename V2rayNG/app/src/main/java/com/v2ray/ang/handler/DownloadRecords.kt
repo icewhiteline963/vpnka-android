@@ -58,7 +58,7 @@ object DownloadRecords {
     )
 
     fun all(): List<Rec> {
-        val raw = MmkvManager.decodeSettingsString(KEY) ?: return emptyList()
+        val raw = MmkvManager.decodeHistoryString(KEY) ?: return emptyList()
         val parsed = try {
             gson.fromJson<List<RawRec?>>(
                 raw, object : TypeToken<List<RawRec?>>() {}.type,
@@ -84,7 +84,7 @@ object DownloadRecords {
     }
 
     private fun save(list: List<Rec>) =
-        MmkvManager.encodeSettings(KEY, gson.toJson(list.take(MAX)))
+        MmkvManager.encodeHistory(KEY, gson.toJson(list.take(MAX)))
 
     fun add(
         uri: String,
@@ -105,7 +105,7 @@ object DownloadRecords {
 
     /** Полная очистка журнала загрузок (имена + исходные YouTube-ссылки) —
      *  для выхода из аккаунта. */
-    fun clearAll() = MmkvManager.encodeSettings(KEY, "[]")
+    fun clearAll() = MmkvManager.encodeHistory(KEY, "[]")
 
     /**
      * Скачанное, что уже досмотрено дольше [days] дней назад.

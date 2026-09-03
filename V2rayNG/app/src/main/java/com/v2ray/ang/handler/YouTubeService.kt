@@ -122,7 +122,7 @@ object YouTubeService {
         if (inited) return
         synchronized(this) {
             if (inited) return
-            NewPipe.init(VpnkaDownloader(proxiedClient()))
+            NewPipe.init(VpnkaDownloader())
             inited = true
         }
     }
@@ -679,7 +679,7 @@ object YouTubeService {
 }
 
 /** NewPipeExtractor Downloader backed by our proxied OkHttp client. */
-class VpnkaDownloader(private val client: OkHttpClient) : Downloader() {
+class VpnkaDownloader : Downloader() {
     override fun execute(request: NpRequest): NpResponse {
         val rb = okhttp3.Request.Builder().url(request.url())
         request.headers().forEach { (k, values) -> values.forEach { rb.addHeader(k, it) } }
@@ -699,7 +699,10 @@ class VpnkaDownloader(private val client: OkHttpClient) : Downloader() {
         if (request.headers().keys.none { it.equals("User-Agent", ignoreCase = true) }) {
             rb.header("User-Agent", USER_AGENT)
         }
-        client.newCall(rb.build()).execute().use { resp ->
+        // Берём клиент НА КАЖДЫЙ запрос: proxiedClient() кэширует по порту и
+        // пересобирает при смене. Иначе NewPipe держал бы порт, захваченный на
+        // init, и метаданные ломались бы после переподключения на другой порт.
+        YouTubeService.proxiedClient().newCall(rb.build()).execute().use { resp ->
             val respBody = resp.body?.string() ?: ""
             return NpResponse(resp.code, resp.message, resp.headers.toMultimap(), respBody, resp.request.url.toString())
         }

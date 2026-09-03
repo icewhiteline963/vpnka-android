@@ -147,6 +147,7 @@ class BackupActivity : HelperBaseComponentActivity() {
             "vpnka_messenger",   // переписка и контакты
             "vpnka_passwords",   // пароли от сайтов
             "vpnka_smartdesk",   // заметки, контакты, календарь
+            "vpnka_history",     // истории браузера и просмотров (шифрованные)
         )
         java.io.File(backupDir).listFiles()?.forEach { f ->
             if (secretContainers.any { f.name == it || f.name.startsWith("$it.") }) {
@@ -181,6 +182,7 @@ class BackupActivity : HelperBaseComponentActivity() {
                 "vpnka_messenger_cryptkey",
                 "vpnka_smartdesk_cryptkey",
                 "vpnka_pwd_cryptkey",
+                "vpnka_history_cryptkey",
                 "vpnka_browser_passwords",
                 "browser_history",
                 "chat_calls",

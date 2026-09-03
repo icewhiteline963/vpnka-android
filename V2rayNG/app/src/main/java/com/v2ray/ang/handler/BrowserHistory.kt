@@ -20,7 +20,7 @@ object BrowserHistory {
     data class Entry(val url: String, val title: String, val ts: Long)
 
     fun all(): List<Entry> {
-        val raw = MmkvManager.decodeSettingsString(KEY) ?: return emptyList()
+        val raw = MmkvManager.decodeHistoryString(KEY) ?: return emptyList()
         return try {
             gson.fromJson<List<Entry>>(raw, object : TypeToken<List<Entry>>() {}.type)
                 ?.filter { it.url != null && it.title != null } ?: emptyList()
@@ -30,7 +30,7 @@ object BrowserHistory {
     }
 
     private fun save(list: List<Entry>) =
-        MmkvManager.encodeSettings(KEY, gson.toJson(list.take(MAX)))
+        MmkvManager.encodeHistory(KEY, gson.toJson(list.take(MAX)))
 
     /**
      * Записать посещение. Повторный заход на тот же адрес не плодит строки —
@@ -56,7 +56,7 @@ object BrowserHistory {
 
     fun remove(url: String) = save(all().filterNot { it.url == url })
 
-    fun clear() = MmkvManager.encodeSettings(KEY, "[]")
+    fun clear() = MmkvManager.encodeHistory(KEY, "[]")
 
     fun search(q: String): List<Entry> {
         val needle = q.trim().lowercase()

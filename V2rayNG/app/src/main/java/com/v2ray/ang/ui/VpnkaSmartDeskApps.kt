@@ -1104,7 +1104,7 @@ private fun BrowserHistorySheet(onOpen: (String) -> Unit, onClose: () -> Unit) {
         onDismissRequest = onClose,
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Журнал", fontFamily = VpnkaFonts.nunito800, color = VpnkaColors.TextStrong)
+                Text("История", fontFamily = VpnkaFonts.nunito800, color = VpnkaColors.TextStrong)
                 Spacer(Modifier.weight(1f))
                 if (BrowserHistory.all().isNotEmpty()) {
                     Text(
@@ -1123,7 +1123,7 @@ private fun BrowserHistorySheet(onOpen: (String) -> Unit, onClose: () -> Unit) {
                     value = q,
                     onValueChange = { q = it },
                     singleLine = true,
-                    placeholder = { Text("Поиск по журналу", color = VpnkaColors.TextMuted) },
+                    placeholder = { Text("Поиск по истории", color = VpnkaColors.TextMuted) },
                     textStyle = androidx.compose.material3.LocalTextStyle.current
                         .copy(color = VpnkaColors.TextStrong),
                     shape = RoundedCornerShape(13.dp),
@@ -2088,7 +2088,7 @@ private fun BrowserApp() {
                         text = { Text(if (adblock) "🛡 Блокировка рекламы: вкл" else "🛡 Блокировка рекламы: выкл") },
                         onClick = { menuOpen = false; AdBlocker.enabled = !adblock; adblock = !adblock; active.webView.reload() },
                     )
-                    DropdownMenuItem(text = { Text("🕘 Журнал") }, onClick = { menuOpen = false; showHistory = true })
+                    DropdownMenuItem(text = { Text("🕘 История") }, onClick = { menuOpen = false; showHistory = true })
                     DropdownMenuItem(text = { Text("🔑 Пароли") }, onClick = { menuOpen = false; showPwds = true })
                 }
             }

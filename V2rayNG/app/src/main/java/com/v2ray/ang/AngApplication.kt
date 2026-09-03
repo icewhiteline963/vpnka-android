@@ -130,6 +130,11 @@ class AngApplication : Application() {
         if (isMainProcess()) {
             vpnkaNeedsTrialFetch = MmkvManager.ensureTrialSubscription() or
                 MmkvManager.consumeVersionChanged(BuildConfig.VERSION_NAME)
+            // Перенос историй браузера/просмотров из открытого SETTING в
+            // шифрованный контейнер. Только в главном процессе: первая же
+            // выдача ключа генерирует его, и параллельный запуск в :bg дал бы
+            // разные ключи и нечитаемый контейнер.
+            runCatching { MmkvManager.migrateHistoriesToEncrypted() }
         }
 
         // Give this install an account if it hasn't got one. Nothing is

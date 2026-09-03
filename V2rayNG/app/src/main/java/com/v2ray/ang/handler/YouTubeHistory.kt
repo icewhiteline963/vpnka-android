@@ -20,7 +20,7 @@ object YouTubeHistory {
     // ---- запросы ----------------------------------------------------
 
     fun recentQueries(): List<String> {
-        val raw = MmkvManager.decodeSettingsString(KEY_Q) ?: return emptyList()
+        val raw = MmkvManager.decodeHistoryString(KEY_Q) ?: return emptyList()
         return try {
             gson.fromJson<List<String>>(raw, object : TypeToken<List<String>>() {}.type) ?: emptyList()
         } catch (e: Exception) {
@@ -36,15 +36,15 @@ object YouTubeHistory {
         val list = recentQueries().toMutableList()
         list.removeAll { it.equals(clean, ignoreCase = true) }
         list.add(0, clean)
-        MmkvManager.encodeSettings(KEY_Q, gson.toJson(list.take(MAX_Q)))
+        MmkvManager.encodeHistory(KEY_Q, gson.toJson(list.take(MAX_Q)))
     }
 
-    fun clearQueries() = MmkvManager.encodeSettings(KEY_Q, "[]")
+    fun clearQueries() = MmkvManager.encodeHistory(KEY_Q, "[]")
 
     // ---- позиция просмотра ------------------------------------------
 
     private fun positions(): MutableMap<String, Long> {
-        val raw = MmkvManager.decodeSettingsString(KEY_POS) ?: return mutableMapOf()
+        val raw = MmkvManager.decodeHistoryString(KEY_POS) ?: return mutableMapOf()
         return try {
             gson.fromJson<MutableMap<String, Long>>(
                 raw, object : TypeToken<MutableMap<String, Long>>() {}.type,
@@ -82,7 +82,7 @@ object YouTubeHistory {
         } else {
             map[url] = posSec
         }
-        MmkvManager.encodeSettings(KEY_POS, gson.toJson(map))
+        MmkvManager.encodeHistory(KEY_POS, gson.toJson(map))
         // Досмотренное отмечаем ОТДЕЛЬНО. В карте позиций «досмотрел» и
         // «не открывал» — одно и то же значение 0, и отличить их потом
         // невозможно; а уборке скачанного нужно именно это различие.
@@ -94,7 +94,7 @@ object YouTubeHistory {
     private const val KEY_WATCHED = "yt_watched_at"
 
     private fun watched(): MutableMap<String, Long> {
-        val raw = MmkvManager.decodeSettingsString(KEY_WATCHED) ?: return mutableMapOf()
+        val raw = MmkvManager.decodeHistoryString(KEY_WATCHED) ?: return mutableMapOf()
         return try {
             gson.fromJson<MutableMap<String, Long>>(
                 raw, object : TypeToken<MutableMap<String, Long>>() {}.type,
@@ -110,7 +110,7 @@ object YouTubeHistory {
         // Держим последние 300 — карта не должна расти вечно.
         val trimmed = m.entries.sortedByDescending { it.value }.take(300)
             .associate { it.key to it.value }
-        MmkvManager.encodeSettings(KEY_WATCHED, gson.toJson(trimmed))
+        MmkvManager.encodeHistory(KEY_WATCHED, gson.toJson(trimmed))
     }
 
     /** Когда досмотрели. 0 — не досматривали. */
@@ -142,11 +142,11 @@ object YouTubeHistory {
         if (url.isBlank()) return
         val list = seen().filterNot { it.url == url }.toMutableList()
         list.add(0, Seen(url, title, uploader, System.currentTimeMillis()))
-        MmkvManager.encodeSettings(KEY_SEEN, gson.toJson(list.take(SEEN_MAX)))
+        MmkvManager.encodeHistory(KEY_SEEN, gson.toJson(list.take(SEEN_MAX)))
     }
 
     fun seen(): List<Seen> {
-        val raw = MmkvManager.decodeSettingsString(KEY_SEEN) ?: return emptyList()
+        val raw = MmkvManager.decodeHistoryString(KEY_SEEN) ?: return emptyList()
         return try {
             gson.fromJson<List<Seen>>(
                 raw, object : TypeToken<List<Seen>>() {}.type,
@@ -157,18 +157,18 @@ object YouTubeHistory {
     }
 
     fun forgetSeen(url: String) {
-        MmkvManager.encodeSettings(KEY_SEEN, gson.toJson(seen().filterNot { it.url == url }))
+        MmkvManager.encodeHistory(KEY_SEEN, gson.toJson(seen().filterNot { it.url == url }))
     }
 
-    fun clearSeen() = MmkvManager.encodeSettings(KEY_SEEN, "[]")
+    fun clearSeen() = MmkvManager.encodeHistory(KEY_SEEN, "[]")
 
     /** Полная очистка ВСЕЙ истории (запросы, позиции, досмотренное, лента) —
      *  для выхода из аккаунта: обещание «на телефоне не осталось» должно
      *  распространяться и на «просмотренное на YouTube», а не только на поиски. */
     fun clearAll() {
-        MmkvManager.encodeSettings(KEY_Q, "[]")
-        MmkvManager.encodeSettings(KEY_POS, "{}")
-        MmkvManager.encodeSettings(KEY_WATCHED, "{}")
-        MmkvManager.encodeSettings(KEY_SEEN, "[]")
+        MmkvManager.encodeHistory(KEY_Q, "[]")
+        MmkvManager.encodeHistory(KEY_POS, "{}")
+        MmkvManager.encodeHistory(KEY_WATCHED, "{}")
+        MmkvManager.encodeHistory(KEY_SEEN, "[]")
     }
 }

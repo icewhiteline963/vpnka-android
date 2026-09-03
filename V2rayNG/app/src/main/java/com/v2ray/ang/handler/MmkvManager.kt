@@ -41,6 +41,9 @@ object MmkvManager {
     private const val KEY_SUB_SERVER_PREFIX = "SUB_SERVERS_"
     private const val KEY_SUB_IDS = "SUB_IDS"
     private const val KEY_WEBDAV_CONFIG = "WEBDAV_CONFIG"
+    private const val ID_HISTORY = "vpnka_history"
+    private const val KEY_HISTORY_CRYPT = "vpnka_history_cryptkey"
+    private const val KEY_HISTORY_MIGRATED = "vpnka_history_migrated"
 
     private val mainStorage by lazy { MMKV.mmkvWithID(ID_MAIN, MMKV.MULTI_PROCESS_MODE) }
     private val profileFullStorage by lazy { MMKV.mmkvWithID(ID_PROFILE_FULL_CONFIG, MMKV.MULTI_PROCESS_MODE) }
@@ -49,6 +52,44 @@ object MmkvManager {
     private val subStorage by lazy { MMKV.mmkvWithID(ID_SUB, MMKV.MULTI_PROCESS_MODE) }
     private val assetStorage by lazy { MMKV.mmkvWithID(ID_ASSET, MMKV.MULTI_PROCESS_MODE) }
     private val settingsStorage by lazy { MMKV.mmkvWithID(ID_SETTING, MMKV.MULTI_PROCESS_MODE) }
+
+    // ---- Шифрованные истории (браузер + просмотры) ----
+    // Как сейф/мессенджер: отдельный контейнер под cryptKey, а не открытый
+    // SETTING. Ключ хранится в настройках (как у SmartDesk); из бэкапа контейнер
+    // удаляется целиком (BackupActivity.secretContainers).
+    private fun historyKey(): String {
+        settingsStorage.decodeString(KEY_HISTORY_CRYPT)?.let { if (it.isNotBlank()) return it }
+        val bytes = ByteArray(16).also { java.security.SecureRandom().nextBytes(it) }
+        val key = bytes.joinToString("") { "%02x".format(it) }
+        settingsStorage.encode(KEY_HISTORY_CRYPT, key)
+        return key
+    }
+    private val historyStorage by lazy { MMKV.mmkvWithID(ID_HISTORY, MMKV.MULTI_PROCESS_MODE, historyKey()) }
+
+    fun encodeHistory(key: String, value: String?): Boolean = historyStorage.encode(key, value)
+    fun decodeHistoryString(key: String): String? = historyStorage.decodeString(key)
+    fun removeHistory(key: String) = historyStorage.removeValueForKey(key)
+
+    /** Одноразовый перенос историй из открытого SETTING в шифрованный контейнер:
+     *  копируем, удаляем открытые записи, уплотняем файл. */
+    fun migrateHistoriesToEncrypted() {
+        if (settingsStorage.decodeBool(KEY_HISTORY_MIGRATED, false)) return
+        val keys = listOf(
+            "browser_history",
+            "vpnka_youtube_queries", "vpnka_youtube_positions",
+            "yt_watched_at", "vpnka_youtube_seen",
+            "yt_download_records",
+        )
+        var moved = false
+        for (k in keys) {
+            val v = settingsStorage.decodeString(k) ?: continue
+            historyStorage.encode(k, v)
+            settingsStorage.removeValueForKey(k)
+            moved = true
+        }
+        if (moved) settingsStorage.trim()
+        settingsStorage.encode(KEY_HISTORY_MIGRATED, true)
+    }
 
     //endregion
 
