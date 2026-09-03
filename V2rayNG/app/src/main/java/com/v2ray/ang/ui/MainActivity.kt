@@ -2065,7 +2065,7 @@ class MainActivity : HelperBaseComponentActivity() {
                     // Списка нет вовсе — тянем подписку и стартуем, когда
                     // она приедет.
                     pendingStartAfterImport = true
-                    importConfigViaSub()
+                    importConfigViaSub(silent = true)
                     return
                 }
                 else -> { toast(R.string.title_file_chooser); return }
@@ -2161,7 +2161,7 @@ class MainActivity : HelperBaseComponentActivity() {
         }
     }
 
-    private fun importConfigViaSub() {
+    private fun importConfigViaSub(silent: Boolean = false) {
         mainViewModel.setLoading(true)
         // Флаг снимаем СРАЗУ: иначе неудачная попытка оставила бы его
         // висеть, и следующее обновление подписки — хоть по кнопке, хоть
@@ -2176,7 +2176,15 @@ class MainActivity : HelperBaseComponentActivity() {
                 // Сервер прислал причину вместо серверов («Лимит устройств
                 // 3/3») — показываем её словами, а не счётчиком «0 конфигов».
                 val notice = result.notice.orEmpty()
+                // Тихий заход — это наш собственный поход за подпиской перед
+                // подключением, а не нажатие «обновить». Итог вроде
+                // «обновлено профилей 0» человек в этот момент читает как
+                // ответ на «подключить Телеграм» — то есть как ошибку, хотя
+                // он ничего не обновлял. Молчим обо всём, кроме причины
+                // отказа: она объясняет, почему подключения не будет.
                 when {
+                    silent && notice.isNotBlank() -> toast(notice)
+                    silent -> Unit
                     notice.isNotBlank() -> toast(notice)
                     result.successCount + result.failureCount + result.skipCount == 0 ->
                         toast(R.string.title_update_subscription_no_subscription)
@@ -2199,8 +2207,12 @@ class MainActivity : HelperBaseComponentActivity() {
                 }
                 // Подписку тянули РАДИ подключения — доводим начатое, а не
                 // возвращаем человека к кнопке, которую он уже нажал.
-                if (startWhenReady && result.configCount > 0) {
-                    startV2Ray(afterImport = true)
+                if (startWhenReady) {
+                    if (result.configCount > 0) startV2Ray(afterImport = true)
+                    // Молчание здесь читается как «кнопка не работает»:
+                    // человек нажал подключение, мы сходили за подпиской и
+                    // ничего не нашли — об этом надо сказать словами.
+                    else if (notice.isBlank()) toast("Серверы для подключения ещё не выданы")
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -2378,10 +2390,48 @@ class MainActivity : HelperBaseComponentActivity() {
         }
     }
 
+    /**
+     * Открыть бота по ссылке привязки — НЕ ЧАЩЕ ОДНОГО РАЗА.
+     *
+     * Каждый заход сюда просит у сервера новый одноразовый токен, а бот на
+     * каждый `/start link_…` отвечает сообщением: у кого аккаунт в
+     * Телеграме уже есть — новым кодом для входа. За две минуты на проде
+     * набралось 17 запросов токена и девять таких сообщений: человек видел
+     * пачку разных кодов и дважды открывшегося бота, и какой код настоящий
+     * — понять уже нельзя.
+     *
+     * Откуда повторы: пока ссылка едет (а едет она через только что
+     * поднятый туннель, то есть небыстро), экран ничем не занят, и второе
+     * касание карточки выглядит для человека единственным разумным
+     * действием. Плюс OkHttp сам повторяет POST, если соединение оборвалось
+     * до ответа, — а токен на сервере при этом уже выписан.
+     *
+     * Поэтому: пока запрос в полёте — второе касание игнорируем, и ещё
+     * пять секунд после открытия Телеграма тоже: за это время Телеграм
+     * успевает выйти на передний план, и «ничего не произошло» человеку
+     * уже не кажется.
+     */
+    private var telegramLinkBusy = false
+    private var telegramLinkOpenedAt = 0L
+
     private fun openTelegramLink() {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (telegramLinkBusy || now - telegramLinkOpenedAt < 5_000) return
+        telegramLinkBusy = true
         lifecycleScope.launch {
-            val url = VpnkaAccount.telegramLinkUrl() ?: return@launch
-            openTelegramUrl(url)
+            try {
+                val url = VpnkaAccount.telegramLinkUrl()
+                if (url == null) {
+                    // Ссылку не выдали — молча ничего не делать нельзя:
+                    // человек нажал и ждёт.
+                    toast("Не удалось открыть Telegram, попробуйте ещё раз")
+                    return@launch
+                }
+                telegramLinkOpenedAt = android.os.SystemClock.elapsedRealtime()
+                openTelegramUrl(url)
+            } finally {
+                telegramLinkBusy = false
+            }
         }
     }
 
