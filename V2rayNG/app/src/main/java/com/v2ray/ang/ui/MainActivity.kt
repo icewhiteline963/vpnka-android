@@ -1888,6 +1888,13 @@ class MainActivity : HelperBaseComponentActivity() {
                     com.v2ray.ang.ui.SmartDeskChrome.pendingAppId = "youtube"
                     showSmartDesk = true
                 },
+                onOpenDownloads = {
+                    // Сразу на полку «Загрузки» внутри «Видео»: она не
+                    // отдельное приложение, а раздел там.
+                    com.v2ray.ang.ui.SmartDeskChrome.pendingYtTab = 2
+                    com.v2ray.ang.ui.SmartDeskChrome.pendingAppId = "youtube"
+                    showSmartDesk = true
+                },
                 onOpenDeskApp = { id ->
                     // Значок на главном ведёт прямо в приложение, а не на
                     // стол: стол теперь и есть главный экран.

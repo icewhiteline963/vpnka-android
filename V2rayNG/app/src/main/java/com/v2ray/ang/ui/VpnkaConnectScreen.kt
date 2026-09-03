@@ -161,6 +161,8 @@ fun VpnkaConnectScreen(
     onSmartDesk: () -> Unit,
     /** Открыть «Видео» сразу, минуя рабочий стол. */
     onYouTube: () -> Unit,
+    /** Открыть «Видео» СРАЗУ НА ЗАГРУЗКАХ — по полоске загрузок. */
+    onOpenDownloads: () -> Unit,
     /** Открыть приложение стола по его id — со значка на главном экране. */
     onOpenDeskApp: (String) -> Unit = {},
     expiryDaysLeft: Int?,
@@ -508,7 +510,11 @@ fun VpnkaConnectScreen(
                     VpnkaDownloadWidget(
                         accent = accent,
                         onAccent = onAccent,
-                        onClick = onYouTube,
+                        // Полоска про загрузки и вести должна в загрузки.
+                        // Она открывала «Видео» на ленте — то есть человек,
+                        // нажавший на строку о своих файлах, попадал на
+                        // чужие ролики и искал полку сам.
+                        onClick = onOpenDownloads,
                     )
                     VpnkaAppGrid(isRunning = isRunning, onOpen = onOpenDeskApp)
                 }
