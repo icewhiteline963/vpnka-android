@@ -1244,6 +1244,70 @@ private fun historyDay(ts: Long): String {
 private fun historyTime(ts: Long): String =
     java.text.SimpleDateFormat("HH:mm", java.util.Locale("ru")).format(java.util.Date(ts))
 
+/** Фиолетовый — цвет приватности в браузере: адресная строка и вкладки. */
+private val PRIVACY_TINT = androidx.compose.ui.graphics.Color(0xFF8B5CF6)
+
+/** Заголовок раздела в списке вкладок. */
+@Composable
+private fun BrowserTabSection(text: String, color: androidx.compose.ui.graphics.Color) {
+    Text(
+        text,
+        fontFamily = VpnkaFonts.manrope700,
+        fontSize = 10.sp,
+        letterSpacing = 0.08.em,
+        color = color,
+        modifier = Modifier.padding(top = 6.dp, bottom = 2.dp),
+    )
+}
+
+/** Одна строка в списке вкладок. Приватная — с очками и в своём цвете. */
+@Composable
+private fun BrowserTabRow(
+    t: BrowserTab,
+    active: Boolean,
+    onSelect: () -> Unit,
+    onClose: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(
+                when {
+                    active && t.incognito -> PRIVACY_TINT.copy(alpha = 0.28f)
+                    active -> VpnkaColors.Accent.copy(alpha = 0.18f)
+                    t.incognito -> PRIVACY_TINT.copy(alpha = 0.12f)
+                    else -> VpnkaColors.CardServer
+                }
+            )
+            .clickable(onClick = onSelect).padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (t.incognito) {
+            Text("🕶", fontSize = 13.sp)
+            Spacer(Modifier.width(8.dp))
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                t.title.value.ifBlank { domainOf(t.url.value) },
+                fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp,
+                color = VpnkaColors.TextStrong, maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+            Text(
+                domainOf(t.url.value),
+                fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp,
+                color = if (t.incognito) PRIVACY_TINT else VpnkaColors.TextMuted,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
+        }
+        Text(
+            "✕", fontSize = 16.sp, color = VpnkaColors.TextMuted,
+            modifier = Modifier.clickable(onClick = onClose).padding(start = 8.dp),
+        )
+    }
+}
+
 private class BrowserTab(
     context: Context,
     val id: Int,
@@ -1890,7 +1954,7 @@ private fun BrowserApp() {
                 // значком: цена ошибки здесь — сама приватность, и «в какой
                 // я вкладке» должно читаться боковым зрением. Тёмная
                 // подложка, фиолетовая рамка и слово «Приватно» у адреса.
-                val privacyTint = androidx.compose.ui.graphics.Color(0xFF8B5CF6)
+                val privacyTint = PRIVACY_TINT
                 Row(
                     modifier = Modifier.weight(1f).clip(RoundedCornerShape(15.dp))
                         .background(
@@ -2051,25 +2115,27 @@ private fun BrowserApp() {
             dismissButton = { androidx.compose.material3.TextButton(onClick = { showTabs = false }) { Text("Закрыть") } },
             title = { Text("Вкладки · ${tabs.size}", fontFamily = VpnkaFonts.nunito800, color = VpnkaColors.TextStrong) },
             text = {
+                // Приватные вкладки — ОТДЕЛЬНЫМ разделом.
+                //
+                // В общем списке они ничем не отличались от обычных: ни
+                // подписью, ни цветом. Человек, у которого открыты и те и
+                // другие, выбирал вслепую — а ошибка здесь означает, что
+                // он продолжит приватное чтение в обычной вкладке, где оно
+                // попадёт в журнал.
+                val normal = tabs.filter { !it.incognito }
+                val hidden = tabs.filter { it.incognito }
                 LazyColumn {
-                    items(tabs, key = { it.id }) { t ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(if (t.id == activeId) VpnkaColors.Accent.copy(alpha = 0.18f) else VpnkaColors.CardServer)
-                                .clickable { activeId = t.id; showTabs = false }.padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(t.title.value.ifBlank { domainOf(t.url.value) }, fontFamily = VpnkaFonts.nunito800,
-                                    fontSize = 14.sp, color = VpnkaColors.TextStrong, maxLines = 1,
-                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                                Text(domainOf(t.url.value), fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp,
-                                    color = VpnkaColors.TextMuted, maxLines = 1,
-                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                            }
-                            Text("✕", fontSize = 16.sp, color = VpnkaColors.TextMuted,
-                                modifier = Modifier.clickable { closeTab(t) }.padding(start = 8.dp))
+                    // Заголовки показываем, только когда есть что разделять.
+                    if (normal.isNotEmpty() && hidden.isNotEmpty()) {
+                        item { BrowserTabSection("ОБЫЧНЫЕ", VpnkaColors.TextFaint) }
+                    }
+                    items(normal, key = { it.id }) { t ->
+                        BrowserTabRow(t, t.id == activeId, { activeId = t.id; showTabs = false }, { closeTab(t) })
+                    }
+                    if (hidden.isNotEmpty()) {
+                        item { BrowserTabSection("ПРИВАТНЫЕ · без следов", PRIVACY_TINT) }
+                        items(hidden, key = { it.id }) { t ->
+                            BrowserTabRow(t, t.id == activeId, { activeId = t.id; showTabs = false }, { closeTab(t) })
                         }
                     }
                 }
