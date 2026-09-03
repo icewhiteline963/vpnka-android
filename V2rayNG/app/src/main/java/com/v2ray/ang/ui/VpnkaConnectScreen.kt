@@ -1578,6 +1578,23 @@ internal fun formatTraffic(bytes: Long): Pair<String, String> {
     }
 }
 
+/** The leading emoji of a server name, or a globe when it has none. */
+internal fun flagOf(name: String): String {
+    val trimmed = name.trimStart()
+    // Regional-indicator pairs are two code points; take them together or
+    // the flag renders as two stray letters.
+    if (trimmed.length >= 4) {
+        val first = trimmed.codePointAt(0)
+        if (first in 0x1F1E6..0x1F1FF) {
+            val second = trimmed.offsetByCodePoints(0, 1)
+            if (trimmed.codePointAt(second) in 0x1F1E6..0x1F1FF) {
+                return trimmed.substring(0, trimmed.offsetByCodePoints(0, 2))
+            }
+        }
+    }
+    return "🌍"
+}
+
 /** «час / часа / часов» — the warning is read, not parsed. */
 internal fun pluralHours(n: Int): String {
     val a = kotlin.math.abs(n)
