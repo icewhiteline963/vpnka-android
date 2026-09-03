@@ -246,6 +246,12 @@ fun YouTubeApp() {
     var favTick by remember { mutableStateOf(0) }
     var seenTick by remember { mutableStateOf(0) }
     var openPl by remember { mutableStateOf<String?>(null) }
+    // Рассказываем нижней панели, на какой мы полке: без этого она считала
+    // текущим «Видео» всегда — и из «Загрузок» кнопка «Видео» не работала,
+    // потому что панель не переходит по текущему пункту.
+    LaunchedEffect(tab) { SmartDeskChrome.ytTab = tab }
+    DisposableEffect(Unit) { onDispose { SmartDeskChrome.ytTab = 0 } }
+
     // Просьба открыть вкладку может прийти, когда «Видео» УЖЕ на экране —
     // тогда новой композиции нет, и одного чтения при рождении мало.
     LaunchedEffect(SmartDeskChrome.pendingYtTab) {

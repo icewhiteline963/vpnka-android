@@ -157,6 +157,18 @@ object SmartDeskChrome {
      */
     var pendingYtTab by mutableStateOf<Int?>(null)
 
+    /**
+     * Какая полка «Видео» открыта СЕЙЧАС — чтобы нижняя панель знала, где
+     * человек находится.
+     *
+     * Панель считала выбранным пункт по имени приложения, а внутри «Видео»
+     * полок несколько. Открыв «Загрузки», человек оставался в том же
+     * приложении — значит пункт «Видео» считался текущим, и нажатие по нему
+     * панель игнорировала («по текущему не переходим»). Обратно из загрузок
+     * не было пути вовсе.
+     */
+    var ytTab by mutableStateOf(0)
+
     fun consumePendingYtTab(): Int? {
         val t = pendingYtTab
         pendingYtTab = null
@@ -272,6 +284,13 @@ fun VpnkaSmartDeskAppScreen(
                             SmartDeskChrome.pendingYtTab = 2
                             SmartDeskChrome.pendingAppId = "youtube"
                         }
+                        // «Видео» из загрузок — обратно на ленту. Раньше это
+                        // была просьба открыть приложение, которое уже
+                        // открыто: ничего не происходило.
+                        "youtube" -> {
+                            SmartDeskChrome.pendingYtTab = 0
+                            SmartDeskChrome.pendingAppId = "youtube"
+                        }
                         else -> SmartDeskChrome.pendingAppId = id
                     }
                 },
@@ -298,10 +317,12 @@ fun VpnkaSmartDeskAppScreen(
 @Composable
 private fun SmartDeskAppTabs(current: String, onOpen: (String) -> Unit) {
     val navInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    // Порядок по решению владельца: сначала выход на главную, потом сам
+    // раздел и его полка.
     val items = listOf(
+        Triple("home", "⌂", "Главная"),
         Triple("youtube", "▶", "Видео"),
         Triple("downloads", "↓", "Загрузки"),
-        Triple("home", "⌂", "Главная"),
     )
     Row(
         modifier = Modifier.fillMaxWidth()
@@ -311,7 +332,13 @@ private fun SmartDeskAppTabs(current: String, onOpen: (String) -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         items.forEach { (id, glyph, label) ->
-            val selected = id == current
+            // Внутри «Видео» выбранность решает полка, а не приложение.
+            val selected = when {
+                current != "youtube" -> id == current
+                id == "downloads" -> SmartDeskChrome.ytTab == 2
+                id == "youtube" -> SmartDeskChrome.ytTab != 2
+                else -> false
+            }
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.clip(RoundedCornerShape(10.dp))
