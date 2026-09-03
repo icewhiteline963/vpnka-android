@@ -599,12 +599,9 @@ fun YouTubeApp() {
                             }
                         }
                         items(seen, key = { it.url }) { h ->
-                            VideoRow(
-                                YouTubeService.Video(h.url, h.title, h.uploader, 0L, null),
+                            YtHistoryRow(
+                                h = h,
                                 onClick = { open(h.url) },
-                                onAdd = {
-                                    addTo = YouTubePlaylists.Item(it.url, it.title, it.uploader, 0L)
-                                },
                                 onRemove = { YouTubeHistory.forgetSeen(h.url); seenTick++ },
                             )
                         }
@@ -1358,6 +1355,67 @@ private fun YtBadge(text: String, color: Color = VpnkaColors.TextStrong) {
             .background(VpnkaColors.BgOffEdge.copy(alpha = 0.85f))
             .padding(horizontal = 5.dp, vertical = 2.dp),
     )
+}
+
+/**
+ * Строка истории: одна на ролик, без обложки во всю ширину.
+ *
+ * История — это список того, что уже смотрели, и выбирают по нему НЕ
+ * глазами по кадру, а по названию: «где тот ролик про...». Полные
+ * карточки (обложка 198 точек, аватар канала, ряд действий) отдавали
+ * каждому ролику треть экрана — за десять просмотренных приходилось
+ * листать полстраницы. Здесь важна плотность, а не витрина.
+ */
+@Composable
+private fun YtHistoryRow(
+    h: YouTubeHistory.Seen,
+    onClick: () -> Unit,
+    onRemove: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(11.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("▶", fontSize = 12.sp, color = VpnkaColors.Accent)
+        Spacer(Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                cleanTitle(h.title),
+                fontFamily = VpnkaFonts.manrope600,
+                fontWeight = VpnkaWeight.Semi,
+                fontSize = 13.sp,
+                lineHeight = 16.sp,
+                color = VpnkaColors.TextStrong,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (h.uploader.isNotBlank()) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    h.uploader,
+                    fontFamily = VpnkaFonts.manrope600,
+                    fontSize = 11.sp,
+                    color = VpnkaColors.TextMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(
+            "✕",
+            fontSize = 13.sp,
+            color = VpnkaColors.TextFaint,
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(onClick = onRemove)
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+        )
+    }
 }
 
 @Composable
