@@ -42,14 +42,32 @@ object VpnkaExit {
      * proxy not up yet, or the probe timed out). Callers should keep the last
      * good value rather than flicker to "unknown" on a single miss.
      */
-    suspend fun current(): Exit? = withContext(Dispatchers.IO) {
-        val port = SettingsManager.getHttpPort()
-        if (port == 0) return@withContext null
-        val client = OkHttpClient.Builder()
+    /**
+     * Клиент на порт, а не на вызов.
+     *
+     * Строился заново на каждый опрос — шесть штук в минуту, и каждый
+     * уносил свой пул, державший простаивающие соединения пять минут.
+     * Порт локального прокси меняется при перезапуске ядра, поэтому
+     * держим пару «порт → клиент», а не один на всё время жизни.
+     */
+    @Volatile
+    private var cached: Pair<Int, OkHttpClient>? = null
+
+    private fun clientFor(port: Int): OkHttpClient {
+        cached?.let { (p, c) -> if (p == port) return c }
+        val built = OkHttpClient.Builder()
             .proxy(Proxy(Proxy.Type.HTTP, InetSocketAddress(AppConfig.LOOPBACK, port)))
             .connectTimeout(8, TimeUnit.SECONDS)
             .readTimeout(8, TimeUnit.SECONDS)
             .build()
+        cached = port to built
+        return built
+    }
+
+    suspend fun current(): Exit? = withContext(Dispatchers.IO) {
+        val port = SettingsManager.getHttpPort()
+        if (port == 0) return@withContext null
+        val client = clientFor(port)
         runCatching {
             client.newCall(Request.Builder().url("$BASE/whoami").build()).execute()
                 .use { resp ->

@@ -51,6 +51,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.Lifecycle
@@ -72,7 +73,6 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.text.style.TextOverflow
@@ -82,7 +82,9 @@ import androidx.compose.ui.unit.sp
 import com.v2ray.ang.handler.VpnkaAccount
 import com.v2ray.ang.handler.VpnkaExit
 import com.v2ray.ang.R
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -192,8 +194,42 @@ fun VpnkaConnectScreen(
     // темноте. В макете это `radial-gradient(120% 62% at 50% 2%)`: пятно
     // цвета начинается у самой кромки экрана, над цветком, и сходит на
     // нет к середине. Полотно под ним — ровное, без второго градиента.
+    // Кто мы снаружи — спрашиваем ЗДЕСЬ, а не внутри карточки сервера.
+    //
+    // Пока ответ жил в карточке, экран говорил две вещи разом: пилюля
+    // наверху — «ЗАЩИЩЕНО» с горящей точкой, а строка под цветком —
+    // «трафик идёт мимо VPN». Верить надо второму, и знать об этом должна
+    // прежде всего пилюля.
+    var exit by remember { mutableStateOf<VpnkaExit.Exit?>(null) }
+    var leaking by remember { mutableStateOf(false) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(isRunning, lifecycleOwner) {
+        if (!isRunning) { exit = null; leaking = false; return@LaunchedEffect }
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (true) {
+                val e = VpnkaExit.current()
+                when {
+                    e == null -> Unit            // не дозвонились — судить не о чем
+                    e.onVpn -> { exit = e; leaking = false }
+                    else -> leaking = true       // сервер видит наш реальный адрес
+                }
+                delay(10_000)
+            }
+        }
+    }
+    // Имя узла — только когда сервер его действительно назвал. Пустая
+    // строка тоже «не назвал»: /whoami отвечает `on_vpn:true` без страны,
+    // пока новый адрес узла не сопоставлен, — и карточка оставалась пустой.
+    val liveName = exit?.let { e ->
+        "${e.flag.orEmpty()} ${e.name ?: e.code ?: ""}".trim()
+    }?.takeIf { it.isNotBlank() }
+
     val accent by animateColorAsState(
-        if (isRunning) VpnkaColors.AccentOn else VpnkaColors.Accent,
+        when {
+            leaking -> VpnkaColors.Warning
+            isRunning -> VpnkaColors.AccentOn
+            else -> VpnkaColors.Accent
+        },
         tween(600), label = "accent",
     )
     // Чем писать ПО акценту — тоже меняется вместе с ним.
@@ -247,10 +283,15 @@ fun VpnkaConnectScreen(
                 // Status sits on the icons' line — it is the one fact the
                 // screen exists to state, and it belongs at the top of it
                 // rather than floating above the button.
-                status = if (isRunning) "ЗАЩИЩЕНО" else "НЕ ЗАЩИЩЕНО",
+                status = when {
+                    leaking -> "МИМО VPN"
+                    isRunning -> "ЗАЩИЩЕНО"
+                    else -> "НЕ ЗАЩИЩЕНО"
+                },
                 statusColor = accent,
                 statusOn = isRunning,
                 hint = when {
+                    leaking -> "Сервер видит ваш настоящий адрес"
                     isLoading -> "Подключаемся…"
                     isRunning -> "Трафик зашифрован"
                     else -> "Нажмите на цветочек"
@@ -316,6 +357,9 @@ fun VpnkaConnectScreen(
                         name = serverName,
                         delay = serverDelay,
                         isRunning = isRunning,
+                        liveName = liveName,
+                        leaking = leaking,
+                        accent = accent,
                         onClick = onChangeServer,
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -394,7 +438,7 @@ fun VpnkaConnectScreen(
                         right = when {
                             trialHoursLeft != null -> pluralHours(trialHoursLeft)
                             activeDaysLeft != null -> "$activeDaysLeft дн"
-                            else -> subscriptionName
+                            else -> subscriptionName.orEmpty()
                         },
                         accent = accent,
                         onAccent = onAccent,
@@ -456,7 +500,13 @@ fun VpnkaConnectScreen(
                 // Раньше об этом говорила выноска под шапкой, которую
                 // закрывали и забывали; в макете это обычный ряд, только
                 // залитый акцентом.
-                if (!telegramLinked) {
+                // Карточка бесплатного месяца у непривязанных зовёт туда
+                // же — и получалось два одинаковых призыва подряд, оба
+                // несносимые. Строка уступает карточке: та объясняет, что
+                // человек за это получит.
+                val freeMonthAsksToLink =
+                    !paidSubscription && freeMonthEnabled && !telegramLinked
+                if (!telegramLinked && !freeMonthAsksToLink) {
                     VpnkaHomeRow(
                         icon = "✈",
                         label = "Войти через Телеграм",
@@ -604,15 +654,25 @@ private fun VpnkaDownloadWidget(
     onAccent: Color,
     onClick: () -> Unit,
 ) {
+    // Журнал скачанного живёт на диске, а список — в памяти, и поднимал
+    // его только экран «Видео». До первого захода туда полоска на главном
+    // подводила итог «0 Б · 0» человеку с сорока файлами на диске.
+    LaunchedEffect(Unit) { YouTubeDownloads.restore() }
     val entries = YouTubeDownloads.entries
-    val active = entries.firstOrNull {
-        it.state == YouTubeDownloads.State.RUNNING ||
-            it.state == YouTubeDownloads.State.QUEUED
-    }
+    // Сначала то, что РЕАЛЬНО качается: живые загрузки добавляются в
+    // начало списка, и после «скачать всё» первым оказывался последний
+    // поставленный в очередь — полоска замирала на нуле с его названием,
+    // пока ниже шли две настоящие.
+    val active = entries.firstOrNull { it.state == YouTubeDownloads.State.RUNNING }
+        ?: entries.firstOrNull { it.state == YouTubeDownloads.State.QUEUED }
     val pct = active?.let {
         if (it.total > 0L) (it.done * 100 / it.total).toInt().coerceIn(0, 100) else 0
     } ?: 0
-    val title = active?.label ?: "Все загрузки завершены"
+    val title = when {
+        active == null -> "Все загрузки завершены"
+        active.waitReason != null -> "${active.label} · ${active.waitReason}"
+        else -> active.label
+    }
     val right = if (active != null) {
         val (v, u) = formatTraffic(active.total.coerceAtLeast(active.done))
         "$pct% · $v $u"
@@ -694,9 +754,28 @@ private fun VpnkaAppTile(
     // Счётчик на значке — то, ради чего на него смотрят издалека: сколько
     // качается и сколько непрочитанных. Плитки до сих пор были одинаково
     // серыми и молчали об этом.
+    // Непрочитанные считаем В ФОНЕ и раз в пять секунд.
+    //
+    // Прямой вызов из композиции стоил дорого: `contacts()` и `unread()`
+    // ходят в ЗАШИФРОВАННЫЙ MMKV и разбирают Gson-ом всю переписку по
+    // каждому собеседнику — а композиция главного экрана обновляется раз
+    // в секунду, пока идёт трафик. Плюс MMKV не наблюдаем: пришедшее при
+    // погашенном туннеле сообщение бейдж бы вообще не показал.
+    val unread by produceState(0, app.id) {
+        if (app.id != "messages") return@produceState
+        while (true) {
+            value = withContext(Dispatchers.IO) {
+                runCatching {
+                    com.v2ray.ang.handler.Messenger.contacts()
+                        .sumOf { com.v2ray.ang.handler.ChatPrefs.unread(it.id) }
+                }.getOrDefault(0)
+            }
+            delay(5_000)
+        }
+    }
+    // Загрузки — наблюдаемый список в памяти, их можно читать прямо здесь.
     val badge = when (app.id) {
-        "messages" -> com.v2ray.ang.handler.Messenger.contacts()
-            .sumOf { com.v2ray.ang.handler.ChatPrefs.unread(it.id) }
+        "messages" -> unread
         "youtube" -> YouTubeDownloads.entries.count {
             it.state == YouTubeDownloads.State.RUNNING ||
                 it.state == YouTubeDownloads.State.QUEUED
@@ -709,12 +788,13 @@ private fun VpnkaAppTile(
     // разных семейств (тёмно-красный рядом с серо-синим), и он не менялся
     // вообще.
     val tint = tileTint(index, isRunning)
+    // Нажимается вся колонка вместе с подписью, но БЕЗ клипа: счётчик
+    // выходит за верхний край плитки, а `offset` размера не прибавляет —
+    // клип на колонке срезал ему макушку.
     Column(
-        modifier = modifier,
+        modifier = modifier.clickable { onOpen(app.id) },
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // Коробка на 6 точек выше плитки: счётчик выходит за её верхний
-        // край, а `offset` размера не прибавляет — верх бейджа срезался.
         Box(contentAlignment = Alignment.Center) {
             Box(
                 modifier = Modifier.size(52.dp)
@@ -729,8 +809,7 @@ private fun VpnkaAppTile(
                             listOf(Color.White.copy(alpha = 0.42f), Color.Transparent)
                         ),
                         RoundedCornerShape(16.dp),
-                    )
-                    .clickable { onOpen(app.id) },
+                    ),
                 contentAlignment = Alignment.Center,
             ) { Text(app.glyph, fontSize = 21.sp) }
             if (badge > 0) {
@@ -1016,54 +1095,37 @@ private fun VpnkaExpiryBanner(daysLeft: Int, onRenew: () -> Unit) {
 }
 
 /**
- * Карточка «сейчас через» — какой сервер под нами.
+ * Строка «через какой узел мы сейчас идём» — по макету, но говорит правду.
  *
- * В макете стоит справа от цветка: точка-флаг, мелкая надпись «СЕЙЧАС
- * ЧЕРЕЗ», имя сервера и шеврон. Прежняя карточка серверов была вдвое выше
- * и жила отдельной строкой ниже.
+ * Имя ЖИВОГО узла приходит сверху: пока сервер не ответил, показываем
+ * выбранное, ответил — тот, через который трафик идёт на самом деле. При
+ * утечке карточка целиком становится предупреждением: до этого красной
+ * была только надпись «ВНИМАНИЕ» кеглем 8.5, а сама новость про открытый
+ * трафик — обычным белым на обычной подложке.
  */
 @Composable
 private fun VpnkaHomeServerCard(
     name: String,
     delay: String,
     isRunning: Boolean,
+    liveName: String?,
+    leaking: Boolean,
+    accent: Color,
     onClick: () -> Unit,
 ) {
-    // Живой узел и предупреждение об утечке — ЗДЕСЬ.
-    //
-    // Раньше это была отдельная плашка `VpnkaActiveExit` под кнопкой; при
-    // переделке экрана она осталась без вызова, и вместе с ней из сборки
-    // молча пропал единственный признак «трафик идёт мимо ВПН». А надпись
-    // «СЕЙЧАС ЧЕРЕЗ» переехала на карточку ВЫБРАННОГО сервера, которая при
-    // «🌍 Авто» узел назвать не может — то есть экран утверждал то, чего не
-    // знает. Спрашиваем сервер и показываем ответ в той же строке.
-    var exit by remember { mutableStateOf<VpnkaExit.Exit?>(null) }
-    var leaking by remember { mutableStateOf(false) }
-    val lifecycleOwner = LocalLifecycleOwner.current
-    LaunchedEffect(isRunning, lifecycleOwner) {
-        if (!isRunning) { exit = null; leaking = false; return@LaunchedEffect }
-        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            while (true) {
-                val e = VpnkaExit.current()
-                when {
-                    e == null -> Unit            // не дозвонились — судить не о чем
-                    e.onVpn -> { exit = e; leaking = false }
-                    else -> leaking = true       // сервер видит наш реальный адрес
-                }
-                delay(10_000)
-            }
-        }
-    }
-    val live = exit
-    val liveName = if (!leaking && live != null && live.onVpn)
-        "${live.flag.orEmpty()} ${live.name ?: live.code ?: ""}".trim()
-    else null
-
+    val shape = RoundedCornerShape(11.dp)
     Row(
         modifier = Modifier.fillMaxWidth()
-            .clip(RoundedCornerShape(11.dp))
-            .background(VpnkaColors.CardSpeed)
-            .border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(11.dp))
+            .clip(shape)
+            .background(
+                if (leaking) VpnkaColors.Warning.copy(alpha = 0.18f)
+                else VpnkaColors.CardSpeed
+            )
+            .border(
+                1.dp,
+                if (leaking) VpnkaColors.Warning.copy(alpha = 0.45f) else VpnkaColors.Hairline,
+                shape,
+            )
             .clickable(onClick = onClick)
             .padding(horizontal = 11.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -1071,17 +1133,16 @@ private fun VpnkaHomeServerCard(
     ) {
         // Кружок слева — ФЛАГ страны, а не одинаковая оранжевая точка.
         //
-        // В макете у каждой страны свои полосы; своих картинок флагов в
-        // приложении нет, зато есть флаг в имени узла — его и показываем,
-        // а градиент остаётся запасным вариантом для «Авто» и для имён
-        // без страны. Волосяная обводка — из макета.
-        val flag = (liveName ?: name).let { flagOf(it) }
+        // Своих картинок флагов в приложении нет, зато флаг есть в имени
+        // узла. `flagOf` для безымянных отдаёт глобус — его считаем «страны
+        // нет» и оставляем градиент, как в макете у «Авто».
+        val flag = flagOf(liveName ?: name).takeIf { it != "🌍" }.orEmpty()
         Box(
             modifier = Modifier.size(16.dp).clip(CircleShape)
                 .then(
                     if (flag.isBlank()) Modifier.background(
                         Brush.verticalGradient(
-                            listOf(VpnkaColors.FlagCircleStart, VpnkaColors.Accent)
+                            listOf(VpnkaColors.FlagCircleStart, accent)
                         )
                     ) else Modifier
                 )
@@ -1092,7 +1153,13 @@ private fun VpnkaHomeServerCard(
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = if (leaking) "ВНИМАНИЕ" else "СЕЙЧАС ЧЕРЕЗ",
+                // Пока туннель погашен, «СЕЙЧАС ЧЕРЕЗ» — неправда: ни через
+                // какой узел мы не идём. Тогда это просто выбранный сервер.
+                text = when {
+                    leaking -> "ВНИМАНИЕ"
+                    isRunning -> "СЕЙЧАС ЧЕРЕЗ"
+                    else -> "СЕРВЕР"
+                },
                 fontFamily = VpnkaFonts.manrope600,
                 fontWeight = VpnkaWeight.Semi,
                 fontSize = 8.5.sp,
@@ -1101,23 +1168,25 @@ private fun VpnkaHomeServerCard(
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                // Пока узел не назван — показываем выбранное. Как только
-                // сервер ответил, пишем ИМЕННО ТОТ узел, через который идём.
                 text = when {
                     leaking -> "трафик идёт мимо VPN"
                     liveName != null -> liveName
                     delay.isNotBlank() -> "$name · $delay"
                     else -> name
                 },
-                fontFamily = VpnkaFonts.nunito800,
-                fontWeight = VpnkaWeight.Extra,
+                fontFamily = VpnkaFonts.manrope700,
+                fontWeight = VpnkaWeight.Bold,
                 fontSize = 12.sp,
-                color = VpnkaColors.TextStrong,
+                color = if (leaking) VpnkaColors.Warning else VpnkaColors.TextStrong,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        Text("›", fontSize = 12.sp, color = VpnkaColors.Accent)
+        Text(
+            text = "›",
+            fontSize = 12.sp,
+            color = if (leaking) VpnkaColors.Warning else accent,
+        )
     }
 }
 
@@ -1148,7 +1217,10 @@ private fun VpnkaStatCard(label: String, bytes: Long, modifier: Modifier = Modif
             overflow = TextOverflow.Ellipsis,
         )
         Spacer(Modifier.height(5.dp))
-        Row(verticalAlignment = Alignment.LastBaseline) {
+        // Значение и единица — по БАЗОВОЙ ЛИНИИ: в макете они в одном
+        // потоке текста, а выравнивание по нижнему краю разводило 13 и 10
+        // на пару точек.
+        Row(verticalAlignment = Alignment.Bottom) {
             Text(
                 text = value,
                 fontFamily = VpnkaFonts.mono,
@@ -1156,6 +1228,7 @@ private fun VpnkaStatCard(label: String, bytes: Long, modifier: Modifier = Modif
                 fontSize = 13.sp,
                 color = VpnkaColors.TextStrong,
                 maxLines = 1,
+                modifier = Modifier.alignByBaseline(),
             )
             Spacer(Modifier.width(3.dp))
             Text(
@@ -1164,6 +1237,7 @@ private fun VpnkaStatCard(label: String, bytes: Long, modifier: Modifier = Modif
                 fontSize = 10.sp,
                 color = VpnkaColors.fg(0.8f),
                 maxLines = 1,
+                modifier = Modifier.alignByBaseline(),
             )
         }
     }
@@ -1389,19 +1463,25 @@ private fun VpnkaConnectButton(
     // они расходятся от 132 до 186 точек (то есть НЕ выходят за 146-й
     // блок настолько, чтобы налезть на таймер справа) и живут только
     // пока туннель поднят: на выключенном экране круг стоит тихо.
-    val transition = rememberInfiniteTransition(label = "button")
-    // Один общий ход 0…1 за 10 с — как тик макета раз в секунду по
-    // модулю 10; три волны берут его со сдвигом в треть.
-    val wave by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            // 6,5 с на полный ход: в макете тик идёт каждые 650 мс, а
-            // фаза считается по модулю десяти тиков.
-            tween(6_500, easing = LinearEasing), RepeatMode.Restart,
-        ),
-        label = "wave",
-    )
+    // Заводим ход ТОЛЬКО когда есть что двигать: бесконечная анимация
+    // запрашивает кадры, даже если её значение никто не читает, и экран
+    // с погашенным туннелем не давал системе успокоиться.
+    val wave = if (!isRunning) 0f else {
+        val transition = rememberInfiniteTransition(label = "button")
+        // Один общий ход 0…1 — как тик макета раз в 650 мс по модулю 10;
+        // три волны берут его со сдвигом в треть.
+        val w by transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                // 6,5 с на полный ход: в макете тик идёт каждые 650 мс, а
+                // фаза считается по модулю десяти тиков.
+                tween(6_500, easing = LinearEasing), RepeatMode.Restart,
+            ),
+            label = "wave",
+        )
+        w
+    }
 
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
@@ -1497,30 +1577,6 @@ internal fun formatTraffic(bytes: Long): Pair<String, String> {
         else -> "%.2f".format(b / 1024.0 / 1024 / 1024) to "ГБ"
     }
 }
-
-/** The leading emoji of a server name, or a globe when it has none. */
-internal fun flagOf(name: String): String {
-    val trimmed = name.trimStart()
-    // Regional-indicator pairs are two code points; take them together or
-    // the flag renders as two stray letters.
-    if (trimmed.length >= 4) {
-        val first = trimmed.codePointAt(0)
-        if (first in 0x1F1E6..0x1F1FF) {
-            val second = trimmed.offsetByCodePoints(0, 1)
-            if (trimmed.codePointAt(second) in 0x1F1E6..0x1F1FF) {
-                return trimmed.substring(0, trimmed.offsetByCodePoints(0, 2))
-            }
-        }
-    }
-    return "🌍"
-}
-
-internal fun nameWithoutFlag(name: String): String {
-    val flag = flagOf(name)
-    val stripped = if (flag != "🌍") name.trimStart().removePrefix(flag) else name
-    return stripped.trim().ifBlank { "Сервер" }
-}
-
 
 /** «час / часа / часов» — the warning is read, not parsed. */
 internal fun pluralHours(n: Int): String {

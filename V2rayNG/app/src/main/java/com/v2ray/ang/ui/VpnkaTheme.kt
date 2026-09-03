@@ -116,7 +116,6 @@ object VpnkaColors {
     val TextBrand: Color get() = pick(Color(0xFF7A4A12), Color(0xFFEBD3AC), Color(0xFFEFE5D6))
     val TextMuted: Color get() = pick(Color(0xFF8A6635), Color(0xFFC3AC85), Color(0xFFAEA394))
     val TextFaint: Color get() = pick(Color(0xFFB98C4E), Color(0xFF9A8362), Color(0xFF7E7469))
-    val TextUnit: Color get() = pick(Color(0xFFA07A3E), Color(0xFFB09A72), Color(0xFF9A9084))
     val IconMuted: Color get() = pick(Color(0xFFA06A20), Color(0xFFD8A65A), Color(0xFFFFB655))
 
     // Screen background — a radial wash, three stops each way. Dark keeps
@@ -158,7 +157,6 @@ object VpnkaColors {
     val Shadow: Color get() = pick(Color(0xFFB47814), Color(0xFF000000), Color(0xFF000000))
 
     val FlagCircleStart = Color(0xFFFFD75E)
-    val FlagCircleEnd = Color(0xFFFF9D2E)
 }
 
 /**
