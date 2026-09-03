@@ -80,6 +80,28 @@ object VpnkaColors {
     // Connected.
     val Green: Color get() = pick(Color(0xFF2FAE4F), Color(0xFF5FD07E), Color(0xFF7DBF5E))
 
+    /**
+     * Акцент ПОДКЛЮЧЁННОГО состояния.
+     *
+     * В макете подключение перекрашивает не один цветок, а весь набор
+     * переменных: `--acc` становится #4ec46a, полотно уходит из тёплого
+     * в зелёное, а писать по акценту начинают почти чёрным зелёным
+     * #07220f. `Green` для этого не годится — это цвет «всё в порядке»
+     * (--ok), он темнее и глуше.
+     */
+    val AccentOn: Color get() = if (flow) Color(0xFF4EC46A) else Green
+    /** Чем писать по зелёному акценту. */
+    val OnAccentOn: Color get() = if (flow) Color(0xFF07220F) else Color(0xFFFFFFFF)
+
+    /**
+     * Цвет текста с прозрачностью — макет задаёт полутона именно так
+     * (`rgba(var(--fgc), .45)`), а не отдельными именованными цветами.
+     * Двух ступеней (TextMuted/TextFaint) на шесть градаций не хватало:
+     * правое значение строки выходило вровень с подписью, а подсказка
+     * под пилюлей — заметно тусклее макета.
+     */
+    fun fg(alpha: Float): Color = TextStrong.copy(alpha = alpha)
+
     // The trial countdown, and nothing else. Reserved so it keeps meaning
     // "this is about to stop working" rather than becoming another accent.
     val Warning: Color get() = pick(Color(0xFFD32F2F), Color(0xFFFF6B6B), Color(0xFFFF7A5C))
@@ -105,7 +127,7 @@ object VpnkaColors {
     val BgOffEdge: Color get() = pick(Color(0xFFFFE4B8), Color(0xFF15100A), Color(0xFF100D09))
     val BgOnCentre: Color get() = pick(Color(0xFFEEFBE9), Color(0xFF1B2A1C), Color(0xFF1B160F))
     val BgOnMid: Color get() = pick(Color(0xFFDCF3D2), Color(0xFF152015), Color(0xFF15110C))
-    val BgOnEdge: Color get() = pick(Color(0xFFCDEABF), Color(0xFF0E160F), Color(0xFF100D09))
+    val BgOnEdge: Color get() = pick(Color(0xFFCDEABF), Color(0xFF0E160F), Color(0xFF0B100B))
 
     // Cards sit on the wash rather than on a surface, so they are white with
     // alpha rather than a solid colour — the gradient shows through and the
@@ -157,10 +179,20 @@ object VpnkaFonts {
     val nunito900 = FontFamily(variable(R.font.nunito_var, 900))
     val manrope600 = FontFamily(variable(R.font.manrope_var, 600))
     val manrope700 = FontFamily(variable(R.font.manrope_var, 700))
+    val manrope500 = FontFamily(variable(R.font.manrope_var, 500))
+
+    /**
+     * Цифры. В макете это JetBrains Mono — и не ради вида: таймер,
+     * счётчики и проценты меняются каждую секунду, и на пропорциональном
+     * шрифте строка дёргается на каждой цифре. Своего моношрифта в
+     * приложении нет, берём системный.
+     */
+    val mono = FontFamily.Monospace
 }
 
 /** Weights the design names, so call sites read like the handoff. */
 object VpnkaWeight {
+    val Medium = FontWeight(500)
     val Semi = FontWeight(600)
     val Bold = FontWeight(700)
     val Extra = FontWeight(800)
