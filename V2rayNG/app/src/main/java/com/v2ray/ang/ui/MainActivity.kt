@@ -1713,7 +1713,13 @@ class MainActivity : HelperBaseComponentActivity() {
             // Zero-knowledge gate: the cloud opens only once the vault is
             // unlocked (create a passphrase first time, enter it on a fresh
             // device). Once unlocked the key is cached, so this is skipped.
-            val vaultReady = remember(vaultTick) { com.v2ray.ang.handler.Vault.isUnlocked() }
+            // Пароль от сейфа спрашиваем, только если на столе есть то,
+            // что сейф охраняет. Сейчас там один загрузчик видео — держать
+            // перед ним дверь от хранилища переписки не за чем.
+            val vaultReady = remember(vaultTick) {
+                !com.v2ray.ang.ui.smartDeskNeedsVault() ||
+                    com.v2ray.ang.handler.Vault.isUnlocked()
+            }
             if (!vaultReady) {
                 VpnkaVaultGate(
                     onUnlocked = { vaultTick++ },

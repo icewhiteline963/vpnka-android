@@ -146,7 +146,28 @@ private val CATALOG_BY_ID = SMARTDESK_CATALOG.associateBy { it.id }
  * Магазин здесь же: устанавливать из него сейчас нечего — на столе ровно
  * те три приложения, что остаются, и все они уже стоят.
  */
-private val SMARTDESK_HIDDEN = setOf("store", "calendar", "contacts", "notes", "help")
+private val SMARTDESK_HIDDEN = setOf(
+    "store", "calendar", "contacts", "notes", "help",
+    // 03.09, второе решение владельца: остаётся ОДИН загрузчик видео.
+    // Мессенджер уходит вместе с сейфом — без сейфа ему негде держать
+    // ключи, а показывать вход, который ничего не откроет, нечестно.
+    "messages", "browser",
+)
+
+/**
+ * Кому нужен сейф.
+ *
+ * Сейф охраняет личное: переписку, заметки, контакты, календарь. Экран
+ * ввода пароля висел на входе в стол ЦЕЛИКОМ — то есть человек, который
+ * шёл скачать ролик, упирался в пароль от хранилища, к которому его
+ * ролик отношения не имеет. Спрашиваем пароль только если на столе есть
+ * то, ради чего он существует; сейчас таких приложений нет, и вход
+ * открывается сразу.
+ */
+private val VAULT_APPS = setOf("messages", "notes", "contacts", "calendar")
+
+/** Нужен ли сейф при нынешнем наборе приложений. */
+fun smartDeskNeedsVault(): Boolean = installedIds().any { it in VAULT_APPS }
 
 /** Что показываем: витрина магазина и всё, что видит человек. */
 val SMARTDESK_VISIBLE = SMARTDESK_CATALOG.filter { it.id !in SMARTDESK_HIDDEN }
