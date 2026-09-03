@@ -59,6 +59,14 @@ object YouTubeService {
         val likes: Long = -1,
         val dislikes: Long = -1,
         val views: Long = -1,
+        /**
+         * Какое качество сейчас играет — «720p», «480p», «авто».
+         *
+         * Плеер показывает его на плашке, и без этого поля показывать было
+         * нечего: выбор качества знает только тот, кто его сделал, а при
+         * открытии ролика поток выбирается сам.
+         */
+        val quality: String = "",
         val uploader: String = "",
     )
 
@@ -208,6 +216,7 @@ object YouTubeService {
                 si.name, bestVideoOnly.content, videoUrl, bestAudio.content,
                 likes = si.likeCount, dislikes = si.dislikeCount,
                 views = si.viewCount, uploader = si.uploaderName ?: "",
+                quality = bestVideoOnly.resolution.orEmpty(),
             )
         }
         // Muxed fallback: prefer H.264 at/below the cap (muxed tops out ~720p).
@@ -221,6 +230,7 @@ object YouTubeService {
             si.name, muxed.content, videoUrl, null,
             likes = si.likeCount, dislikes = si.dislikeCount,
             views = si.viewCount, uploader = si.uploaderName ?: "",
+            quality = muxed.resolution.orEmpty(),
         )
     }
 

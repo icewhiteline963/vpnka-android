@@ -2025,7 +2025,19 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                         // ничего вообще.
                         OverlayPill(spLabel, onClick = null)
                         Spacer(Modifier.weight(1f))
-                        OverlayPill(if (busy) "…" else "качество") { openPlayQuality() }
+                        // Показываем ТЕКУЩЕЕ качество, а не слово «качество».
+                        //
+                        // Плашка называлась одинаково всегда, и узнать, в
+                        // каком качестве идёт ролик, можно было только
+                        // открыв список и сверив с ним на глаз. Теперь на
+                        // ней написано «720p», и нажатие открывает выбор.
+                        OverlayPill(
+                            when {
+                                busy -> "…"
+                                pbState.quality.isNotBlank() -> pbState.quality
+                                else -> "качество"
+                            }
+                        ) { openPlayQuality() }
                         Spacer(Modifier.width(6.dp))
                         // На Android 7 маленького окна нет вовсе — кнопка
                         // там молча ничего не делала.
@@ -2206,6 +2218,56 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                     )
                 }
             }
+            // Фоновое воспроизведение — ПЕРЕКЛЮЧАТЕЛЬ прямо под видео.
+            //
+            // Был значком в ряду действий, наравне со «Скачать» и «Позже».
+            // Но это не действие, а НАСТРОЙКА: она не делает ничего сейчас,
+            // а меняет то, что случится потом, — и в ряду одноразовых кнопок
+            // читалась как «нажать, чтобы что-то произошло». Переключатель
+            // говорит о себе сам: видно, включён он или нет, не нажимая.
+            // Подпись объясняет, зачем он: без неё «В фоне» — это два слова,
+            // из которых человек догадывается.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { bgPlay = !bgPlay }
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Играть в фоне",
+                        fontFamily = VpnkaFonts.manrope700,
+                        fontWeight = VpnkaWeight.Bold,
+                        fontSize = 13.sp,
+                        color = VpnkaColors.TextStrong,
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        "Звук продолжит идти, когда вы свернёте приложение "
+                            + "или выйдете из ролика",
+                        fontFamily = VpnkaFonts.manrope600,
+                        fontSize = 11.sp,
+                        lineHeight = 14.sp,
+                        color = VpnkaColors.TextMuted,
+                    )
+                }
+                Spacer(Modifier.width(10.dp))
+                androidx.compose.material3.Switch(
+                    checked = bgPlay,
+                    onCheckedChange = { bgPlay = it },
+                    colors = androidx.compose.material3.SwitchDefaults.colors(
+                        checkedThumbColor = VpnkaColors.OnAccent,
+                        checkedTrackColor = VpnkaColors.Accent,
+                        uncheckedThumbColor = VpnkaColors.TextMuted,
+                        uncheckedTrackColor = VpnkaColors.CardSpeed,
+                    ),
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+
             Text(
                 cleanTitle(pb.title),
                 fontFamily = VpnkaFonts.nunito800, fontSize = 16.sp, lineHeight = 21.sp,
@@ -2345,7 +2407,6 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                         YouTubeFavorites.Fav(pb.pageUrl, pb.title, "", 0L),
                     )
                 }
-                YtQuickAction("🔊", "В фоне", active = bgPlay) { bgPlay = !bgPlay }
                 YtQuickAction("⋯", "Ещё", active = moreOpen) { moreOpen = true }
             }
 
@@ -2667,7 +2728,10 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                                 .clip(RoundedCornerShape(10.dp))
                                 .clickable {
                                     // Swap the stream in place → the keyed player rebuilds at this quality.
-                                    pbState = YouTubeService.Playback(pb.title, opt.videoUrl, pb.pageUrl, opt.audioUrl)
+                                    pbState = YouTubeService.Playback(
+                                        pb.title, opt.videoUrl, pb.pageUrl, opt.audioUrl,
+                                        quality = opt.label,
+                                    )
                                     playQual = null
                                 }
                                 .padding(vertical = 12.dp, horizontal = 6.dp),
