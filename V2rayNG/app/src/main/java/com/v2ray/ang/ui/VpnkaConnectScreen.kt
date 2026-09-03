@@ -393,9 +393,14 @@ fun VpnkaConnectScreen(
                         accent = accent,
                         onClick = onChangeServer,
                     )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        VpnkaStatCard("ЗАГРУЖЕНО", downBytes, Modifier.weight(1f))
-                        VpnkaStatCard("ОТДАНО", upBytes, Modifier.weight(1f))
+                    // Столбиком, отдано сверху (решение владельца).
+                    //
+                    // Рядом две карточки делили и без того узкую правую
+                    // колонку: подписи «ЗАГРУЖЕНО» и «ОТДАНО» упирались в
+                    // край и обрезались на узких экранах.
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        VpnkaStatCard("ОТДАНО", upBytes, Modifier.fillMaxWidth())
+                        VpnkaStatCard("ЗАГРУЖЕНО", downBytes, Modifier.fillMaxWidth())
                     }
                 }
             }
@@ -1148,26 +1153,11 @@ private fun VpnkaHomeServerCard(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(7.dp),
     ) {
-        // Кружок слева — ФЛАГ страны, а не одинаковая оранжевая точка.
+        // Кружка с флагом здесь НЕТ.
         //
-        // Своих картинок флагов в приложении нет, зато флаг есть в имени
-        // узла. `flagOf` для безымянных отдаёт глобус — его считаем «страны
-        // нет» и оставляем градиент, как в макете у «Авто».
-        val flag = flagOf(liveName ?: name).takeIf { it != "🌍" }.orEmpty()
-        Box(
-            modifier = Modifier.size(16.dp).clip(CircleShape)
-                .then(
-                    if (flag.isBlank()) Modifier.background(
-                        Brush.verticalGradient(
-                            listOf(VpnkaColors.FlagCircleStart, accent)
-                        )
-                    ) else Modifier
-                )
-                .border(1.dp, VpnkaColors.fg(0.2f), CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (flag.isNotBlank()) Text(flag, fontSize = 11.sp)
-        }
+        // Имя узла уже начинается с флага страны — кружок повторял его
+        // рядом, мельче и хуже: два одинаковых флага подряд читаются как
+        // ошибка, а не как оформление.
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 // Пока туннель погашен, «СЕЙЧАС ЧЕРЕЗ» — неправда: ни через

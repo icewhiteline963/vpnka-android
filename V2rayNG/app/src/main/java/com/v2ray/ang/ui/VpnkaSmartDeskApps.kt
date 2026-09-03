@@ -74,6 +74,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.webkit.ProxyConfig
@@ -1263,6 +1264,9 @@ private class BrowserTab(
     val canFwd = mutableStateOf(false)
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
+    /** Про ошибку скрипта говорим один раз на страницу, а не сто. */
+    internal var consoleShown = false
+
     /** Пропуск главного фрейма к мосту сохранения паролей.
      *
      * Свой на вкладку и на всё её время. Обновлять на каждую загрузку
@@ -1366,6 +1370,7 @@ private class BrowserTab(
         }.getOrDefault(false)
         webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView?, u: String?, favicon: android.graphics.Bitmap?) {
+                this@BrowserTab.consoleShown = false
                 if (!startScriptInstalled) view?.evaluateJavascript(NO_WEBRTC_JS, null)
                 u?.let { this@BrowserTab.url.value = it }; this@BrowserTab.canBack.value = canGoBack(); this@BrowserTab.canFwd.value = canGoForward()
             }
@@ -1464,6 +1469,26 @@ private class BrowserTab(
         }
         webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(view: WebView?, p: Int) { this@BrowserTab.progress.value = p }
+
+            /**
+             * Ругань страницы — наружу, один раз на загрузку.
+             *
+             * Пустая страница без единой сетевой ошибки означает, что
+             * сломался скрипт, и увидеть это можно только в консоли. Без
+             * этого «просто пустая страница» — тупик: в логах чисто, по
+             * сети всё двести.
+             */
+            override fun onConsoleMessage(
+                m: android.webkit.ConsoleMessage?,
+            ): Boolean {
+                if (m?.messageLevel() == android.webkit.ConsoleMessage.MessageLevel.ERROR &&
+                    !this@BrowserTab.consoleShown
+                ) {
+                    this@BrowserTab.consoleShown = true
+                    SmartDeskToast.show("Скрипт страницы упал: " + m.message().take(120))
+                }
+                return super.onConsoleMessage(m)
+            }
             override fun onReceivedTitle(view: WebView?, t: String?) {
                 if (t.isNullOrBlank()) return
                 this@BrowserTab.title.value = t
@@ -1493,6 +1518,15 @@ private class BrowserTab(
  *
  * Ставим заглушки, а не удаляем свойства: сайт, который просто проверяет
  * наличие RTCPeerConnection, не должен падать.
+ *
+ * И свойство остаётся ПЕРЕЗАПИСЫВАЕМЫМ. Раньше оно ставилось намертво
+ * (`writable:false, configurable:false`), и любая попытка страницы
+ * присвоить своё значение — а так делают почти все плееры и полифилы —
+ * бросала TypeError. Скрипт после этого не выполнялся вовсе: страница
+ * открывалась ПУСТОЙ, без единой ошибки в сети, и понять причину со
+ * стороны было нельзя. Защита от этого не слабеет: подменённая функция
+ * всё равно бросает при ВЫЗОВЕ, а ради «сайт не подменит заглушку» ломать
+ * каждый плеер — плохой размен.
  */
 private const val NO_WEBRTC_JS = """
 (function(){
@@ -1501,7 +1535,7 @@ private const val NO_WEBRTC_JS = """
     var names = ['RTCPeerConnection','webkitRTCPeerConnection','mozRTCPeerConnection',
                  'RTCDataChannel','webkitRTCDataChannel'];
     for (var i=0;i<names.length;i++){
-      try { Object.defineProperty(window, names[i], { value: block, writable:false, configurable:false }); } catch(e){}
+      try { Object.defineProperty(window, names[i], { value: block, writable:true, configurable:true }); } catch(e){}
     }
     if (navigator.mediaDevices) {
       try { navigator.mediaDevices.getUserMedia = function(){ return Promise.reject(new DOMException('Отключено','NotAllowedError')); }; } catch(e){}
@@ -1818,10 +1852,23 @@ private fun BrowserApp() {
                         .onFocusChanged { if (it.isFocused) hadFocus = true else if (hadFocus) editing = false },
                 )
             } else {
+                // Приватная вкладка выглядит ИНАЧЕ, а не отличается одним
+                // значком: цена ошибки здесь — сама приватность, и «в какой
+                // я вкладке» должно читаться боковым зрением. Тёмная
+                // подложка, фиолетовая рамка и слово «Приватно» у адреса.
+                val privacyTint = androidx.compose.ui.graphics.Color(0xFF8B5CF6)
                 Row(
                     modifier = Modifier.weight(1f).clip(RoundedCornerShape(15.dp))
-                        .background(VpnkaColors.CardServer)
-                        .border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(15.dp))
+                        .background(
+                            if (active.incognito) privacyTint.copy(alpha = 0.16f)
+                            else VpnkaColors.CardServer
+                        )
+                        .border(
+                            1.dp,
+                            if (active.incognito) privacyTint.copy(alpha = 0.55f)
+                            else VpnkaColors.Hairline,
+                            RoundedCornerShape(15.dp),
+                        )
                         .clickable {
                             val u = active.url.value
                             // Select the whole URL so the first keystroke replaces it.
@@ -1842,6 +1889,15 @@ private fun BrowserApp() {
                     // цена ошибки здесь — ровно приватность.
                     if (active.incognito) {
                         Text("🕶", fontSize = 12.sp)
+                        Spacer(Modifier.width(7.dp))
+                        Text(
+                            "Приватно",
+                            fontFamily = VpnkaFonts.manrope700,
+                            fontSize = 10.sp,
+                            letterSpacing = 0.06.em,
+                            color = privacyTint,
+                            maxLines = 1,
+                        )
                     } else {
                         Text(if (active.url.value.startsWith("https")) "🔒" else "⚠", fontSize = 12.sp)
                     }
