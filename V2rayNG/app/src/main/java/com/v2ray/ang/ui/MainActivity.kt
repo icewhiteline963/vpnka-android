@@ -351,6 +351,19 @@ class MainActivity : HelperBaseComponentActivity() {
     override fun onResume() {
         super.onResume()
         foregroundTick++
+        // Код входа мог приехать через UrlSchemeActivity, которая вернула нас
+        // БЕЗ доставки интента в onNewIntent (человек вернулся переключением, а
+        // не кнопкой бота). Тогда onCreate/onNewIntent не срабатывали, и вход
+        // завершался только после перезапуска. onResume ловит любой возврат;
+        // vpnkaPendingLoginCode переживает паузу, а consume пустой — no-op.
+        consumeLoginFromLink()
+        // Вернулись из привязки Telegram: месяц мог активироваться на этом же
+        // аккаунте на сервере. Перечитываем подписку, иначе на экране остаётся
+        // старый суточный триал («кончается меньше чем через сутки»).
+        if (awaitTelegramReturn) {
+            awaitTelegramReturn = false
+            subRefreshRequest++
+        }
         val stored = MmkvManager.decodeSettingsString(KEY_PENDING_PAYMENT)
         val pid = VpnkaLogic.pendingId(stored) ?: return
         // Предельный срок жизни ключа. Ответ «ещё платят» мы получаем и когда
@@ -591,6 +604,9 @@ class MainActivity : HelperBaseComponentActivity() {
     /** Включение отложено до приезда подписки — см. [startV2Ray]. */
     private var pendingStartAfterImport = false
     private var telegramLinkPending by mutableStateOf(false)
+    /** Открыли ссылку привязки Telegram — на следующем onResume перечитать
+     *  подписку (месяц мог активироваться на сервере при привязке). */
+    private var awaitTelegramReturn = false
     private var openedTicket by mutableStateOf<VpnkaAccount.SupportTicket?>(null)
     private var showRecovery by mutableStateOf(false)
     // The rating sheet, and the server's own words when it was raised by a
@@ -2484,6 +2500,7 @@ class MainActivity : HelperBaseComponentActivity() {
                     return@launch
                 }
                 telegramLinkOpenedAt = android.os.SystemClock.elapsedRealtime()
+                awaitTelegramReturn = true
                 openTelegramUrl(url)
             } finally {
                 telegramLinkBusy = false
