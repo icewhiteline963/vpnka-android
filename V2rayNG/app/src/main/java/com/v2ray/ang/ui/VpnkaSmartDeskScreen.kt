@@ -134,7 +134,24 @@ val SMARTDESK_CATALOG = listOf(
 )
 
 private val CATALOG_BY_ID = SMARTDESK_CATALOG.associateBy { it.id }
-private val DEFAULT_INSTALLED = listOf("store", "messages", "help", "calendar", "contacts", "browser", "youtube", "notes")
+
+/**
+ * Приложения, отложенные до следующей выкатки (решение владельца 03.09).
+ *
+ * Скрыты, а не удалены: код их цел, и вернуть их — значит убрать id из
+ * этого множества. Скрытие сквозное — они пропадают и с рабочего стола, и
+ * из витрины магазина, и из сетки значков на главном экране, иначе
+ * «убрали» означало бы «убрали в одном месте из трёх».
+ *
+ * Магазин здесь же: устанавливать из него сейчас нечего — на столе ровно
+ * те три приложения, что остаются, и все они уже стоят.
+ */
+private val SMARTDESK_HIDDEN = setOf("store", "calendar", "contacts", "notes", "help")
+
+/** Что показываем: витрина магазина и всё, что видит человек. */
+val SMARTDESK_VISIBLE = SMARTDESK_CATALOG.filter { it.id !in SMARTDESK_HIDDEN }
+
+private val DEFAULT_INSTALLED = listOf("messages", "browser", "youtube")
 
 // ---- «Android 17» look: gradient wallpapers + colourful squircle app tiles ----
 
@@ -176,8 +193,11 @@ private const val KEY_NOTES_SEEDED = "vpnka_smartdesk_notes_seeded"
 
 fun installedIds(): List<String> {
     val stored = MmkvManager.decodeSettingsString(KEY_INSTALLED)
+    // Скрытые отсеиваем и у тех, у кого они уже стояли: раскладка на
+    // телефоне живёт годами, и «убрали из умолчаний» её бы не изменило.
     var ids = if (stored == null) DEFAULT_INSTALLED
-        else stored.split(",").filter { it.isNotBlank() && it in CATALOG_BY_ID }
+        else stored.split(",")
+            .filter { it.isNotBlank() && it in CATALOG_BY_ID && it !in SMARTDESK_HIDDEN }
     // Fresh install already has these via DEFAULT_INSTALLED — mark them seeded so
     // that if the user later removes one, the migration below never re-adds it.
     if (stored == null) {
@@ -205,16 +225,20 @@ fun installedIds(): List<String> {
         MmkvManager.encodeSettings(KEY_NOTES_SEEDED, "1")
         seeded = true
     }
+    ids = ids.filter { it !in SMARTDESK_HIDDEN }
     if (seeded) {
-        MmkvManager.encodeSettings(KEY_INSTALLED, (listOf("store") + ids).distinct().joinToString(","))
+        MmkvManager.encodeSettings(KEY_INSTALLED, ids.distinct().joinToString(","))
     }
-    return (listOf("store") + ids).distinct()
+    // «store» больше не подставляется принудительно — он в скрытых.
+    return (if ("store" in SMARTDESK_HIDDEN) ids else listOf("store") + ids).distinct()
 }
 
 fun setInstalled(ids: List<String>) {
+    val kept = ids.filter { it !in SMARTDESK_HIDDEN }
     MmkvManager.encodeSettings(
         KEY_INSTALLED,
-        (listOf("store") + ids).distinct().joinToString(","),
+        (if ("store" in SMARTDESK_HIDDEN) kept else listOf("store") + kept)
+            .distinct().joinToString(","),
     )
 }
 

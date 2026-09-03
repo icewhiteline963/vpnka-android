@@ -2013,7 +2013,7 @@ private fun VpnkaStoreApp() {
                 modifier = Modifier.padding(bottom = 10.dp),
             )
         }
-        items(SMARTDESK_CATALOG.filter { it.removable }, key = { it.id }) { app ->
+        items(SMARTDESK_VISIBLE.filter { it.removable }, key = { it.id }) { app ->
             val isIn = app.id in installed
             Row(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp)
