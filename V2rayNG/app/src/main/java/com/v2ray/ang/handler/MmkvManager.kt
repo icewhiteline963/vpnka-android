@@ -830,6 +830,36 @@ object MmkvManager {
         return id
     }
 
+    /**
+     * Запомнить прежний отпечаток вместе с аккаунтом, которому он служил.
+     *
+     * Смена отпечатка при выходе нужна для чужого телефона, а не для своего:
+     * при возврате в ТОТ ЖЕ аккаунт новый отпечаток — это новое устройство в
+     * пуле подписки. Цикл «вышел-вошёл» жёг место за местом, и владелец
+     * упёрся в «15/15», имея на руках три устройства.
+     */
+    fun rememberInstallOwner(clientId: Long?) {
+        val id = settingsStorage.decodeString(KEY_VPNKA_INSTALL_ID)
+        if (clientId == null || id.isNullOrBlank()) return
+        settingsStorage.encode(KEY_VPNKA_PREV_INSTALL, "$clientId:$id")
+    }
+
+    /**
+     * Вернуть прежний отпечаток, если вошли в ТОТ ЖЕ аккаунт.
+     *
+     * @return true — отпечаток восстановлен, устройство осталось прежним.
+     */
+    fun restoreInstallIdFor(clientId: Long?): Boolean {
+        if (clientId == null) return false
+        val saved = settingsStorage.decodeString(KEY_VPNKA_PREV_INSTALL) ?: return false
+        val owner = saved.substringBefore(':').toLongOrNull() ?: return false
+        val id = saved.substringAfter(':').takeIf { it.isNotBlank() } ?: return false
+        if (owner != clientId) return false
+        settingsStorage.encode(KEY_VPNKA_INSTALL_ID, id)
+        settingsStorage.removeValueForKey(KEY_VPNKA_PREV_INSTALL)
+        return true
+    }
+
     private const val KEY_BETA_CHANNEL = "vpnka_beta_channel"
 
     /**
@@ -850,6 +880,9 @@ object MmkvManager {
     }
 
     private const val KEY_VPNKA_INSTALL_ID = "vpnka_install_id"
+
+    /** «<id аккаунта>:<прежний отпечаток>» — см. [rememberInstallOwner]. */
+    private const val KEY_VPNKA_PREV_INSTALL = "vpnka_prev_install"
 
     /**
      * URL the app ships with as its default subscription.

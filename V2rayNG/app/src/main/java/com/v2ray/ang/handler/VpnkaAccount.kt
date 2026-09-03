@@ -101,7 +101,13 @@ object VpnkaAccount {
         @SerializedName("is_trial") val isTrial: Boolean = false,
     )
 
-    private data class TokenResponse(@SerializedName("token") val token: String?)
+    private data class TokenResponse(
+        @SerializedName("token") val token: String?,
+        /** Чей это аккаунт — по нему решаем, возвращать ли прежний
+         *  отпечаток установки. Старый сервер поля не пришлёт: тогда
+         *  ведём себя как раньше и заводим новый. */
+        @SerializedName("client_id") val clientId: Long? = null,
+    )
 
     private fun http() = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -151,14 +157,25 @@ object VpnkaAccount {
                         IllegalStateException("HTTP ${resp.code}")
                     )
                 }
-                val token = JsonUtil
+                val parsed = JsonUtil
                     .fromJsonSafe(resp.body?.string().orEmpty(), TokenResponse::class.java)
-                    ?.token
+                val token = parsed?.token
                     ?: return@withContext Result.failure(
                         IllegalStateException("no token in response")
                     )
                 MmkvManager.setAccountToken(token)
                 MmkvManager.setSessionRevoked(false)
+                // Вернулись в СВОЙ аккаунт — возвращаем и прежний отпечаток
+                // установки: иначе телефон считается новым устройством и
+                // занимает ещё одно место в пуле подписки.
+                if (MmkvManager.restoreInstallIdFor(parsed.clientId)) {
+                    LogUtil.i(AppConfig.TAG, "install id restored for same account")
+                }
+                // И запоминаем пару заново — уже для СЛЕДУЮЩЕГО выхода.
+                // Делаем это здесь, а не при выходе: id аккаунта сервер
+                // называет именно в ответе на вход, и лишний запрос в
+                // сеть на пути «выйти» был бы ни к чему.
+                MmkvManager.rememberInstallOwner(parsed.clientId)
                 Result.success(Unit)
             }
         } catch (e: Exception) {
