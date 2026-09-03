@@ -256,6 +256,8 @@ class MainActivity : HelperBaseComponentActivity() {
         if (intent.getStringExtra(EXTRA_OPEN) == OPEN_MESSENGER) openMessengerFromIntent(intent)
         if (intent.getStringExtra(EXTRA_OPEN) == OPEN_CALL) openCallFromIntent()
         openDeskFromIntent(intent)
+        // Приложение уже было открыто, когда пришли по ссылке из бота.
+        consumeLoginFromLink()
     }
 
     /**
@@ -492,6 +494,20 @@ class MainActivity : HelperBaseComponentActivity() {
             AngApplication.vpnkaJustPaid = false
             vpnkaOpenProfileAfterPayment = true
         }
+        consumeLoginFromLink()
+    }
+
+    /**
+     * Код из ссылки «Вернуться в приложение» — в токен, без экранов.
+     *
+     * Человек уже сделал всё, что от него требовалось: открыл бота и
+     * нажал кнопку. Просить его после этого переписать шесть знаков в
+     * поле — значит поставить ещё одну дверь там, где человек уже вошёл.
+     */
+    private fun consumeLoginFromLink() {
+        val code = AngApplication.vpnkaPendingLoginCode ?: return
+        AngApplication.vpnkaPendingLoginCode = null
+        vpnkaLoginFromLink = code
     }
 
     // Which overlay is open, owned by the activity rather than by the
@@ -648,6 +664,9 @@ class MainActivity : HelperBaseComponentActivity() {
     /** Set by the post-payment link; consumed on the next composition. */
     private var vpnkaOpenProfileAfterPayment = false
 
+    /** Код входа приехал ссылкой из бота — меняем его на токен молча. */
+    private var vpnkaLoginFromLink by mutableStateOf<String?>(null)
+
     /** Просьба перечитать подписки, которую можно подать ИЗВНЕ композиции.
      *
      *  Обычный `subReload` живёт внутри экрана, и из `onResume` до него не
@@ -701,6 +720,29 @@ class MainActivity : HelperBaseComponentActivity() {
                 showSubscription = true
                 subReload++
             }
+        }
+
+        // Вход по ссылке из бота: код меняем на токен прямо здесь, без
+        // экрана ввода. Тост нужен обязательно — иначе для человека
+        // «нажал в боте, вернулся» выглядит как «ничего не произошло».
+        LaunchedEffect(vpnkaLoginFromLink) {
+            val code = vpnkaLoginFromLink ?: return@LaunchedEffect
+            vpnkaLoginFromLink = null
+            VpnkaAccount.signIn(code).fold(
+                onSuccess = {
+                    signedIn = true
+                    subReload++
+                    subRefreshRequest++
+                    toast("Готово, вы вошли")
+                },
+                onFailure = { e ->
+                    if (e is VpnkaAccount.InvalidCodeException) {
+                        toast("Код уже использован или устарел — возьмите новый в боте")
+                    } else {
+                        toast("Не удалось войти — проверьте интернет")
+                    }
+                },
+            )
         }
 
         // Fetch only while the screen is open, and again on retry. Polling
@@ -1822,6 +1864,7 @@ class MainActivity : HelperBaseComponentActivity() {
                 onToggle = ::handleFabAction,
                 onOpenProfile = { showSubscription = true },
                 telegramLinked = subInfo?.telegramLinked == true,
+                onLinkTelegram = { openTelegramLinkGuarded() },
                 onChangeServer = { showServerPicker = true },
                 // The launch check only lights the dot; the screen behind the
                 // button does the real check, download and install, and it

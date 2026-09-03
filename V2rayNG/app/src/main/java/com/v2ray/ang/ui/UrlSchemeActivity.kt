@@ -59,6 +59,18 @@ class UrlSchemeActivity : BaseComponentActivity() {
                             AngApplication.vpnkaJustPaid = true
                         }
 
+                        // Возврат из бота с кодом входа. Ничего не
+                        // разбираем и ничего не спрашиваем: код одноразовый
+                        // и живёт десять минут, менять его на токен —
+                        // работа MainActivity.
+                        "login" -> {
+                            val code = intent.data?.getQueryParameter("code")
+                                ?.trim()?.uppercase().orEmpty()
+                            if (code.isNotEmpty() && code.length <= 32) {
+                                AngApplication.vpnkaPendingLoginCode = code
+                            }
+                        }
+
                         else -> {
                             toastError(R.string.toast_failure)
                         }

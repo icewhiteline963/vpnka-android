@@ -41,6 +41,17 @@ class AngApplication : Application() {
          */
         var vpnkaJustPaid: Boolean = false
 
+        /**
+         * Код входа, приехавший ссылкой из бота («Вернуться в приложение»).
+         *
+         * Бот выдаёт код и предлагает вернуться сюда. До сих пор возврат
+         * означал: закрыть Телеграм, найти приложение, открыть профиль,
+         * найти «уже есть код», переписать шесть знаков — на каждом шаге
+         * теряются люди. Ссылка приносит код с собой, MainActivity меняет
+         * его на токен сама.
+         */
+        var vpnkaPendingLoginCode: String? = null
+
         /** Long-lived scope for first-launch work that must not block it. */
         internal val vpnkaScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     }

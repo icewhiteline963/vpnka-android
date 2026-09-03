@@ -128,7 +128,7 @@ val SMARTDESK_CATALOG = listOf(
     DeskApp("calendar", "Календарь", "📅", "Календарь с событиями и напоминаниями"),
     DeskApp("contacts", "Контакты", "👤", "Ваши контакты: звонки, почта, поиск"),
     DeskApp("browser", "Браузер", "🌐", "Веб-браузер — весь трафик через VPN"),
-    DeskApp("youtube", "YouTube", "▶️", "YouTube без рекламы, через VPN"),
+    DeskApp("youtube", "Youtube загрузчик", "▶️", "YouTube без рекламы, через VPN"),
     DeskApp("notes", "Заметки", "📝", "Заметки с форматированием и списки покупок"),
     DeskApp("help", "Помощь", "🛡️", "Как устроена приватность VPNka облака"),
 )
@@ -349,7 +349,12 @@ fun VpnkaSmartDeskScreen(
                 // только если внутри идти некуда — закрываем приложение.
                 openApp != null -> {
                     if (SmartDeskBackStack.handle()) true
-                    else { openApp = null; deskTick++; true }
+                    // Выход из приложения ведёт на ГЛАВНЫЙ экран, а не на
+                    // стол. Стол — это витрина значков, и попадать на неё
+                    // при выходе из загрузчика видео человеку незачем: он
+                    // пришёл из главного экрана, туда и возвращается. Мы
+                    // же сами перенесли значки на главный.
+                    else { openApp = null; deskTick++; onBack(); true }
                 }
                 else -> false
             }
@@ -824,7 +829,9 @@ fun VpnkaSmartDeskScreen(
               ) {
                 VpnkaSmartDeskAppScreen(
                     appId = app.id,
-                    onBack = { openApp = null; deskTick++ },
+                    // И «Главная» в нижней панели, и «назад» из самого
+                    // приложения ведут в одно место — на главный экран.
+                    onBack = { openApp = null; deskTick++; onBack() },
                 )
               }
             }

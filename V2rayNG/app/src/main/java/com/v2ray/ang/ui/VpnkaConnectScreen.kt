@@ -174,6 +174,8 @@ fun VpnkaConnectScreen(
     activeDevicesUsed: Int?,
     activeDevicesLimit: Int?,
     telegramLinked: Boolean,
+    /** «Войти через Телеграм» — открыть бота (с предложением поднять ВПН). */
+    onLinkTelegram: () -> Unit,
     onLeaveReview: () -> Unit,
 ) {
     // Подключение перекрашивает ВЕСЬ набор, а не один цветок.
@@ -490,7 +492,10 @@ fun VpnkaConnectScreen(
                     if (smartDeskEnabled) {
                         VpnkaHomeRow(
                             icon = "▶",
-                            label = "Youtube качалка",
+                            // То же имя, что у значка на главном: два
+                            // названия у одной вещи человек читает как две
+                            // разные вещи.
+                            label = "Youtube загрузчик",
                             right = "без рекламы",
                             accent = accent,
                             onAccent = onAccent,
@@ -542,7 +547,13 @@ fun VpnkaConnectScreen(
                         primary = true,
                         accent = accent,
                         onAccent = onAccent,
-                        onClick = onOpenProfile,
+                        // Строка делает ровно то, что написано: открывает
+                        // бота. Раньше она вела в профиль — то есть на
+                        // экран, где ту же кнопку надо было нажать второй
+                        // раз, и по дороге терялось предложение поднять
+                        // ВПН, без которого Телеграм у большинства не
+                        // открывается.
+                        onClick = onLinkTelegram,
                     )
                 }
                 planRow()

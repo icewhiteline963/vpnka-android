@@ -271,6 +271,9 @@
                      browser journey, so the only way home is a link the
                      browser can follow. -->
                 <data android:host="paid" />
+                <!-- Кнопка «Вернуться в приложение» в боте: ссылка несёт
+                     код входа, приложение меняет его на токен само. -->
+                <data android:host="login" />
             </intent-filter>
         </activity>
         <activity

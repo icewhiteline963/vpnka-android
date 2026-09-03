@@ -1005,7 +1005,14 @@ object MmkvManager {
      * палитру, поэтому умолчание перевёрнуто. Кто выбрал светлую руками —
      * останется на светлой: у него значение записано.
      */
-    fun isDarkTheme(): Boolean = decodeSettingsBool(VPNKA_DARK_THEME, true)
+    /**
+     * Тёмная ли тема. По умолчанию — НЕТ, светлая (решение владельца).
+     *
+     * Умолчание переворачивали в тёмное, когда палитру «Поток» делали
+     * основной. Кто выбирал тему руками, тот при смене умолчания ничего
+     * не заметит: у него записано своё значение.
+     */
+    fun isDarkTheme(): Boolean = decodeSettingsBool(VPNKA_DARK_THEME, false)
 
     fun setDarkTheme(on: Boolean) = encodeSettings(VPNKA_DARK_THEME, on)
 
