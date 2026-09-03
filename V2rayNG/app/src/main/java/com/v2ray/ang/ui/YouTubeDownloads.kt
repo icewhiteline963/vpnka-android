@@ -61,7 +61,12 @@ object YouTubeDownloads {
      * перезапуска вкладка «Загрузки» была пустой, хотя файлы на месте.
      * Восстанавливаем как готовые: прогресс и скорость у них уже в прошлом.
      */
+    @Synchronized
     fun restore() {
+        // Зовут теперь из ДВУХ мест — с главного экрана и с экрана «Видео»,
+        // из разных потоков. Проверка-и-установка флага не атомарна, а
+        // `entries` — не потокобезопасный список: без замка две проверки
+        // могли пройти одновременно и добавить журнал дважды.
         if (restored) return
         restored = true
         // Новое сверху — как у живых загрузок, они добавляются в начало.
@@ -79,6 +84,7 @@ object YouTubeDownloads {
         }
     }
 
+    @Volatile
     private var restored = false
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val gate = Semaphore(2)

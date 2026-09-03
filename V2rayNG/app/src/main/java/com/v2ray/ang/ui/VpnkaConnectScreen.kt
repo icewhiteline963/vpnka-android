@@ -205,13 +205,42 @@ fun VpnkaConnectScreen(
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(isRunning, lifecycleOwner) {
         if (!isRunning) { exit = null; leaking = false; return@LaunchedEffect }
+        // Обвинять в утечке — со ВТОРОГО подряд ответа, снимать обвинение —
+        // после трёх подряд молчаний.
+        //
+        // Одиночный ответ «вижу твой настоящий адрес» бывает и на ровном
+        // месте: проба уходит в момент переподключения ядра. А раньше
+        // молчание («не дозвонились») обвинение не снимало вовсе — одна
+        // неудачная проба, и пилюля до перезапуска туннеля писала «МИМО
+        // VPN» при исправно работающем ВПН.
+        var badInARow = 0
+        var silentInARow = 0
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             while (true) {
                 val e = VpnkaExit.current()
                 when {
-                    e == null -> Unit            // не дозвонились — судить не о чем
-                    e.onVpn -> { exit = e; leaking = false }
-                    else -> leaking = true       // сервер видит наш реальный адрес
+                    e == null -> {
+                        silentInARow++
+                        badInARow = 0
+                        if (silentInARow >= 3) leaking = false
+                    }
+                    e.onVpn -> {
+                        silentInARow = 0
+                        badInARow = 0
+                        exit = e
+                        leaking = false
+                    }
+                    else -> {
+                        silentInARow = 0
+                        badInARow++
+                        if (badInARow >= 2) {
+                            leaking = true
+                            // Страну забываем: мы идём НЕ через неё, а
+                            // карточка продолжала показывать последнюю
+                            // известную рядом с криком «мимо VPN».
+                            exit = null
+                        }
+                    }
                 }
                 delay(10_000)
             }
@@ -573,19 +602,21 @@ private fun VpnkaAppGrid(isRunning: Boolean, onOpen: (String) -> Unit) {
         modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        val rows = installed.chunked(4)
-        rows.forEach { row ->
+        installed.chunked(4).forEachIndexed { rowIndex, row ->
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                row.forEach { app ->
+                row.forEachIndexed { colIndex, app ->
                     VpnkaAppTile(
                         app = app,
                         // Порядковый номер нужен для гаммы: цвета плиток
                         // идут лентой по кругу, а не назначены каждому
-                        // приложению по отдельности.
-                        index = installed.indexOf(app),
+                        // приложению по отдельности. Считаем его по месту
+                        // в сетке: `indexOf` — это поиск по списку внутри
+                        // цикла по тому же списку, да ещё и одинаковый
+                        // номер для двух одинаковых значков.
+                        index = rowIndex * 4 + colIndex,
                         isRunning = isRunning,
                         onOpen = onOpen,
                         modifier = Modifier.weight(1f),
@@ -657,7 +688,12 @@ private fun VpnkaDownloadWidget(
     // Журнал скачанного живёт на диске, а список — в памяти, и поднимал
     // его только экран «Видео». До первого захода туда полоска на главном
     // подводила итог «0 Б · 0» человеку с сорока файлами на диске.
-    LaunchedEffect(Unit) { YouTubeDownloads.restore() }
+    LaunchedEffect(Unit) {
+        // В фоне и под страховкой: restore() расшифровывает MMKV и
+        // разбирает до трёхсот записей, а исключение внутри LaunchedEffect
+        // роняет процесс целиком. Экран «Видео» зовёт её ровно так же.
+        withContext(Dispatchers.IO) { runCatching { YouTubeDownloads.restore() } }
+    }
     val entries = YouTubeDownloads.entries
     // Сначала то, что РЕАЛЬНО качается: живые загрузки добавляются в
     // начало списка, и после «скачать всё» первым оказывался последний

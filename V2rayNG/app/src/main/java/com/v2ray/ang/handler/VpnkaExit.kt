@@ -38,11 +38,6 @@ object VpnkaExit {
     )
 
     /**
-     * The current exit, or null when it can't be determined (VPN down, local
-     * proxy not up yet, or the probe timed out). Callers should keep the last
-     * good value rather than flicker to "unknown" on a single miss.
-     */
-    /**
      * Клиент на порт, а не на вызов.
      *
      * Строился заново на каждый опрос — шесть штук в минуту, и каждый
@@ -53,8 +48,15 @@ object VpnkaExit {
     @Volatile
     private var cached: Pair<Int, OkHttpClient>? = null
 
+    @Synchronized
     private fun clientFor(port: Int): OkHttpClient {
-        cached?.let { (p, c) -> if (p == port) return c }
+        cached?.let { (p, c) ->
+            if (p == port) return c
+            // Порт сменился — старый клиент гасим, иначе его пул держит
+            // соединения на прежний, уже мёртвый прокси ещё пять минут.
+            c.dispatcher.executorService.shutdown()
+            c.connectionPool.evictAll()
+        }
         val built = OkHttpClient.Builder()
             .proxy(Proxy(Proxy.Type.HTTP, InetSocketAddress(AppConfig.LOOPBACK, port)))
             .connectTimeout(8, TimeUnit.SECONDS)
@@ -64,6 +66,11 @@ object VpnkaExit {
         return built
     }
 
+    /**
+     * The current exit, or null when it can't be determined (VPN down, local
+     * proxy not up yet, or the probe timed out). Callers should keep the last
+     * good value rather than flicker to "unknown" on a single miss.
+     */
     suspend fun current(): Exit? = withContext(Dispatchers.IO) {
         val port = SettingsManager.getHttpPort()
         if (port == 0) return@withContext null
