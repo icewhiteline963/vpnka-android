@@ -345,44 +345,50 @@ fun VpnkaConnectScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Box(
-                    modifier = Modifier.size(146.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    VpnkaConnectButton(
-                        isRunning = isRunning,
-                        isLoading = isLoading,
-                        accent = accent,
-                        onToggle = onToggle,
-                        outerSize = 146.dp,
+                // Время в сети — ПОД кнопкой, а не в правой колонке.
+                //
+                // Там оно занимало целую строку рядом с сервером и
+                // счётчиками и распирало правую колонку; под цветком для
+                // него есть место, и читается оно там как подпись к
+                // подключению, каковой и является.
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Box(
+                        modifier = Modifier.size(146.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        VpnkaConnectButton(
+                            isRunning = isRunning,
+                            isLoading = isLoading,
+                            accent = accent,
+                            onToggle = onToggle,
+                            outerSize = 146.dp,
+                        )
+                    }
+                    Text(
+                        text = "В СЕТИ",
+                        fontFamily = VpnkaFonts.manrope600,
+                        fontWeight = VpnkaWeight.Semi,
+                        fontSize = 9.sp,
+                        letterSpacing = 0.14.em,
+                        color = VpnkaColors.fg(0.5f),
+                    )
+                    Spacer(Modifier.height(3.dp))
+                    // Моноширинный и 700, а не 900: на пропорциональном
+                    // жирном строка дёргалась на каждой секунде.
+                    Text(
+                        text = formatSession(sessionSeconds),
+                        fontFamily = VpnkaFonts.mono,
+                        fontWeight = VpnkaWeight.Bold,
+                        fontSize = 22.sp,
+                        letterSpacing = (-0.5).sp,
+                        color = VpnkaColors.TextStrong,
+                        maxLines = 1,
                     )
                 }
                 Column(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(9.dp),
                 ) {
-                    Column {
-                        Text(
-                            text = "В СЕТИ",
-                            fontFamily = VpnkaFonts.manrope600,
-                            fontWeight = VpnkaWeight.Semi,
-                            fontSize = 9.sp,
-                            letterSpacing = 0.14.em,
-                            color = VpnkaColors.fg(0.5f),
-                        )
-                        Spacer(Modifier.height(5.dp))
-                        // Моноширинный и 700, а не 900: на пропорциональном
-                        // жирном строка дёргалась на каждой секунде.
-                        Text(
-                            text = formatSession(sessionSeconds),
-                            fontFamily = VpnkaFonts.mono,
-                            fontWeight = VpnkaWeight.Bold,
-                            fontSize = 27.sp,
-                            letterSpacing = (-0.5).sp,
-                            color = VpnkaColors.TextStrong,
-                            maxLines = 1,
-                        )
-                    }
                     // «Сейчас через» — сервер, на котором мы прямо сейчас.
                     VpnkaHomeServerCard(
                         name = serverName,
@@ -1206,47 +1212,48 @@ private fun VpnkaHomeServerCard(
 @Composable
 private fun VpnkaStatCard(label: String, bytes: Long, modifier: Modifier = Modifier) {
     val (value, unit) = formatTraffic(bytes)
-    Column(
+    // Одна строка: подпись слева, число справа.
+    //
+    // Раньше подпись стояла НАД числом, и «ЗАГРУЖЕНО» в узкой правой
+    // колонке не помещалось — переносилось на вторую строку, отчего
+    // карточка вырастала вдвое и съедала место у всего, что ниже. В строку
+    // помещается и то, и другое, а высоты нужно вдвое меньше.
+    Row(
         modifier = modifier
             .clip(RoundedCornerShape(11.dp))
             .background(VpnkaColors.CardSpeed)
             .border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(11.dp))
-            .padding(horizontal = 10.dp, vertical = 9.dp),
+            .padding(horizontal = 10.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = label,
             fontFamily = VpnkaFonts.manrope600,
             fontWeight = VpnkaWeight.Semi,
-            fontSize = 10.sp,
+            fontSize = 9.sp,
             letterSpacing = 0.06.em,
             color = VpnkaColors.fg(0.8f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
         )
-        Spacer(Modifier.height(5.dp))
-        // Значение и единица — по БАЗОВОЙ ЛИНИИ: в макете они в одном
-        // потоке текста, а выравнивание по нижнему краю разводило 13 и 10
-        // на пару точек.
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(
-                text = value,
-                fontFamily = VpnkaFonts.mono,
-                fontWeight = VpnkaWeight.Bold,
-                fontSize = 13.sp,
-                color = VpnkaColors.TextStrong,
-                maxLines = 1,
-                modifier = Modifier.alignByBaseline(),
-            )
-            Spacer(Modifier.width(3.dp))
-            Text(
-                text = unit,
-                fontFamily = VpnkaFonts.manrope600,
-                fontSize = 10.sp,
-                color = VpnkaColors.fg(0.8f),
-                maxLines = 1,
-                modifier = Modifier.alignByBaseline(),
-            )
-        }
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = value,
+            fontFamily = VpnkaFonts.mono,
+            fontWeight = VpnkaWeight.Bold,
+            fontSize = 12.sp,
+            color = VpnkaColors.TextStrong,
+            maxLines = 1,
+        )
+        Spacer(Modifier.width(3.dp))
+        Text(
+            text = unit,
+            fontFamily = VpnkaFonts.manrope600,
+            fontSize = 9.5.sp,
+            color = VpnkaColors.fg(0.8f),
+            maxLines = 1,
+        )
     }
 }
 
