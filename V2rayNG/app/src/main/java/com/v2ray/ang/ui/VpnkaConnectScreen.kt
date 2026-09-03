@@ -1577,9 +1577,15 @@ private fun VpnkaConnectButton(
                 painter = painterResource(R.drawable.vpnka_logo),
                 contentDescription = if (isRunning) "Отключить" else "Подключить",
                 contentScale = ContentScale.Crop,
-                // Подключено — логотип перекрашивается в зелень; выключено —
-                // приглушается, как в макете (grayscale .5).
-                colorFilter = if (isRunning) hueRotate(78f) else desaturate(0.5f),
+                // Подключено — логотип перекрашивается в зелень. Выключено —
+                // остаётся ЯРКИМ.
+                //
+                // В макете на этом месте `grayscale(.5) brightness(.95)`, и
+                // я перенёс это буквально — цветок стал блёклым. Но в
+                // макете под фильтром лежит рисованная заглушка, а у нас
+                // настоящий логотип, и половина цвета из него — это и есть
+                // узнаваемость приложения. Оставляем как в рабочей версии.
+                colorFilter = if (isRunning) hueRotate(78f) else null,
                 modifier = Modifier
                     .fillMaxSize()
                     .scale(LOGO_SCALE),
@@ -1587,14 +1593,6 @@ private fun VpnkaConnectButton(
         }
     }
 }
-
-/** Половинное обесцвечивание — цветок на выключенном экране. */
-private fun desaturate(amount: Float): ColorFilter {
-    val m = ColorMatrix()
-    m.setToSaturation(1f - amount)
-    return ColorFilter.colorMatrix(m)
-}
-
 
 // ---- small helpers ---------------------------------------------------------
 

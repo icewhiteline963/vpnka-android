@@ -53,11 +53,27 @@ fun VpnkaVaultGate(onUnlocked: () -> Unit, onBack: () -> Unit) {
     var shownRecovery by remember { mutableStateOf("") }
 
     suspend fun probe() {
-        if (Vault.isUnlocked()) { onUnlocked(); return }
-        mode = when (Vault.status()) {
-            "exists" -> "unlock"
-            "absent" -> "setup"
-            else -> "offline"   // unreachable — never offer setup (would overwrite)
+        // Сначала спрашиваем СЕРВЕР, потом смотрим свой кэш.
+        //
+        // Раньше первым шёл кэш: раз ключ лежит на телефоне — заходим. Но
+        // сейф на сервере могли сбросить (или это уже другой аккаунт), и
+        // тогда телефон входил со своим ключом в пустоту: расшифровывать
+        // нечего, а предложить завести новый сейф экран не мог — он же
+        // «уже разблокирован». Заново создать сейф становилось нельзя
+        // ничем, кроме выхода из аккаунта.
+        //
+        // Порядок обратный, но осторожный: «нет сейфа» мы принимаем только
+        // от подтверждённого 404 на запрос С ТОКЕНОМ. Недоступный сервер
+        // отвечает «offline», и там кэш по-прежнему главный — иначе сейф
+        // переставал открываться без сети.
+        when (Vault.status()) {
+            "exists" -> if (Vault.isUnlocked()) { onUnlocked(); return } else mode = "unlock"
+            "absent" -> {
+                // Ключ на телефоне осиротел: расшифровывать им нечего.
+                Vault.lock()
+                mode = "setup"
+            }
+            else -> if (Vault.isUnlocked()) { onUnlocked(); return } else mode = "offline"
         }
     }
     LaunchedEffect(Unit) { probe() }

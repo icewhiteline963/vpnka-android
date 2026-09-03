@@ -571,6 +571,9 @@ class MainActivity : HelperBaseComponentActivity() {
     // Telegram link the user asked for while the tunnel was down. Held until
     // the VPN reports itself up, then opened.
     private var askVpnForTelegram by mutableStateOf(false)
+
+    /** Включение отложено до приезда подписки — см. [startV2Ray]. */
+    private var pendingStartAfterImport = false
     private var telegramLinkPending by mutableStateOf(false)
     private var openedTicket by mutableStateOf<VpnkaAccount.SupportTicket?>(null)
     private var showRecovery by mutableStateOf(false)
@@ -2039,9 +2042,34 @@ class MainActivity : HelperBaseComponentActivity() {
         if (mainViewModel.uiState.value.isRunning) mainViewModel.testCurrentServerRealPing()
     }
 
-    private fun startV2Ray() {
+    /**
+     * Профиль выбирается САМ.
+     *
+     * «Выберите профиль» — ответ из v2rayNG, где список серверов человек
+     * набирает руками. У нас его набирает подписка, и выбирать там не из
+     * чего: на свежей установке в списке либо «Авто» и города, либо вообще
+     * пусто, потому что подписку ещё не забрали. Особенно обидно это
+     * выглядело на кнопке «Подключить Телеграм»: приложение само
+     * предлагало включить ВПН, человек соглашался — и упирался в надпись
+     * про выбор, которого он сделать не может.
+     *
+     * @param afterImport true — мы уже сходили за подпиской; второй раз
+     *        не идём, иначе на пустом ответе получится вечный круг.
+     */
+    private fun startV2Ray(afterImport: Boolean = false) {
         if (MmkvManager.getSelectServer().isNullOrEmpty()) {
-            toast(R.string.title_file_chooser); return
+            val guid = autoPickServerGuid()
+            when {
+                guid != null -> setSelectServer(guid)
+                !afterImport -> {
+                    // Списка нет вовсе — тянем подписку и стартуем, когда
+                    // она приедет.
+                    pendingStartAfterImport = true
+                    importConfigViaSub()
+                    return
+                }
+                else -> { toast(R.string.title_file_chooser); return }
+            }
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN &&
             MmkvManager.decodeSettingsBool(AppConfig.PREF_PROXY_SHARING)
@@ -2135,6 +2163,11 @@ class MainActivity : HelperBaseComponentActivity() {
 
     private fun importConfigViaSub() {
         mainViewModel.setLoading(true)
+        // Флаг снимаем СРАЗУ: иначе неудачная попытка оставила бы его
+        // висеть, и следующее обновление подписки — хоть по кнопке, хоть
+        // по расписанию — молча включило бы ВПН само.
+        val startWhenReady = pendingStartAfterImport
+        pendingStartAfterImport = false
         lifecycleScope.launch {
             try {
                 val result = withContext(Dispatchers.IO) {
@@ -2163,6 +2196,11 @@ class MainActivity : HelperBaseComponentActivity() {
                 if (result.configCount > 0) {
                     mainViewModel.setupGroupTab(forceRefresh = true)
                     mainViewModel.refreshSelectedGuid()
+                }
+                // Подписку тянули РАДИ подключения — доводим начатое, а не
+                // возвращаем человека к кнопке, которую он уже нажал.
+                if (startWhenReady && result.configCount > 0) {
+                    startV2Ray(afterImport = true)
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -2386,6 +2424,25 @@ class MainActivity : HelperBaseComponentActivity() {
         } catch (e: android.content.ActivityNotFoundException) {
             Utils.openUri(this, "https://t.me/vpnka_io_bot?start=$start")
         }
+    }
+
+    /**
+     * Какой профиль включить, если человек ещё ничего не выбирал.
+     *
+     * «Авто» — балансировщик, правильный ответ почти для всех; если его в
+     * списке нет, годится первый живой. Смотрим и выбранную подписку, и
+     * общий список: на первом запуске группа ещё не выставлена.
+     */
+    private fun autoPickServerGuid(): String? {
+        val inGroup = MmkvManager.decodeServerList(
+            mainViewModel.uiState.value.selectedGroupId
+        )
+        val guids = if (inGroup.isNotEmpty()) inGroup else MmkvManager.decodeAllServerList()
+        if (guids.isEmpty()) return null
+        val auto = guids.firstOrNull {
+            MmkvManager.decodeServerConfig(it)?.remarks?.contains("Авто") == true
+        }
+        return auto ?: guids.firstOrNull()
     }
 
     private fun setSelectServer(guid: String, byUser: Boolean = false) {
