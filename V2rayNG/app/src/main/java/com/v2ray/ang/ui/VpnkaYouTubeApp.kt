@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -2017,7 +2018,10 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
             SmartDeskChrome.barHidden = true
             onDispose { SmartDeskChrome.barHidden = false }
         }
-        Column(modifier = Modifier.fillMaxSize()) {
+        // Плеер прячет нижний бар (barHidden), а хост держит только status/ime
+        // паддинги — без этого нижние вкладки (главы/транскрипт/заметки) уходили
+        // под системную навигацию. Резервируем её здесь.
+        Column(modifier = Modifier.fillMaxSize().navigationBarsPadding()) {
             // Одна шапка: «‹», название экрана и домен источника мелким моно.
             Row(
                 modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 10.dp),

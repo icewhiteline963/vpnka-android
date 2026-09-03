@@ -327,8 +327,12 @@ private fun SmartDeskAppTabs(current: String, onOpen: (String) -> Unit) {
     )
     Row(
         modifier = Modifier.fillMaxWidth()
+            // Инсет системной навигации резервируем СНАРУЖИ фона (некрашеным),
+            // иначе он закрашивался как часть бара — отсюда «слишком высокая
+            // панель», а асимметричный нижний паддинг гнал иконки вверх.
+            .padding(bottom = navInset)
             .background(VpnkaColors.BgOffCentre)
-            .padding(top = 3.dp, bottom = 3.dp + navInset),
+            .padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
     ) {

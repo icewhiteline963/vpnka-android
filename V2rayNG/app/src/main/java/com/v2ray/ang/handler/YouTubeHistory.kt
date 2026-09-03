@@ -161,4 +161,14 @@ object YouTubeHistory {
     }
 
     fun clearSeen() = MmkvManager.encodeSettings(KEY_SEEN, "[]")
+
+    /** Полная очистка ВСЕЙ истории (запросы, позиции, досмотренное, лента) —
+     *  для выхода из аккаунта: обещание «на телефоне не осталось» должно
+     *  распространяться и на «просмотренное на YouTube», а не только на поиски. */
+    fun clearAll() {
+        MmkvManager.encodeSettings(KEY_Q, "[]")
+        MmkvManager.encodeSettings(KEY_POS, "{}")
+        MmkvManager.encodeSettings(KEY_WATCHED, "{}")
+        MmkvManager.encodeSettings(KEY_SEEN, "[]")
+    }
 }

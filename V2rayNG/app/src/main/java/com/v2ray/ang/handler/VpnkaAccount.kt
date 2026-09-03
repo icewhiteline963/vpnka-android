@@ -858,7 +858,11 @@ object VpnkaAccount {
         runCatching { MmkvManager.clearRecoveryCode() }
         runCatching { BrowserHistory.clear() }
         runCatching { ChatPrefs.clearCalls() }
-        runCatching { YouTubeHistory.clearQueries() }
+        // Раньше стирались только поиски; «просмотренное на YouTube» из обещания
+        // выше оставалось (лента seen с названиями, позиции, досмотренное) —
+        // теперь чистим всё, плюс журнал загрузок (имена + исходные ссылки).
+        runCatching { YouTubeHistory.clearAll() }
+        runCatching { DownloadRecords.clearAll() }
         if (token == null) return@withContext
         try {
             http().newCall(

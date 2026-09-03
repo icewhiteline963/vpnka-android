@@ -193,6 +193,11 @@ class BackupActivity : HelperBaseComponentActivity() {
                 "vpnka_youtube_queries",
                 "vpnka_youtube_positions",
                 "yt_watched_at",
+                // Лента просмотров (названия + авторы) и журнал загрузок
+                // (имена + исходные YouTube-ссылки) — тот же журнал, их тоже
+                // нельзя выпускать в архив, который могут выложить на WebDAV.
+                "vpnka_youtube_seen",
+                "yt_download_records",
             ).forEach { copy.removeValueForKey(it) }
             // MMKV — журнал с ДОЗАПИСЬЮ: `removeValueForKey` дописывает
             // запись «удалено», а прежние байты остаются в файле и уезжают

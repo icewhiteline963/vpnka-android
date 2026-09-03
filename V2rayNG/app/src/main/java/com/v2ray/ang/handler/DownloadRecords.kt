@@ -103,6 +103,10 @@ object DownloadRecords {
 
     fun forget(uri: String) = save(all().filterNot { it.uri == uri })
 
+    /** Полная очистка журнала загрузок (имена + исходные YouTube-ссылки) —
+     *  для выхода из аккаунта. */
+    fun clearAll() = MmkvManager.encodeSettings(KEY, "[]")
+
     /**
      * Скачанное, что уже досмотрено дольше [days] дней назад.
      *
