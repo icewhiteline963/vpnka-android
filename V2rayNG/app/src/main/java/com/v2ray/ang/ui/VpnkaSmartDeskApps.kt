@@ -254,7 +254,12 @@ fun VpnkaSmartDeskAppScreen(
         // Панель прячется, когда приложение занимает экран целиком (чат,
         // плеер) — там свои элементы у нижнего края, и вторая полоса поверх
         // них мешала бы.
-        if (!SmartDeskChrome.barHidden) {
+        // В браузере нижней панели нет.
+        //
+        // У него своя строка адреса и свои кнопки у нижнего края, и вторая
+        // полоса поверх них — это две панели одна на другой. Выход из
+        // браузера остаётся системной «назад»: она ведёт на главный экран.
+        if (!SmartDeskChrome.barHidden && appId != "browser") {
             SmartDeskAppTabs(
                 current = appId,
                 onOpen = { id ->
@@ -1260,6 +1265,24 @@ private class BrowserTab(
         settings.loadWithOverviewMode = true
         settings.builtInZoomControls = true
         settings.displayZoomControls = false
+        // Видео-сайты: то, без чего они не открываются или молчат.
+        //
+        // * Автовоспроизведение. По умолчанию WebView требует «жеста» на
+        //   КАЖДЫЙ элемент media, и плеер, который стартует сам, просто
+        //   стоит чёрным прямоугольником.
+        // * Чужие куки. У WebView сторонние куки выключены, а у видео-сайтов
+        //   на них висит и согласие, и сам плеер (домен CDN — чужой), и
+        //   страница уходит в бесконечную заглушку «примите условия».
+        // * Смешанное содержимое. Страница по https, а картинки и куски
+        //   видео у многих до сих пор по http: WebView их режет молча, и
+        //   получается пустой каркас без единого ролика.
+        settings.mediaPlaybackRequiresUserGesture = false
+        settings.mixedContentMode =
+            android.webkit.WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+        runCatching {
+            android.webkit.CookieManager.getInstance()
+                .setAcceptThirdPartyCookies(this, !incognito)
+        }
         // В инкогнито менеджер паролей молчит: подставлять сохранённый
         // пароль и предлагать записать новый в режиме «без следов» —
         // ровно то, чего от него не ждут.
@@ -1349,6 +1372,67 @@ private class BrowserTab(
             override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
                 val u = request?.url?.toString()
                 return (u?.let { AdBlocker.maybeBlock(it) }) ?: super.shouldInterceptRequest(view, request)
+            }
+
+            /**
+             * Чужие схемы не роняем в ошибку.
+             *
+             * Ссылки `intent://`, `market://`, `tg://` попадались в WebView
+             * как обычный адрес: он пытался их загрузить и показывал
+             * страницу ошибки поверх сайта. У видео-сайтов такие ссылки —
+             * обычное дело (кнопка «открыть в приложении», редирект
+             * рекламной сети), и человек получал ошибку вместо страницы.
+             */
+            override fun shouldOverrideUrlLoading(
+                view: WebView?, request: WebResourceRequest?,
+            ): Boolean {
+                val u = request?.url ?: return false
+                val scheme = u.scheme?.lowercase()
+                if (scheme == "http" || scheme == "https" || scheme == "about") return false
+                // У intent-ссылок бывает запасной http-адрес — им и идём.
+                val fallback = runCatching {
+                    Regex("S\\.browser_fallback_url=([^;]+)")
+                        .find(u.toString())?.groupValues?.get(1)
+                        ?.let { java.net.URLDecoder.decode(it, "UTF-8") }
+                }.getOrNull()
+                if (fallback != null && fallback.startsWith("http")) {
+                    view?.loadUrl(fallback)
+                }
+                return true
+            }
+
+            /**
+             * Ошибку ГЛАВНОГО документа говорим словами.
+             *
+             * «Не открывается» без причины — это тупик и для человека, и для
+             * разбора: имя не разрешилось, соединение отвергнуто и «сайт
+             * ответил 403» лечатся по-разному, а выглядели одинаково — белым
+             * экраном.
+             */
+            override fun onReceivedError(
+                view: WebView?,
+                request: WebResourceRequest?,
+                error: android.webkit.WebResourceError?,
+            ) {
+                super.onReceivedError(view, request, error)
+                if (request?.isForMainFrame != true) return
+                val what = runCatching { error?.description?.toString() }.getOrNull()
+                val code = runCatching { error?.errorCode }.getOrNull()
+                SmartDeskToast.show(
+                    "Страница не открылась: ${what ?: "нет ответа"}" +
+                        (if (code != null) " ($code)" else "")
+                )
+            }
+
+            override fun onReceivedHttpError(
+                view: WebView?,
+                request: WebResourceRequest?,
+                response: WebResourceResponse?,
+            ) {
+                super.onReceivedHttpError(view, request, response)
+                if (request?.isForMainFrame != true) return
+                val code = runCatching { response?.statusCode }.getOrNull() ?: return
+                if (code >= 400) SmartDeskToast.show("Сайт ответил ошибкой $code")
             }
         }
         webChromeClient = object : WebChromeClient() {
