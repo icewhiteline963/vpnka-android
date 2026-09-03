@@ -9,6 +9,7 @@ on:
   push:
     branches:
       - master
+      - dev
 
 permissions:
   contents: write
@@ -99,7 +100,25 @@ jobs:
         echo "sdk.dir=${ANDROID_HOME}" > local.properties
         chmod 755 gradlew
         ./gradlew licenseFdroidReleaseReport
-        ./gradlew assembleRelease -Pandroid.injected.signing.store.file=${{ steps.android_keystore.outputs.filePath }} -Pandroid.injected.signing.store.password=${{ secrets.APP_KEYSTORE_PASSWORD }} -Pandroid.injected.signing.key.alias=${{ secrets.APP_KEYSTORE_ALIAS }} -Pandroid.injected.signing.key.password=${{ secrets.APP_KEY_PASSWORD }}
+        # Собираем ТОЛЬКО нужный флейвор, а не все три.
+        #
+        # `assembleRelease` строит и боевые, и тестовую сборку — это лишняя
+        # треть времени на каждом прогоне, а ждёт его живой человек. С ветки
+        # dev нужна только тестовая, с master — только боевые.
+        # С ветки dev нужны ОБА: тестовое приложение и боевой флейвор.
+        #
+        # Тестовое (пакет .dev) ставится рядом с боевым и удобно для проверок,
+        # но у него свои данные. А в бета-канал класть его нельзя: включивший
+        # «Тестовые версии» клиент получил бы ВТОРОЕ приложение вместо
+        # обновления. Поэтому бета-канал наполняется playstore-сборкой с этой
+        # же ветки — она приходит поверх, теми же данными.
+        if [ "${GITHUB_REF_NAME}" = "dev" ]; then
+          TASKS="assembleDevRelease assemblePlaystoreRelease"
+        else
+          TASKS="assemblePlaystoreRelease assembleFdroidRelease"
+        fi
+        echo "собираем: $TASKS"
+        ./gradlew $TASKS -Pandroid.injected.signing.store.file=${{ steps.android_keystore.outputs.filePath }} -Pandroid.injected.signing.store.password=${{ secrets.APP_KEYSTORE_PASSWORD }} -Pandroid.injected.signing.key.alias=${{ secrets.APP_KEYSTORE_ALIAS }} -Pandroid.injected.signing.key.password=${{ secrets.APP_KEY_PASSWORD }}
     
     - name: Upload arm64-v8a APK
       uses: actions/upload-artifact@v7

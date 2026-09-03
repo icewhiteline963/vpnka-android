@@ -71,6 +71,7 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -155,6 +156,8 @@ fun VpnkaConnectScreen(
     onSmartDesk: () -> Unit,
     /** Открыть «Видео» сразу, минуя рабочий стол. */
     onYouTube: () -> Unit,
+    /** Открыть приложение стола по его id — со значка на главном экране. */
+    onOpenDeskApp: (String) -> Unit = {},
     expiryDaysLeft: Int?,
     /**
      * План, который кончается РАНЬШЕ остальных, когда за ним есть другой:
@@ -421,27 +424,72 @@ fun VpnkaConnectScreen(
                         onChange = onChangeServer,
                     )
                 }
-                if (paidSubscription) {
-                    serverCard()
-                    planRow()
-                } else {
-                    planRow()
-                    serverCard()
-                }
-                // «Качалка» — сразу под подпиской, на главном экране.
+                // «Качалка» — ВПЛОТНУЮ под карточкой подписки.
                 //
                 // Она жила значком внутри рабочего стола: чтобы до неё
                 // добраться, надо было знать, что стол вообще есть, и открыть
                 // его. Это самая заметная вещь, которую приложение умеет
                 // помимо ВПН, и прятать её за два нажатия — терять её.
-                if (smartDeskEnabled) {
-                    VpnkaYouTubeRow(onClick = onYouTube)
+                //
+                // Стояла ниже карточки серверов — и на телефоне уходила за
+                // нижний край: экран прокручивается, но искать её там никто
+                // не станет. Место у неё одно: сразу за подпиской, о чём и
+                // была просьба.
+                val youtubeRow: @Composable () -> Unit = {
+                    if (smartDeskEnabled) {
+                        VpnkaHomeRow(
+                            icon = "▶",
+                            label = "Youtube качалка",
+                            right = "без рекламы",
+                            onClick = onYouTube,
+                        )
+                    }
                 }
-                VpnkaPerAppRow(onClick = onPerAppProxy)
+                // Приложения — прямо на главном, как в макете «Поток».
+                //
+                // Рабочий стол был отдельным экраном: чтобы попасть в видео,
+                // браузер или чаты, нужно было знать про стол и открыть его.
+                // В макете сетка значков живёт под кнопкой подключения — то
+                // есть стол и главный экран это ОДИН экран, а не два. Бейдж
+                // на значке показывает то, что человеку и нужно знать
+                // издалека: сколько качается и сколько непрочитанных.
                 if (smartDeskEnabled) {
-                    VpnkaSmartDeskRow(online = smartDeskOnline, onClick = onSmartDesk)
+                    VpnkaAppGrid(onOpen = onOpenDeskApp)
                 }
-                VpnkaReviewRow(onClick = onLeaveReview)
+                if (paidSubscription) {
+                    serverCard()
+                    planRow()
+                    youtubeRow()
+                } else {
+                    planRow()
+                    youtubeRow()
+                    serverCard()
+                }
+                // Дальше — строки, а не карточки.
+                //
+                // Каждый пункт был карточкой с заголовком и двумя строками
+                // пояснения; такие занимали экран целиком, и до значков
+                // приложений приходилось листать. В макете это компактные
+                // строки со значением справа, а пояснение живёт внутри
+                // самого раздела, где его читают по делу.
+                VpnkaHomeRow(
+                    icon = "⇄",
+                    label = "Прокси для приложений",
+                    onClick = onPerAppProxy,
+                )
+                if (smartDeskEnabled) {
+                    VpnkaHomeRow(
+                        icon = "☁",
+                        label = "VPNka облако",
+                        right = if (smartDeskOnline) "на связи" else "нет связи",
+                        onClick = onSmartDesk,
+                    )
+                }
+                VpnkaHomeRow(
+                    icon = "✎",
+                    label = "Оставить отзыв",
+                    onClick = onLeaveReview,
+                )
             }
         }
     }
@@ -529,83 +577,61 @@ private fun VpnkaActiveExit() {
 }
 
 @Composable
-private fun VpnkaYouTubeRow(onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(VpnkaColors.CardSpeed)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(text = "▶", fontSize = 17.sp, color = VpnkaColors.Accent)
-        Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = "Youtube качалка",
-                fontFamily = VpnkaFonts.nunito800,
-                fontWeight = VpnkaWeight.Extra,
-                fontSize = 15.sp,
-                color = VpnkaColors.TextStrong,
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = "Без рекламы, в хорошем качестве и бесплатно.",
-                fontFamily = VpnkaFonts.manrope600,
-                fontWeight = VpnkaWeight.Semi,
-                fontSize = 12.sp,
-                color = VpnkaColors.TextFaint,
-            )
-        }
-        Spacer(Modifier.width(10.dp))
-        Text(text = "›", fontSize = 18.sp, color = VpnkaColors.TextFaint)
-    }
-}
+private fun VpnkaAppGrid(onOpen: (String) -> Unit) {
+    // Показываем то, что человек поставил себе на стол, тем же порядком.
+    val installed = remember { com.v2ray.ang.ui.smartDeskInstalledApps() }
+    if (installed.isEmpty()) return
 
-@Composable
-private fun VpnkaSmartDeskRow(online: Boolean, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(VpnkaColors.CardSpeed)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // Status dot: green when our server answered its ping, red otherwise.
-        // Work still opens offline (saved to the encrypted container), so the
-        // dot means "syncing now" vs "will sync later", not "unavailable".
-        Box(
-            modifier = Modifier
-                .size(10.dp)
-                .clip(CircleShape)
-                .background(if (online) VpnkaColors.Green else VpnkaColors.Warning),
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "ПРИЛОЖЕНИЯ",
+            fontFamily = VpnkaFonts.manrope600,
+            fontWeight = VpnkaWeight.Semi,
+            fontSize = 10.5.sp,
+            letterSpacing = 0.08.em,
+            color = VpnkaColors.TextFaint,
+            modifier = Modifier.padding(start = 4.dp, bottom = 10.dp),
         )
-        Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = "VPNka облако",
-                fontFamily = VpnkaFonts.nunito800,
-                fontWeight = VpnkaWeight.Extra,
-                fontSize = 15.sp,
-                color = VpnkaColors.TextStrong,
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = if (online)
-                    "Рабочий стол: календарь, контакты, почта. Сервер на связи."
-                else
-                    "Рабочий стол: календарь, контакты, почта. Нет связи — сохраним и синхронизируем позже.",
-                fontFamily = VpnkaFonts.manrope600,
-                fontWeight = VpnkaWeight.Semi,
-                fontSize = 12.sp,
-                color = VpnkaColors.TextFaint,
-            )
+        // Четыре в ряд — как в макете. Сетку кладём вручную рядами, а не
+        // LazyVerticalGrid: она внутри прокручиваемого столбца, и ленивая
+        // сетка там меряется бесконечной высотой и роняет разметку.
+        installed.chunked(4).forEach { row ->
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(11.dp),
+            ) {
+                row.forEach { app ->
+                    Column(
+                        modifier = Modifier.weight(1f)
+                            .clip(RoundedCornerShape(14.dp))
+                            .clickable { onOpen(app.id) }
+                            .padding(vertical = 4.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Box(
+                            modifier = Modifier.size(52.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(VpnkaColors.CardSpeed),
+                            contentAlignment = Alignment.Center,
+                        ) { Text(app.glyph, fontSize = 23.sp) }
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            app.label,
+                            fontFamily = VpnkaFonts.manrope600,
+                            fontWeight = VpnkaWeight.Semi,
+                            fontSize = 10.sp,
+                            lineHeight = 12.sp,
+                            color = VpnkaColors.TextMuted,
+                            maxLines = 2,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
+                // Добиваем ряд пустотой, иначе три значка растянутся на всю
+                // ширину и последний ряд поедет по сетке.
+                repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
+            }
         }
-        Spacer(Modifier.width(10.dp))
-        Text(text = "›", fontSize = 18.sp, color = VpnkaColors.TextFaint)
     }
 }
 
@@ -837,84 +863,66 @@ private fun VpnkaExpiryBanner(daysLeft: Int, onRenew: () -> Unit) {
 }
 
 /**
- * Per-app routing, on the main screen rather than buried in settings.
+ * Строка главного экрана — как в макете «Поток».
  *
- * It is the setting people actually need — banking and government apps
- * refuse a foreign address, so without it the choice is «VPN» or «bank»,
- * and users resolve that by disconnecting. The line under the title says
- * what it does, because «прокси для приложений» does not.
+ * Раньше каждый пункт был карточкой с заголовком и двумя строками
+ * пояснения: пять таких занимали экран целиком, и до значков приложений
+ * приходилось листать. В макете это компактные строки — значок слева,
+ * название, значение справа, шеврон. Пояснение переезжает внутрь самого
+ * раздела, где его читают по делу, а не поверх всего.
+ *
+ * `primary` — заливка акцентом, для единственного действия, которое сейчас
+ * важнее прочих (вход через Телеграм у непривязанного).
  */
 @Composable
-private fun VpnkaPerAppRow(onClick: () -> Unit) {
+private fun VpnkaHomeRow(
+    icon: String,
+    label: String,
+    right: String = "",
+    primary: Boolean = false,
+    onClick: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(VpnkaColors.CardSpeed)
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (primary) VpnkaColors.Accent else VpnkaColors.CardSpeed)
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 12.dp, vertical = if (primary) 12.dp else 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.weight(1f)) {
+        Text(
+            text = icon,
+            fontSize = 14.sp,
+            color = if (primary) VpnkaColors.OnAccent else VpnkaColors.Accent,
+        )
+        Spacer(Modifier.width(11.dp))
+        Text(
+            text = label,
+            fontFamily = VpnkaFonts.manrope700,
+            fontWeight = VpnkaWeight.Semi,
+            fontSize = 12.5.sp,
+            color = if (primary) VpnkaColors.OnAccent else VpnkaColors.TextStrong,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        if (right.isNotBlank()) {
             Text(
-                text = "Прокси для приложений",
-                fontFamily = VpnkaFonts.nunito800,
-                fontWeight = VpnkaWeight.Extra,
-                fontSize = 15.sp,
-                color = VpnkaColors.TextStrong,
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = "Выберите, какие приложения идут через VPN. Банки и " +
-                    "госуслуги лучше оставить без него.",
+                text = right,
                 fontFamily = VpnkaFonts.manrope600,
                 fontWeight = VpnkaWeight.Semi,
-                fontSize = 12.sp,
-                color = VpnkaColors.TextFaint,
+                fontSize = 11.5.sp,
+                color = if (primary) VpnkaColors.OnAccent else VpnkaColors.TextMuted,
+                maxLines = 1,
             )
+            Spacer(Modifier.width(8.dp))
         }
-        Spacer(Modifier.width(10.dp))
-        Text(text = "›", fontSize = 18.sp, color = VpnkaColors.TextFaint)
-    }
-}
-
-/** Bottom-of-screen invitation to rate the service.
- *
- *  Deliberately the last row: it must never compete with connecting, but the
- *  people who scroll to the end of the home screen are exactly the ones with
- *  an opinion worth reading.
- */
-@Composable
-private fun VpnkaReviewRow(onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(VpnkaColors.CardSpeed)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = "Оставить отзыв",
-                fontFamily = VpnkaFonts.nunito800,
-                fontWeight = VpnkaWeight.Extra,
-                fontSize = 15.sp,
-                color = VpnkaColors.TextStrong,
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = "Расскажите, как работает ВПН — это помогает нам " +
-                    "чинить то, что мешает именно вам.",
-                fontFamily = VpnkaFonts.manrope600,
-                fontWeight = VpnkaWeight.Semi,
-                fontSize = 12.sp,
-                color = VpnkaColors.TextFaint,
-            )
-        }
-        Spacer(Modifier.width(10.dp))
-        Text(text = "★", fontSize = 18.sp, color = VpnkaColors.Accent)
+        Text(
+            text = "›",
+            fontSize = 16.sp,
+            color = if (primary) VpnkaColors.OnAccent else VpnkaColors.TextFaint,
+        )
     }
 }
 

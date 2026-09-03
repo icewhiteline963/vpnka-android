@@ -19,14 +19,14 @@ android {
         applicationId = "io.vpnka.android"
         minSdk = 24
         targetSdk = 37
-        versionCode = 929
+        versionCode = 936
         // Upstream's version plus a fourth segment for our own builds, so we
         // can ship a fix without waiting for a v2rayNG release. Digits and
         // dots only: UpdateCheckerManager.compareVersions calls toInt() on
         // every segment, so a tag like "2.2.6-vpnka1" would throw and take
         // the whole update check down with it.
         // On merging upstream: take their number, re-append our segment.
-        versionName = "3.0.0.0"
+        versionName = "3.0.7.0"
 
         // Ни одной x86-загрузки за всю историю логов (это эмуляторы и
         // Chromebook, не телефоны). abiFilters выкидывает их нативные
@@ -76,10 +76,38 @@ android {
             dimension = "distribution"
             applicationIdSuffix = ".fdroid"
             buildConfigField("String", "DISTRIBUTION", "\"F-Droid\"")
+            buildConfigField(
+                "String", "UPDATE_MANIFEST",
+                "\"https://dl.vpnka.io/app/latest.json\"",
+            )
         }
         create("playstore") {
             dimension = "distribution"
             buildConfigField("String", "DISTRIBUTION", "\"Play Store\"")
+            // Боевая сборка читает боевой манифест обновлений.
+            buildConfigField(
+                "String", "UPDATE_MANIFEST",
+                "\"https://dl.vpnka.io/app/latest.json\"",
+            )
+        }
+        // Тестовая сборка: ДРУГОЕ имя пакета, поэтому она ставится РЯДОМ с
+        // боевой и не трогает ни её данные, ни её обновления. Сервер тот же
+        // боевой — иначе проверка не про то: живые подписки и живые узлы.
+        //
+        // Обновления читает из своего манифеста: без этого тестовая версия
+        // предлагала бы себе понизиться до боевой.
+        create("dev") {
+            dimension = "distribution"
+            applicationIdSuffix = ".dev"
+            // Суффикса в versionName НЕТ намеренно: проверка обновлений
+            // сравнивает версии через toInt() по каждому куску, и «0-dev»
+            // уронил бы разбор. Отличается имя приложения и имя пакета —
+            // этого достаточно, чтобы не перепутать.
+            buildConfigField("String", "DISTRIBUTION", "\"Dev\"")
+            buildConfigField(
+                "String", "UPDATE_MANIFEST",
+                "\"https://dl.vpnka.io/app/beta.json\"",
+            )
         }
     }
 
@@ -134,7 +162,16 @@ android {
                     else
                         "universal"
 
-                    output.outputFileName = "vpnka_${variant.versionName}_${abi}.apk"
+                    // У тестовой сборки имя ОТЛИЧАЕТСЯ.
+                    //
+                    // Иначе файл называется в точности как боевой, и на
+                    // зеркале они дерутся: бета с тем же номером затирает
+                    // боевой релиз, а чистка считает её «предыдущей
+                    // версией» и сносит настоящую предыдущую боевую. Плюс
+                    // по имени файла нельзя понять, что скачал.
+                    val devMark = if (variant.productFlavors.any { it.name == "dev" }) "-dev" else ""
+                    output.outputFileName =
+                        "vpnka_${variant.versionName}${devMark}_${abi}.apk"
                     if (versionCodes.containsKey(abi)) {
                         output.versionCodeOverride =
                             (1000000 * versionCodes[abi]!!).plus(variant.versionCode)

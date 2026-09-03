@@ -359,6 +359,8 @@ fun VpnkaSettingsScreen(
     smartDeskEligible: Boolean = false,
     smartDeskHidden: Boolean = false,
     onSmartDeskHiddenChange: (Boolean) -> Unit = {},
+    betaChannel: Boolean = false,
+    onBetaChannelChange: (Boolean) -> Unit = {},
     onBack: () -> Unit,
 ) {
     VpnkaPage(title = "Настройки", onBack = onBack) {
@@ -402,6 +404,23 @@ fun VpnkaSettingsScreen(
             title = "Проверить обновление",
             subtitle = "Скачать и установить свежую версию",
             onClick = onCheckUpdate,
+        )
+        // Тестовые сборки — по желанию и ТОЛЬКО поверх обычной.
+        //
+        // Проверять правки раньше можно было только на боевом приложении:
+        // сборка уезжала всем клиентам, а на своём телефоне оставалась
+        // навсегда — понизить версию Android не даёт. Теперь тестовые версии
+        // приходят обычным обновлением тому, кто их попросил, и никому
+        // больше.
+        NotifyToggleRow(
+            title = "Тестовые версии",
+            subtitle = if (betaChannel)
+                "Приходят раньше остальных. Могут быть недоделаны — если что-то сломалось, выключите и дождитесь обычной."
+            else
+                "Получать сборки до того, как они уйдут всем. По умолчанию выключено.",
+            checked = betaChannel,
+            enabled = true,
+            onCheckedChange = onBetaChannelChange,
         )
 
         if (smartDeskEligible) {
@@ -727,6 +746,10 @@ fun VpnkaSubscriptionScreen(
             if (VpnkaColors.dark) "Светлая тема" else "Тёмная тема",
             {
                 VpnkaColors.dark = !VpnkaColors.dark
+                // «Тёмная» — это и есть палитра макета «Поток». Светлая
+                // остаётся прежней, тёплой: переключатель гасит «Поток», а
+                // не подменяет его вторым тёмным набором.
+                VpnkaColors.flow = VpnkaColors.dark
                 MmkvManager.setDarkTheme(VpnkaColors.dark)
             },
             subtitle = if (VpnkaColors.dark) "Вернуть тёплое оформление"

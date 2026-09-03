@@ -220,6 +220,15 @@ fun setInstalled(ids: List<String>) {
 
 private fun installedApps(): List<DeskApp> = installedIds().mapNotNull { CATALOG_BY_ID[it] }
 
+/**
+ * То же самое для ГЛАВНОГО экрана.
+ *
+ * Сетка значков переехала туда — стол и главный экран стали одним, — но
+ * список установленного по-прежнему живёт здесь, вместе с каталогом и
+ * порядком. Отдаём его наружу, а не копируем.
+ */
+fun smartDeskInstalledApps(): List<DeskApp> = installedApps()
+
 /** Persist the cell order as "id:cell,id:cell". Only installed apps appear. */
 private fun loadOrder(): MutableList<Pair<DeskApp, Int>> {
     val apps = installedApps()
@@ -356,12 +365,14 @@ fun VpnkaSmartDeskScreen(
     // erases the local copy. Between sessions the phone holds no SmartDesk data;
     // the next open re-pulls it from the encrypted server. Offline → nothing is
     // wiped (see SmartDeskSync.syncAndWipe), so no edits are lost.
-    // Пока открыт рабочий стол — палитра «Поток» из макетов. Снимается на
-    // выходе: главный экран VPNka остаётся в своей, светлой.
+    // Палитру здесь больше не переключаем.
+    //
+    // Раньше «Поток» включался на входе в стол и снимался на выходе, потому
+    // что главный экран был светлым. Теперь это палитра всего приложения —
+    // трогать её при переходах незачем, а переключение на выходе гасило бы
+    // её и на главном.
     DisposableEffect(Unit) {
-        VpnkaColors.flow = true
         onDispose {
-            VpnkaColors.flow = false
             // Хвост счётчика заблокированного — на диск, иначе последние до
             // двадцати штук пропадают вместе с процессом.
             AdBlocker.flushOnLeave()
@@ -831,9 +842,15 @@ fun VpnkaSmartDeskScreen(
         // Высоту блока меряем и отдаём содержимому: раньше под него
         // резервировалась константа, а реальная высота растёт от мини-плеера
         // и подсказки — и они накрывали низ любого экрана.
-        val density = LocalDensity.current
         Column(
-            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+            // Вставку системной навигации отводит ВЕСЬ нижний блок.
+            //
+            // Раньше её давала нижняя панель; когда панель убрали, отступ
+            // добавили только подсказке — а мини-плеер остался без него и
+            // на телефонах с тремя кнопками ложился под них: строка видна,
+            // а нажатия достаются системе.
+            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                .padding(bottom = navInset),
         ) {
                 // Мини-плеер: фоновый звук продолжает играть, когда «Видео»
                 // закрыто, и до сих пор остановить его можно было, только
@@ -859,14 +876,6 @@ fun VpnkaSmartDeskScreen(
                     Row(
                         modifier = Modifier.fillMaxWidth()
                             .padding(horizontal = 10.dp, vertical = 4.dp)
-                            // Вставку навигации подсказка отводит СЕБЕ.
-                            //
-                            // Раньше её давала нижняя панель, и отступ был
-                            // нужен только когда панель спрятана. Панели
-                            // больше нет — значит нужен всегда, иначе на
-                            // трёх кнопках текст и «Открыть» пропадают под
-                            // системной навигацией, а касание уходит ей.
-                            .padding(bottom = navInset)
                             .clip(RoundedCornerShape(12.dp))
                             .background(VpnkaColors.BgOffCentre)
                             .padding(horizontal = 14.dp, vertical = 10.dp),
@@ -935,40 +944,6 @@ fun VpnkaSmartDeskScreen(
  * wiped after each sync and lives only in the encrypted cloud. Tapping also
  * forces a sync if anything is still pending.
  */
-@Composable
-private fun BarItem(
-    glyph: String,
-    label: String,
-    selected: Boolean,
-    modifier: Modifier,
-    onClick: () -> Unit,
-) {
-    // Активный пункт — оранжевым ТЕКСТОМ, без заливки. Плашка другого оттенка
-    // выбивалась из панели и читалась как ошибка вёрстки.
-    val tint = if (selected) VpnkaColors.AccentLight else VpnkaColors.TextFaint
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(9.dp))
-            .clickable(onClick = onClick)
-            .padding(vertical = 6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        // Значок крупнее подписи: по панели попадают в него, а не в слово.
-        // Было 16 sp — на ощупь это точка, особенно у эмодзи, которые сами по
-        // себе рисуются мельче собственного кегля.
-        Text(glyph, fontSize = 22.sp, color = tint)
-        Spacer(Modifier.height(4.dp))
-        Text(
-            label,
-            fontFamily = if (selected) VpnkaFonts.nunito800 else VpnkaFonts.manrope600,
-            fontSize = 10.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            color = tint,
-        )
-    }
-}
-
 @Composable
 private fun SmartDeskCloudButton(online: Boolean, ink: Color) {
     val scope = rememberCoroutineScope()

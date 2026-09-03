@@ -428,6 +428,9 @@ class MainActivity : HelperBaseComponentActivity() {
         // Before anything draws: the palette is read during composition, and
         // applying it later would show the light screen first and repaint.
         VpnkaColors.dark = MmkvManager.isDarkTheme()
+        // Палитра «Поток» идёт вместе с тёмной темой — она и есть тёмная
+        // тема приложения. Светлая остаётся прежней.
+        VpnkaColors.flow = VpnkaColors.dark
         ExpiryReminder.schedule(this)
         SupportNotifier.schedule(this)
         MessengerNotifier.schedule(this)
@@ -583,6 +586,9 @@ class MainActivity : HelperBaseComponentActivity() {
     private var showTopUp by mutableStateOf(false)
     // SmartDesk full-screen surface + the reachability state behind its dot.
     private var showSmartDesk by mutableStateOf(false)
+
+    /** Получать ли тестовые сборки. Читается из хранилища при первом обращении. */
+    private var betaChannel by mutableStateOf(MmkvManager.betaChannel())
     private var smartDeskOnline by mutableStateOf(false)
     // Privacy toggle: hide the SmartDesk entry; a 5-tap corner gesture reveals it.
     private var smartDeskHidden by mutableStateOf(MmkvManager.decodeSettingsBool("vpnka_smartdesk_hidden"))
@@ -1178,6 +1184,11 @@ class MainActivity : HelperBaseComponentActivity() {
                 onSmartDeskHiddenChange = { hidden ->
                     smartDeskHidden = hidden
                     MmkvManager.encodeSettings("vpnka_smartdesk_hidden", hidden)
+                },
+                betaChannel = betaChannel,
+                onBetaChannelChange = { on ->
+                    betaChannel = on
+                    MmkvManager.setBetaChannel(on)
                 },
                 onBack = { showSettings = false },
             )
@@ -1823,6 +1834,12 @@ class MainActivity : HelperBaseComponentActivity() {
                     // Открываем стол сразу на «Видео»: человек просил
                     // качалку, а не рабочий стол.
                     com.v2ray.ang.ui.SmartDeskChrome.pendingAppId = "youtube"
+                    showSmartDesk = true
+                },
+                onOpenDeskApp = { id ->
+                    // Значок на главном ведёт прямо в приложение, а не на
+                    // стол: стол теперь и есть главный экран.
+                    com.v2ray.ang.ui.SmartDeskChrome.pendingAppId = id
                     showSmartDesk = true
                 },
                 // Предупреждаем о том дне, когда доступ кончится СОВСЕМ, то

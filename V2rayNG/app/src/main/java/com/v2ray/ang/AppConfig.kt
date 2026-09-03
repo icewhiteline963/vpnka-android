@@ -1,5 +1,7 @@
 package com.v2ray.ang
 
+import com.v2ray.ang.handler.MmkvManager
+
 
 object AppConfig {
 
@@ -132,7 +134,26 @@ object AppConfig {
     // for exactly the users this app is built for. Same two shapes GitHub
     // returns, so the parsing below is untouched.
     const val APP_API_URL = "https://dl.vpnka.io/app/releases.json"
-    const val APP_API_LATEST_URL = "https://dl.vpnka.io/app/latest.json"
+    /**
+     * Манифест обновлений — СВОЙ у каждой сборки, а у боевой ещё и по выбору.
+     *
+     * Тестовая сборка («VPNka dev») всегда читает `beta.json`: иначе она
+     * предлагала бы себе понизиться до боевой версии.
+     *
+     * Боевая по умолчанию читает `latest.json`, но в настройках можно
+     * включить бета-версии — тогда она берёт `beta.json` и получает
+     * тестовые сборки автообновлением. Это НЕ значит «поставить рядом»:
+     * бета придёт поверх, тем же приложением, с теми же данными.
+     *
+     * Читается КАЖДЫЙ раз, а не один при запуске: переключатель должен
+     * действовать сразу, а не после перезапуска приложения.
+     */
+    val APP_API_LATEST_URL: String
+        get() = if (BuildConfig.DISTRIBUTION == "Dev" || MmkvManager.betaChannel()) {
+            "https://dl.vpnka.io/app/beta.json"
+        } else {
+            BuildConfig.UPDATE_MANIFEST
+        }
     const val APP_ISSUES_URL = "$APP_URL/issues"
     const val APP_WIKI_MODE = "$APP_URL/wiki/Mode"
     const val APP_PRIVACY_POLICY = "$GITHUB_RAW_URL/2dust/v2rayNG/master/CR.md"
