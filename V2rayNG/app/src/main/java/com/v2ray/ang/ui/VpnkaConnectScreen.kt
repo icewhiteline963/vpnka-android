@@ -24,10 +24,12 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
@@ -48,7 +50,6 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -57,18 +58,15 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
-import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
@@ -172,126 +170,70 @@ fun VpnkaConnectScreen(
     telegramLinked: Boolean,
     onLeaveReview: () -> Unit,
 ) {
-    val accent by animateColorAsState(
-        targetValue = if (isRunning) VpnkaColors.Green else VpnkaColors.Accent,
-        animationSpec = tween(600),
-        label = "accent",
-    )
-    val bgCentre by animateColorAsState(
-        if (isRunning) VpnkaColors.BgOnCentre else VpnkaColors.BgOffCentre,
-        tween(800), label = "bg1",
-    )
-    val bgMid by animateColorAsState(
-        if (isRunning) VpnkaColors.BgOnMid else VpnkaColors.BgOffMid,
-        tween(800), label = "bg2",
-    )
+    // Акцент НЕ зеленеет.
+    //
+    // Экран целиком перекрашивался в зелёный, как только туннель вставал:
+    // пилюля, кольца, кнопки. В макете подключение меняет ровно одно —
+    // сам цветок (hue-rotate 78°) и цвет свечения за ним; всё остальное
+    // остаётся оранжевым, иначе состояние «включено» перекрикивает то,
+    // ради чего человек открыл экран.
     val bgEdge by animateColorAsState(
         if (isRunning) VpnkaColors.BgOnEdge else VpnkaColors.BgOffEdge,
         tween(800), label = "bg3",
     )
 
+    // Свечение ПРИЖАТО К ВЕРХУ, как в макете.
+    //
+    // Было: круговой градиент из центра экрана — то есть самое светлое
+    // место приходилось на середину списка, а шапка и кнопка сидели в
+    // темноте. В макете это `radial-gradient(120% 62% at 50% 2%)`: пятно
+    // цвета начинается у самой кромки экрана, над цветком, и сходит на
+    // нет к середине. Полотно под ним — ровное, без второго градиента.
+    val accent = VpnkaColors.Accent
+    val glow by animateColorAsState(
+        if (isRunning) VpnkaColors.BgOnCentre.copy(alpha = 0.30f)
+        else VpnkaColors.Accent.copy(alpha = 0.16f),
+        tween(800), label = "glow",
+    )
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                // Handoff: radial-gradient(circle at 50% 30%, …).
-                Brush.radialGradient(
-                    colorStops = arrayOf(
-                        0f to bgCentre,
-                        0.6f to bgMid,
-                        1f to bgEdge,
-                    ),
-                    center = Offset.Unspecified,
-                    radius = Float.POSITIVE_INFINITY,
+            .background(bgEdge)
+            .drawBehind {
+                drawRect(
+                    Brush.radialGradient(
+                        colors = listOf(glow, Color.Transparent),
+                        center = Offset(size.width / 2f, size.height * 0.02f),
+                        radius = size.width * 1.2f,
+                    )
                 )
-            )
+            }
     ) {
-        // The handoff's 230dp button assumes a tall screen. Everything else
-        // on this screen has a floor — text, cards, the rows along the
-        // bottom — so the button is the one thing that can give way, and it
-        // has to: with the expiry banner showing, the fixed layout needs
-        // about 842dp and a 1272×2772 phone offers 791. Below that it was
-        // the bottom rows that vanished, silently, off the end of a Column
-        // that does not scroll.
-        val buttonSize = (maxHeight * 0.29f).coerceIn(140.dp, 230.dp)
         val headerTop = if (maxHeight < 720.dp) 34.dp else 62.dp
-
-        // The column scrolls, and the button's breathing room is measured
-        // rather than guessed.
-        //
-        // `weight(1f)` gave the middle whatever was left, which is the right
-        // look but silently clips instead of scrolling: with both banners up
-        // the rows along the bottom went off the end of the screen with no
-        // way to reach them. Inside a scrolling column weight has no meaning
-        // — there is no "left over" when the height is unbounded — so the
-        // middle takes an explicit height: the screen minus what the parts
-        // above and below actually measured. On a tall phone that is the
-        // same number weight produced, so the button stays exactly where it
-        // was tuned to sit; on a short one it bottoms out and the rest
-        // scrolls into reach.
-        val density = LocalDensity.current
-        var topPx by remember { mutableIntStateOf(0) }
-        var bottomPx by remember { mutableIntStateOf(0) }
-        val middleHeight = if (topPx == 0 && bottomPx == 0) {
-            // First frame, before anything has reported a size. A fraction
-            // close to the usual outcome, so the button doesn't visibly jump
-            // into place once the real numbers arrive.
-            maxHeight * 0.42f
-        } else {
-            val chrome = with(density) { (topPx + bottomPx).toDp() }
-            // The floor has to know about the «СЕЙЧАС ЧЕРЕЗ» pill: it appears
-            // only while connected, so a height measured on the disconnected
-            // screen left it nothing to sit in.
-            val floor = buttonSize + if (isRunning) 150.dp else 96.dp
-            (maxHeight - chrome).coerceAtLeast(floor)
-        }
 
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
         ) {
-            // Measured as one block: everything above the button.
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .onSizeChanged { topPx = it.height }
-            ) {
-                VpnkaHeader(
-                    onOpenProfile = onOpenProfile,
-                    updateAvailable = updateVersion != null,
-                    onCheckUpdate = onCheckUpdate,
-                    topPadding = headerTop,
-                    // Status sits on the icons' line — it is the one fact the
-                    // screen exists to state, and it belongs at the top of it
-                    // rather than floating above the button.
-                    status = if (isRunning) "ЗАЩИЩЕНО" else "НЕ ЗАЩИЩЕНО",
-                    statusColor = accent,
-                    statusOn = isRunning,
-                    telegramLinked = telegramLinked,
-                )
+            VpnkaHeader(
+                onOpenProfile = onOpenProfile,
+                updateAvailable = updateVersion != null,
+                onCheckUpdate = onCheckUpdate,
+                topPadding = headerTop,
+                // Status sits on the icons' line — it is the one fact the
+                // screen exists to state, and it belongs at the top of it
+                // rather than floating above the button.
+                status = if (isRunning) "ЗАЩИЩЕНО" else "НЕ ЗАЩИЩЕНО",
+                statusColor = accent,
+                statusOn = isRunning,
+                hint = when {
+                    isLoading -> "Подключаемся…"
+                    isRunning -> "Трафик зашифрован"
+                    else -> "Нажмите на цветочек"
+                },
+            )
 
-                Text(
-                    text = when {
-                        isLoading -> "Подключаемся…"
-                        isRunning -> "Ваш трафик зашифрован 🌼"
-                        else -> "Нажмите на цветочек"
-                    },
-                    fontFamily = VpnkaFonts.nunito800,
-                    fontWeight = VpnkaWeight.Extra,
-                    fontSize = 15.sp,
-                    color = VpnkaColors.TextMuted,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 6.dp),
-                )
-
-            }
-
-            // The button, centred in what is left between the two measured
-            // blocks — the two lines above no longer pull it off centre the
-            // way they did when they shared one column.
             // Блок подключения по макету: цветок СЛЕВА, сводка справа.
             //
             // Раньше кнопка стояла по центру, под ней крупный таймер, а
@@ -300,7 +242,11 @@ fun VpnkaConnectScreen(
             // 146 точек занимает левую колонку, а справа тремя строками
             // идут время в сети, текущий сервер и оба счётчика.
             Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                // Боковые поля обязательны: блок — прямой ребёнок
+                // прокручиваемой колонки без отступов, и без них цветок
+                // упирался в левый край экрана, а счётчики в правый.
+                modifier = Modifier.fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, top = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
             ) {
@@ -343,6 +289,7 @@ fun VpnkaConnectScreen(
                     VpnkaHomeServerCard(
                         name = serverName,
                         delay = serverDelay,
+                        isRunning = isRunning,
                         onClick = onChangeServer,
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -362,27 +309,10 @@ fun VpnkaConnectScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    // onSizeChanged sits outside both paddings on purpose:
-                    // it reports the size of what is left of the chain, and
-                    // the middle's height is the screen minus what this
-                    // block *occupies*, insets included.
-                    .onSizeChanged { bottomPx = it.height }
                     .navigationBarsPadding()
                     .padding(start = 20.dp, end = 20.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    VpnkaTrafficCard(
-                        label = "ЗАГРУЖЕНО",
-                        bytes = downBytes,
-                        modifier = Modifier.weight(1f),
-                    )
-                    VpnkaTrafficCard(
-                        label = "ОТДАНО",
-                        bytes = upBytes,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
                 // The launch check already knew this; until now it only lit
                 // a dot on a button in the corner, which is indistinguishable
                 // from not checking at all. Say it in words, where the eye
@@ -415,8 +345,6 @@ fun VpnkaConnectScreen(
                         waiting = freeMonthWaiting,
                         claiming = claimingFreeMonth,
                         telegramLinked = telegramLinked,
-                        // Follows the tunnel like the connect button: green when
-                        // the VPN is up, accent otherwise.
                         bgColor = accent,
                         onClaim = onClaimFreeMonth,
                     )
@@ -436,13 +364,6 @@ fun VpnkaConnectScreen(
                         canSwitch = canSwitchSubscription,
                         onChange = onChangeSubscription,
                         onOpenProfile = onOpenProfile,
-                    )
-                }
-                val serverCard: @Composable () -> Unit = {
-                    VpnkaServerCard(
-                        name = serverName,
-                        delay = serverDelay,
-                        onChange = onChangeServer,
                     )
                 }
                 // «Качалка» — ВПЛОТНУЮ под карточкой подписки.
@@ -474,18 +395,35 @@ fun VpnkaConnectScreen(
                 // есть стол и главный экран это ОДИН экран, а не два. Бейдж
                 // на значке показывает то, что человеку и нужно знать
                 // издалека: сколько качается и сколько непрочитанных.
+                // Полоска загрузок — она в макете стоит ПЕРЕД сеткой
+                // значков и говорит то, ради чего экран открывают на ходу:
+                // что качается прямо сейчас и сколько осталось.
                 if (smartDeskEnabled) {
+                    VpnkaDownloadWidget(onClick = onYouTube)
                     VpnkaAppGrid(onOpen = onOpenDeskApp)
                 }
-                if (paidSubscription) {
-                    serverCard()
-                    planRow()
-                    youtubeRow()
-                } else {
-                    planRow()
-                    youtubeRow()
-                    serverCard()
+                // Сервер уже показан в блоке подключения — второй карточки
+                // здесь нет: одни и те же имя и задержка стояли на экране
+                // дважды.
+                //
+                // Ряды идут своей группой с зазором 7: в макете они прижаты
+                // друг к другу списком, а не разбросаны по 12 точек, как
+                // карточки выше.
+                Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                // Первой строкой — вход через Телеграм, пока его нет.
+                // Раньше об этом говорила выноска под шапкой, которую
+                // закрывали и забывали; в макете это обычный ряд, только
+                // залитый акцентом.
+                if (!telegramLinked) {
+                    VpnkaHomeRow(
+                        icon = "✈",
+                        label = "Войти через Телеграм",
+                        primary = true,
+                        onClick = onOpenProfile,
+                    )
                 }
+                planRow()
+                youtubeRow()
                 // Дальше — строки, а не карточки.
                 //
                 // Каждый пункт был карточкой с заголовком и двумя строками
@@ -511,89 +449,9 @@ fun VpnkaConnectScreen(
                     label = "Оставить отзыв",
                     onClick = onLeaveReview,
                 )
+                }
             }
         }
-    }
-}
-
-/**
- * The exit «Авто» is on right now, polled live while connected.
- *
- * «Авто» picks the fastest node per connection inside the xray core, so the
- * selected-server card («🌍 Авто») can't name it. This asks the server: a
- * /whoami that rides the tunnel (through xray's local proxy — the app is
- * outside its own VPN) reports the node it exited from. `value` is only
- * overwritten on a good read, so one missed poll keeps the last known flag
- * on screen instead of blinking to «определяем…».
- */
-@Composable
-private fun VpnkaActiveExit() {
-    // Poll only while the screen is actually in front. repeatOnLifecycle
-    // cancels the loop at ON_STOP and restarts it at ON_RESUME, so a
-    // backgrounded app doesn't keep hitting get.vpnka.io every few seconds.
-    val lifecycleOwner = LocalLifecycleOwner.current
-    var exit by remember { mutableStateOf<VpnkaExit.Exit?>(null) }
-    // 24.08.2026: ответ «я НЕ на VPN» раньше просто выбрасывался, и на экране
-    // оставался прошлый удачный флаг вместе с надписью «ЗАЩИЩЕНО». То есть
-    // единственный достоверный признак утечки мы прятали от пользователя.
-    // Теперь молчание сети (e == null) по-прежнему сохраняет прошлое
-    // состояние, а явное «on_vpn: false» — предупреждает.
-    var leaking by remember { mutableStateOf(false) }
-    LaunchedEffect(lifecycleOwner) {
-        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            while (true) {
-                val e = VpnkaExit.current()
-                when {
-                    e == null -> Unit            // не дозвонились — судить не о чем
-                    e.onVpn -> { exit = e; leaking = false }
-                    else -> leaking = true       // сервер видит наш реальный адрес
-                }
-                delay(10_000)
-            }
-        }
-    }
-    val e = exit
-    val label: String? =
-        if (!leaking && e != null && e.onVpn && !e.flag.isNullOrBlank())
-            "${e.flag}  ${e.name ?: e.code ?: ""}".trim()
-        else null
-    val known = label != null
-    Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(999.dp))
-            .background(
-                when {
-                    leaking -> VpnkaColors.Warning.copy(alpha = 0.18f)
-                    known -> VpnkaColors.Green.copy(alpha = 0.15f)
-                    else -> VpnkaColors.CardSpeed
-                }
-            )
-            .padding(horizontal = 14.dp, vertical = 7.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = if (leaking) "ВНИМАНИЕ" else "СЕЙЧАС ЧЕРЕЗ",
-            fontFamily = VpnkaFonts.manrope700,
-            fontWeight = VpnkaWeight.Bold,
-            fontSize = 10.sp,
-            letterSpacing = 1.sp,
-            color = VpnkaColors.TextFaint,
-        )
-        Spacer(Modifier.width(8.dp))
-        Text(
-            text = when {
-                leaking -> "трафик идёт мимо VPN"
-                else -> label ?: "определяем сервер…"
-            },
-            fontFamily = VpnkaFonts.nunito800,
-            fontWeight = VpnkaWeight.Extra,
-            fontSize = 13.sp,
-            color = when {
-                leaking -> VpnkaColors.Warning
-                known -> VpnkaColors.Green
-                else -> VpnkaColors.TextMuted
-            },
-        )
     }
 }
 
@@ -603,56 +461,190 @@ private fun VpnkaAppGrid(onOpen: (String) -> Unit) {
     val installed = remember { com.v2ray.ang.ui.smartDeskInstalledApps() }
     if (installed.isEmpty()) return
 
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = "ПРИЛОЖЕНИЯ",
-            fontFamily = VpnkaFonts.manrope600,
-            fontWeight = VpnkaWeight.Semi,
-            fontSize = 10.5.sp,
-            letterSpacing = 0.08.em,
-            color = VpnkaColors.TextFaint,
-            modifier = Modifier.padding(start = 4.dp, bottom = 10.dp),
-        )
-        // Четыре в ряд — как в макете. Сетку кладём вручную рядами, а не
-        // LazyVerticalGrid: она внутри прокручиваемого столбца, и ленивая
-        // сетка там меряется бесконечной высотой и роняет разметку.
-        installed.chunked(4).forEach { row ->
+    // Заголовка «ПРИЛОЖЕНИЯ» в макете нет: сетка значков в подписи не
+    // нуждается — и так видно, что это значки, — а строка съедала место,
+    // из-за которого нижние ряды уходили за край.
+    //
+    // Четыре в ряд, зазор 14 по вертикали и 10 по горизонтали. Сетку
+    // кладём вручную рядами, а не LazyVerticalGrid: она внутри
+    // прокручиваемого столбца, где меряется бесконечной высотой и роняет
+    // разметку.
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        val rows = installed.chunked(4)
+        rows.forEach { row ->
             Row(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(11.dp),
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 row.forEach { app ->
-                    Column(
-                        modifier = Modifier.weight(1f)
-                            .clip(RoundedCornerShape(14.dp))
-                            .clickable { onOpen(app.id) }
-                            .padding(vertical = 4.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Box(
-                            modifier = Modifier.size(52.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(VpnkaColors.CardSpeed),
-                            contentAlignment = Alignment.Center,
-                        ) { Text(app.glyph, fontSize = 23.sp) }
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            app.label,
-                            fontFamily = VpnkaFonts.manrope600,
-                            fontWeight = VpnkaWeight.Semi,
-                            fontSize = 10.sp,
-                            lineHeight = 12.sp,
-                            color = VpnkaColors.TextMuted,
-                            maxLines = 2,
-                            textAlign = TextAlign.Center,
-                        )
-                    }
+                    VpnkaAppTile(app = app, onOpen = onOpen, modifier = Modifier.weight(1f))
                 }
-                // Добиваем ряд пустотой, иначе три значка растянутся на всю
-                // ширину и последний ряд поедет по сетке.
+                // Неполный ряд добиваем пустыми местами, иначе три значка
+                // расползаются на всю ширину и сетка перестаёт быть сеткой.
                 repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
             }
         }
+    }
+}
+
+/**
+ * Полоска загрузок, как в макете: квадрат со стрелкой, название файла,
+ * ниточка прогресса под ним и объём справа.
+ *
+ * Пока ничего не качается, она не исчезает, а подводит итог — сколько
+ * всего скачано и сколько файлов. Пустое место на её месте читалось бы
+ * как «качалки нет».
+ */
+@Composable
+private fun VpnkaDownloadWidget(onClick: () -> Unit) {
+    val entries = YouTubeDownloads.entries
+    val active = entries.firstOrNull {
+        it.state == YouTubeDownloads.State.RUNNING ||
+            it.state == YouTubeDownloads.State.QUEUED
+    }
+    val pct = active?.let {
+        if (it.total > 0L) (it.done * 100 / it.total).toInt().coerceIn(0, 100) else 0
+    } ?: 0
+    val title = active?.label ?: "Все загрузки завершены"
+    val right = if (active != null) {
+        val (v, u) = formatTraffic(active.total.coerceAtLeast(active.done))
+        "$pct% · $v $u"
+    } else {
+        val done = entries.count { it.state == YouTubeDownloads.State.DONE }
+        val (v, u) = formatTraffic(
+            entries.filter { it.state == YouTubeDownloads.State.DONE }.sumOf { it.total }
+        )
+        "$v $u · $done"
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(15.dp))
+            .background(VpnkaColors.CardSpeed)
+            .border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(15.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Box(
+            modifier = Modifier.size(28.dp)
+                .clip(RoundedCornerShape(9.dp))
+                .background(VpnkaColors.Accent),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("↓", fontSize = 13.sp, color = VpnkaColors.OnAccent)
+        }
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                fontFamily = VpnkaFonts.manrope600,
+                fontWeight = VpnkaWeight.Semi,
+                fontSize = 11.5.sp,
+                lineHeight = 14.sp,
+                color = VpnkaColors.TextStrong,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(6.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(3.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(VpnkaColors.TextFaint.copy(alpha = 0.28f)),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(pct / 100f)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(VpnkaColors.Accent),
+                )
+            }
+        }
+        Text(
+            text = right,
+            fontFamily = VpnkaFonts.manrope600,
+            fontWeight = VpnkaWeight.Semi,
+            fontSize = 10.5.sp,
+            color = VpnkaColors.TextMuted,
+            maxLines = 1,
+        )
+    }
+}
+
+/** Один значок: цветная плитка с гербом, счётчик и подпись. */
+@Composable
+private fun VpnkaAppTile(
+    app: com.v2ray.ang.ui.DeskApp,
+    onOpen: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    // Счётчик на значке — то, ради чего на него смотрят издалека: сколько
+    // качается и сколько непрочитанных. Плитки до сих пор были одинаково
+    // серыми и молчали об этом.
+    val badge = when (app.id) {
+        "messages" -> com.v2ray.ang.handler.Messenger.contacts()
+            .sumOf { com.v2ray.ang.handler.ChatPrefs.unread(it.id) }
+        "youtube" -> YouTubeDownloads.entries.count {
+            it.state == YouTubeDownloads.State.RUNNING ||
+                it.state == YouTubeDownloads.State.QUEUED
+        }
+        else -> 0
+    }
+    val tint = com.v2ray.ang.ui.appTint(app.id)
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .clickable { onOpen(app.id) },
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Box(
+                modifier = Modifier.size(52.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Brush.linearGradient(tint)),
+                contentAlignment = Alignment.Center,
+            ) { Text(app.glyph, fontSize = 21.sp) }
+            if (badge > 0) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .offset(x = 8.dp, y = (-6).dp)
+                        .defaultMinSize(minWidth = 17.dp, minHeight = 17.dp)
+                        .clip(RoundedCornerShape(9.dp))
+                        .background(VpnkaColors.TextStrong)
+                        .padding(horizontal = 4.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        text = if (badge > 99) "99+" else badge.toString(),
+                        fontFamily = VpnkaFonts.manrope700,
+                        fontWeight = VpnkaWeight.Bold,
+                        fontSize = 9.5.sp,
+                        color = VpnkaColors.BgOffEdge,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(7.dp))
+        Text(
+            app.label,
+            fontFamily = VpnkaFonts.manrope600,
+            fontWeight = VpnkaWeight.Semi,
+            fontSize = 10.sp,
+            lineHeight = 12.sp,
+            color = VpnkaColors.TextMuted,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 
@@ -666,11 +658,9 @@ private fun VpnkaHeader(
     statusColor: Color,
     /** Включён ли туннель — от этого зависит цвет точки в пилюле. */
     statusOn: Boolean,
-    telegramLinked: Boolean,
+    /** Строка под пилюлей: «Трафик зашифрован» / «Нажмите на цветочек». */
+    hint: String,
 ) {
-    // Remind an unlinked user to sign in — shown on each launch, points at
-    // the profile button (top-left), dismissible.
-    var showAuthTip by remember { mutableStateOf(true) }
     Column(modifier = Modifier.fillMaxWidth().padding(top = topPadding)) {
     Row(
         modifier = Modifier
@@ -700,9 +690,15 @@ private fun VpnkaHeader(
         // В макете это скруглённая плашка: точка слева (при включённом ВПН
         // акцентная и с ореолом) и текст акцентом. Надпись сама по себе
         // читалась как заголовок экрана, а не как состояние.
-        Row(
+        // Пилюля и подсказка — ОДНОЙ колонкой по центру.
+        //
+        // Подсказка стояла отдельной строкой во всю ширину под шапкой и
+        // жила своей жизнью: 15 точек жирным, тогда как в макете это
+        // 11.5 обычной толщины прямо под состоянием, зазор 6.
+        Column(
             modifier = Modifier.weight(1f),
-            horizontalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Row(
                 modifier = Modifier
@@ -713,12 +709,27 @@ private fun VpnkaHeader(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(7.dp),
             ) {
+                // Ореол вокруг точки — он в макете есть и только он
+                // отличает «горит» от «просто кружок»: box-shadow 0 0 0 4px
+                // на акценте с прозрачностью .22.
                 Box(
-                    modifier = Modifier.size(8.dp).clip(CircleShape)
-                        .background(
-                            if (statusOn) statusColor else VpnkaColors.TextFaint
-                        ),
-                )
+                    modifier = Modifier.size(if (statusOn) 16.dp else 8.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (statusOn) {
+                        Box(
+                            modifier = Modifier.size(16.dp).clip(CircleShape)
+                                .background(statusColor.copy(alpha = 0.22f)),
+                        )
+                    }
+                    Box(
+                        modifier = Modifier.size(8.dp).clip(CircleShape)
+                            .background(
+                                if (statusOn) statusColor
+                                else VpnkaColors.TextMuted.copy(alpha = 0.55f)
+                            ),
+                    )
+                }
                 Text(
                     text = status,
                     fontFamily = VpnkaFonts.manrope700,
@@ -729,6 +740,16 @@ private fun VpnkaHeader(
                     maxLines = 1,
                 )
             }
+            Text(
+                text = hint,
+                fontFamily = VpnkaFonts.manrope600,
+                fontWeight = VpnkaWeight.Semi,
+                fontSize = 11.5.sp,
+                color = VpnkaColors.TextMuted,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
 
         // App update, top right. Always present — tapping it re-checks even
@@ -757,50 +778,6 @@ private fun VpnkaHeader(
             }
         }
     }
-        if (!telegramLinked && showAuthTip) {
-            AuthReminderCallout(
-                onOpen = { showAuthTip = false; onOpenProfile() },
-                onDismiss = { showAuthTip = false },
-            )
-        }
-    }
-}
-
-/** Speech-bubble under the profile button nudging an unlinked user to sign
- *  in via Telegram. Tapping it opens the profile; the ✕ dismisses it. */
-@Composable
-private fun AuthReminderCallout(onOpen: () -> Unit, onDismiss: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .padding(start = 20.dp, end = 20.dp, top = 10.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(VpnkaColors.Accent)
-            .clickable(onClick = onOpen)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("☝", fontSize = 18.sp)
-        Spacer(Modifier.width(8.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = "Войдите через Telegram",
-                fontFamily = VpnkaFonts.nunito800,
-                fontSize = 14.sp,
-                color = Color.White,
-            )
-            Text(
-                text = "Нажмите на кнопку профиля слева, чтобы привязать аккаунт",
-                fontFamily = VpnkaFonts.manrope600,
-                fontSize = 12.sp,
-                color = Color.White.copy(alpha = 0.9f),
-            )
-        }
-        Text(
-            text = "✕",
-            fontSize = 14.sp,
-            color = Color.White.copy(alpha = 0.85f),
-            modifier = Modifier.clickable(onClick = onDismiss).padding(6.dp),
-        )
     }
 }
 
@@ -921,7 +898,42 @@ private fun VpnkaExpiryBanner(daysLeft: Int, onRenew: () -> Unit) {
  * и жила отдельной строкой ниже.
  */
 @Composable
-private fun VpnkaHomeServerCard(name: String, delay: String, onClick: () -> Unit) {
+private fun VpnkaHomeServerCard(
+    name: String,
+    delay: String,
+    isRunning: Boolean,
+    onClick: () -> Unit,
+) {
+    // Живой узел и предупреждение об утечке — ЗДЕСЬ.
+    //
+    // Раньше это была отдельная плашка `VpnkaActiveExit` под кнопкой; при
+    // переделке экрана она осталась без вызова, и вместе с ней из сборки
+    // молча пропал единственный признак «трафик идёт мимо ВПН». А надпись
+    // «СЕЙЧАС ЧЕРЕЗ» переехала на карточку ВЫБРАННОГО сервера, которая при
+    // «🌍 Авто» узел назвать не может — то есть экран утверждал то, чего не
+    // знает. Спрашиваем сервер и показываем ответ в той же строке.
+    var exit by remember { mutableStateOf<VpnkaExit.Exit?>(null) }
+    var leaking by remember { mutableStateOf(false) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(isRunning, lifecycleOwner) {
+        if (!isRunning) { exit = null; leaking = false; return@LaunchedEffect }
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+            while (true) {
+                val e = VpnkaExit.current()
+                when {
+                    e == null -> Unit            // не дозвонились — судить не о чем
+                    e.onVpn -> { exit = e; leaking = false }
+                    else -> leaking = true       // сервер видит наш реальный адрес
+                }
+                delay(10_000)
+            }
+        }
+    }
+    val live = exit
+    val liveName = if (!leaking && live != null && live.onVpn)
+        "${live.flag.orEmpty()} ${live.name ?: live.code ?: ""}".trim()
+    else null
+
     Row(
         modifier = Modifier.fillMaxWidth()
             .clip(RoundedCornerShape(11.dp))
@@ -942,16 +954,23 @@ private fun VpnkaHomeServerCard(name: String, delay: String, onClick: () -> Unit
         )
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = "СЕЙЧАС ЧЕРЕЗ",
+                text = if (leaking) "ВНИМАНИЕ" else "СЕЙЧАС ЧЕРЕЗ",
                 fontFamily = VpnkaFonts.manrope600,
                 fontWeight = VpnkaWeight.Semi,
                 fontSize = 8.5.sp,
                 letterSpacing = 0.1.em,
-                color = VpnkaColors.TextFaint,
+                color = if (leaking) VpnkaColors.Warning else VpnkaColors.TextFaint,
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                text = if (delay.isNotBlank()) "$name · $delay" else name,
+                // Пока узел не назван — показываем выбранное. Как только
+                // сервер ответил, пишем ИМЕННО ТОТ узел, через который идём.
+                text = when {
+                    leaking -> "трафик идёт мимо VPN"
+                    liveName != null -> liveName
+                    delay.isNotBlank() -> "$name · $delay"
+                    else -> name
+                },
                 fontFamily = VpnkaFonts.nunito800,
                 fontWeight = VpnkaWeight.Extra,
                 fontSize = 12.sp,
@@ -1034,15 +1053,32 @@ private fun VpnkaHomeRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
             .background(if (primary) VpnkaColors.Accent else VpnkaColors.CardSpeed)
+            .then(
+                if (primary) Modifier
+                else Modifier.border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(14.dp))
+            )
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = if (primary) 12.dp else 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = icon,
-            fontSize = 14.sp,
-            color = if (primary) VpnkaColors.OnAccent else VpnkaColors.Accent,
-        )
+        // Значок сидит в квадратике 26 точек, а не висит голым символом:
+        // без подложки строки читались как список текста, а в макете у
+        // каждой слева цветная метка.
+        Box(
+            modifier = Modifier.size(26.dp)
+                .clip(RoundedCornerShape(9.dp))
+                .background(
+                    if (primary) Color.White.copy(alpha = 0.24f)
+                    else VpnkaColors.Accent.copy(alpha = 0.22f)
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = icon,
+                fontSize = 12.sp,
+                color = if (primary) VpnkaColors.OnAccent else VpnkaColors.Accent,
+            )
+        }
         Spacer(Modifier.width(11.dp))
         Text(
             text = label,
@@ -1059,16 +1095,18 @@ private fun VpnkaHomeRow(
                 text = right,
                 fontFamily = VpnkaFonts.manrope600,
                 fontWeight = VpnkaWeight.Semi,
-                fontSize = 11.5.sp,
-                color = if (primary) VpnkaColors.OnAccent else VpnkaColors.TextMuted,
+                fontSize = 10.5.sp,
+                color = if (primary) VpnkaColors.OnAccent.copy(alpha = 0.72f)
+                    else VpnkaColors.TextMuted,
                 maxLines = 1,
             )
             Spacer(Modifier.width(8.dp))
         }
         Text(
             text = "›",
-            fontSize = 16.sp,
-            color = if (primary) VpnkaColors.OnAccent else VpnkaColors.TextFaint,
+            fontSize = 12.sp,
+            color = if (primary) VpnkaColors.OnAccent.copy(alpha = 0.8f)
+                else VpnkaColors.Accent,
         )
     }
 }
@@ -1105,175 +1143,6 @@ private fun VpnkaRefreshGlyph() {
             close()
         }
         drawPath(head, color = VpnkaColors.IconMuted)
-    }
-}
-
-/** A simple head-and-shoulders mark, drawn rather than shipped. */
-@Composable
-private fun VpnkaPersonGlyph() {
-    androidx.compose.foundation.Canvas(modifier = Modifier.size(20.dp)) {
-        val w = size.width
-        val h = size.height
-        drawCircle(
-            color = VpnkaColors.IconMuted,
-            radius = w * 0.22f,
-            center = Offset(w / 2f, h * 0.30f),
-        )
-        // Shoulders: an arc clipped by the canvas bottom reads as a bust
-        // without needing a path.
-        drawArc(
-            color = VpnkaColors.IconMuted,
-            startAngle = 180f,
-            sweepAngle = 180f,
-            useCenter = true,
-            topLeft = Offset(w * 0.12f, h * 0.60f),
-            size = androidx.compose.ui.geometry.Size(w * 0.76f, h * 0.70f),
-        )
-    }
-}
-
-@Composable
-private fun VpnkaConnectButton(
-    isRunning: Boolean,
-    isLoading: Boolean,
-    accent: Color,
-    onToggle: () -> Unit,
-    outerSize: Dp,
-) {
-    val transition = rememberInfiniteTransition(label = "button")
-
-    // Handoff: pulse 2s ease-out infinite, scale 1→1.35, opacity .5→0.
-    val pulseScale by transition.animateFloat(
-        initialValue = 1f,
-        targetValue = if (isRunning) 1.35f else 1f,
-        animationSpec = infiniteRepeatable(tween(2000, easing = LinearEasing)),
-        label = "pulse-scale",
-    )
-    val pulseAlpha by transition.animateFloat(
-        initialValue = if (isRunning) 0.5f else 0.5f,
-        targetValue = if (isRunning) 0f else 0.5f,
-        animationSpec = infiniteRepeatable(tween(2000, easing = LinearEasing)),
-        label = "pulse-alpha",
-    )
-    // Handoff: dashed ring, 40s linear infinite.
-    val spin by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            tween(40_000, easing = LinearEasing), RepeatMode.Restart,
-        ),
-        label = "dash-spin",
-    )
-
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
-
-    Box(
-        modifier = Modifier.size(outerSize),
-        contentAlignment = Alignment.Center,
-    ) {
-        // Outer pulse ring.
-        androidx.compose.foundation.Canvas(
-            modifier = Modifier
-                .fillMaxSize()
-                .scale(pulseScale)
-        ) {
-            drawCircle(
-                color = accent.copy(alpha = pulseAlpha),
-                radius = size.minDimension / 2f - 1.dp.toPx(),
-                style = Stroke(width = 2.dp.toPx()),
-            )
-        }
-
-        // Dashed ring, inset 14dp, slowly rotating.
-        androidx.compose.foundation.Canvas(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(14.dp)
-        ) {
-            rotate(spin) {
-                drawCircle(
-                    color = accent.copy(alpha = 0.35f),
-                    radius = size.minDimension / 2f - 1.dp.toPx(),
-                    style = Stroke(
-                        width = 2.dp.toPx(),
-                        pathEffect = PathEffect.dashPathEffect(
-                            floatArrayOf(6.dp.toPx(), 8.dp.toPx()), 0f,
-                        ),
-                    ),
-                )
-            }
-        }
-
-        // The button itself: a white circle carrying the logo.
-        Box(
-            modifier = Modifier
-                .size(outerSize * 0.765f)
-                .scale(if (pressed) 0.95f else 1f)
-                .clip(CircleShape)
-                .background(Color.White)
-                .clickable(
-                    interactionSource = interaction,
-                    indication = null,
-                    enabled = !isLoading,
-                    onClick = onToggle,
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Image(
-                painter = painterResource(R.drawable.vpnka_logo),
-                contentDescription = if (isRunning) "Отключить" else "Подключить",
-                contentScale = ContentScale.Crop,
-                // The logo is drawn orange; connected, the handoff recolours
-                // it rather than shipping a second image.
-                colorFilter = if (isRunning) hueRotate(75f) else null,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .scale(LOGO_SCALE),
-            )
-        }
-    }
-}
-
-@Composable
-private fun VpnkaTrafficCard(
-    label: String,
-    bytes: Long,
-    modifier: Modifier = Modifier,
-) {
-    val (value, unit) = formatTraffic(bytes)
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(18.dp))
-            .background(VpnkaColors.CardSpeed)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-    ) {
-        Text(
-            text = label,
-            fontFamily = VpnkaFonts.manrope700,
-            fontWeight = VpnkaWeight.Bold,
-            fontSize = 11.sp,
-            letterSpacing = 1.sp,
-            color = VpnkaColors.TextFaint,
-        )
-        Spacer(Modifier.height(4.dp))
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(
-                text = value,
-                fontFamily = VpnkaFonts.nunito800,
-                fontWeight = VpnkaWeight.Extra,
-                fontSize = 20.sp,
-                color = VpnkaColors.TextStrong,
-            )
-            Spacer(Modifier.size(4.dp))
-            Text(
-                text = unit,
-                fontFamily = VpnkaFonts.manrope600,
-                fontWeight = VpnkaWeight.Semi,
-                fontSize = 12.sp,
-                color = VpnkaColors.TextUnit,
-            )
-        }
     }
 }
 
@@ -1425,67 +1294,130 @@ private fun VpnkaFreeMonthCard(
     }
 }
 
+/** A simple head-and-shoulders mark, drawn rather than shipped. */
 @Composable
-private fun VpnkaServerCard(
-    name: String,
-    delay: String,
-    onChange: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(20.dp))
-            .background(VpnkaColors.CardServer)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(CircleShape)
-                .background(
-                    Brush.linearGradient(
-                        listOf(
-                            VpnkaColors.FlagCircleStart,
-                            VpnkaColors.FlagCircleEnd,
-                        )
-                    )
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            // The flag comes out of the server's own name — our servers are
-            // named «🇳🇱 Amsterdam» — rather than from a country table that
-            // would have to be kept in step with the node list.
-            Text(text = flagOf(name), fontSize = 18.sp)
-        }
-        Spacer(Modifier.size(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = nameWithoutFlag(name),
-                fontFamily = VpnkaFonts.nunito800,
-                fontWeight = VpnkaWeight.Extra,
-                fontSize = 15.sp,
-                color = VpnkaColors.TextStrong,
-            )
-            Text(
-                text = delay,
-                fontFamily = VpnkaFonts.manrope600,
-                fontWeight = VpnkaWeight.Semi,
-                fontSize = 12.sp,
-                color = VpnkaColors.TextFaint,
-            )
-        }
-        Text(
-            text = "Сменить ›",
-            fontFamily = VpnkaFonts.nunito800,
-            fontWeight = VpnkaWeight.Extra,
-            fontSize = 13.sp,
-            color = VpnkaColors.Accent,
-            textAlign = TextAlign.End,
-            modifier = Modifier.clickable(onClick = onChange),
+private fun VpnkaPersonGlyph() {
+    androidx.compose.foundation.Canvas(modifier = Modifier.size(20.dp)) {
+        val w = size.width
+        val h = size.height
+        drawCircle(
+            color = VpnkaColors.IconMuted,
+            radius = w * 0.22f,
+            center = Offset(w / 2f, h * 0.30f),
+        )
+        // Shoulders: an arc clipped by the canvas bottom reads as a bust
+        // without needing a path.
+        drawArc(
+            color = VpnkaColors.IconMuted,
+            startAngle = 180f,
+            sweepAngle = 180f,
+            useCenter = true,
+            topLeft = Offset(w * 0.12f, h * 0.60f),
+            size = androidx.compose.ui.geometry.Size(w * 0.76f, h * 0.70f),
         )
     }
 }
+
+
+@Composable
+private fun VpnkaConnectButton(
+    isRunning: Boolean,
+    isLoading: Boolean,
+    accent: Color,
+    onToggle: () -> Unit,
+    outerSize: Dp,
+) {
+    // Кольца по макету, а не «пульс и пунктир».
+    //
+    // Было: одно кольцо, раздувающееся до 1.35 размера всего блока, и
+    // вращающийся пунктир. В макете пунктира нет вовсе, а волны — три,
+    // они расходятся от 132 до 186 точек (то есть НЕ выходят за 146-й
+    // блок настолько, чтобы налезть на таймер справа) и живут только
+    // пока туннель поднят: на выключенном экране круг стоит тихо.
+    val transition = rememberInfiniteTransition(label = "button")
+    // Один общий ход 0…1 за 10 с — как тик макета раз в секунду по
+    // модулю 10; три волны берут его со сдвигом в треть.
+    val wave by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            tween(10_000, easing = LinearEasing), RepeatMode.Restart,
+        ),
+        label = "wave",
+    )
+
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+
+    // Выключено — кольцо не пропадает, а становится еле заметным:
+    // rgba(fg,.14) макета, а не волосяная рамка карточек (.07).
+    val ringColor = if (isRunning) accent.copy(alpha = 0.45f)
+        else VpnkaColors.TextStrong.copy(alpha = 0.14f)
+    Box(
+        modifier = Modifier.size(outerSize),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (isRunning) {
+            androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+                val stroke = 1.5.dp.toPx()
+                repeat(3) { i ->
+                    val phase = (wave + i / 3f) % 1f
+                    val diameter = (132f + phase * 54f).dp.toPx()
+                    drawCircle(
+                        color = accent.copy(alpha = 0.4f * (1f - phase)),
+                        radius = diameter / 2f,
+                        style = Stroke(width = stroke),
+                    )
+                }
+            }
+        }
+
+        // Неподвижное кольцо 132 точки — оно есть всегда, меняется цвет.
+        androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+            drawCircle(
+                color = ringColor,
+                radius = 132.dp.toPx() / 2f,
+                style = Stroke(width = 1.5.dp.toPx()),
+            )
+        }
+
+        // Сам цветок: белый круг 118 точек с логотипом.
+        Box(
+            modifier = Modifier
+                .size(118.dp)
+                .scale(if (pressed) 0.95f else 1f)
+                .clip(CircleShape)
+                .background(Color.White)
+                .clickable(
+                    interactionSource = interaction,
+                    indication = null,
+                    enabled = !isLoading,
+                    onClick = onToggle,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Image(
+                painter = painterResource(R.drawable.vpnka_logo),
+                contentDescription = if (isRunning) "Отключить" else "Подключить",
+                contentScale = ContentScale.Crop,
+                // Подключено — логотип перекрашивается в зелень; выключено —
+                // приглушается, как в макете (grayscale .5).
+                colorFilter = if (isRunning) hueRotate(78f) else desaturate(0.5f),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .scale(LOGO_SCALE),
+            )
+        }
+    }
+}
+
+/** Половинное обесцвечивание — цветок на выключенном экране. */
+private fun desaturate(amount: Float): ColorFilter {
+    val m = ColorMatrix()
+    m.setToSaturation(1f - amount)
+    return ColorFilter.colorMatrix(m)
+}
+
 
 // ---- small helpers ---------------------------------------------------------
 

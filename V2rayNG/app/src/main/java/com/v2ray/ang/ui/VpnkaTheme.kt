@@ -116,7 +116,7 @@ object VpnkaColors {
     // штриховки-заглушки под картинку, и заливать ими блоки было ошибкой.
     private val FlowFilm = Color(0xFFF8F1E6)
     val CardSpeed: Color get() =
-        pick(Color(0xFFFFFFFF).copy(alpha = 0.75f), Color(0xFFFFFFFF).copy(alpha = 0.07f), FlowFilm.copy(alpha = 0.045f))
+        pick(Color(0xFFFFFFFF).copy(alpha = 0.75f), Color(0xFFFFFFFF).copy(alpha = 0.07f), FlowFilm.copy(alpha = 0.06f))
     val CardServer: Color get() =
         pick(Color(0xFFFFFFFF).copy(alpha = 0.85f), Color(0xFFFFFFFF).copy(alpha = 0.10f), FlowFilm.copy(alpha = 0.07f))
     val CardSettings: Color get() =
@@ -124,7 +124,7 @@ object VpnkaColors {
 
     /** Волосяная рамка карточек. В светлой теме её нет — там держит тень. */
     val Hairline: Color get() =
-        if (flow) FlowFilm.copy(alpha = 0.09f) else Color(0x00000000)
+        if (flow) FlowFilm.copy(alpha = 0.07f) else Color(0x00000000)
 
     /**
      * Чем писать ПО акценту. В макете это почти чёрный #1d1204, а не белый:
