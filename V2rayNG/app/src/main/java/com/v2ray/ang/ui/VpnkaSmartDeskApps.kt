@@ -1264,8 +1264,8 @@ private class BrowserTab(
     val canFwd = mutableStateOf(false)
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
-    /** Про ошибку скрипта говорим один раз на страницу, а не сто. */
-    internal var consoleShown = false
+    /** Первая ошибка консоли на этой загрузке — на случай пустой страницы. */
+    internal var lastConsoleError: String? = null
 
     /** Пропуск главного фрейма к мосту сохранения паролей.
      *
@@ -1284,7 +1284,14 @@ private class BrowserTab(
 
     val webView: WebView = WebView(context).apply {
         settings.javaScriptEnabled = true
-        settings.domStorageEnabled = !incognito
+        // Хранилище страницы работает и в инкогнито.
+        //
+        // Выключенный domStorage — это не приватность, а сломанный сайт:
+        // на localStorage у современных страниц висит корзина, плеер и
+        // согласие, и при обращении к нему они получают исключение и
+        // умирают целиком. Приватность держим иначе: при закрытии
+        // приватной вкладки хранилище стираем (см. closeTab).
+        settings.domStorageEnabled = true
         // В инкогнито не оставляем ни кэша, ни форм, ни паролей. Полной
         // изоляции WebView не даёт (куки живут общие), и обещать «невидимку»
         // нельзя — но всё, что зависит от нас, здесь выключено.
@@ -1370,7 +1377,7 @@ private class BrowserTab(
         }.getOrDefault(false)
         webViewClient = object : WebViewClient() {
             override fun onPageStarted(view: WebView?, u: String?, favicon: android.graphics.Bitmap?) {
-                this@BrowserTab.consoleShown = false
+                this@BrowserTab.lastConsoleError = null
                 if (!startScriptInstalled) view?.evaluateJavascript(NO_WEBRTC_JS, null)
                 u?.let { this@BrowserTab.url.value = it }; this@BrowserTab.canBack.value = canGoBack(); this@BrowserTab.canFwd.value = canGoForward()
             }
@@ -1396,6 +1403,25 @@ private class BrowserTab(
                         null,
                     )
                     view?.evaluateJavascript(PWD_JS, null)
+                }
+                // Пустая страница — это когда И правда пусто.
+                //
+                // Определяем по содержимому, а не по ошибкам: сайт может
+                // ругаться и прекрасно работать, а может молча ничего не
+                // нарисовать. Говорим только во втором случае и называем
+                // первую ошибку, если она была, — с ней разбор начинается
+                // сразу, а не с «просто пустая страница».
+                view?.evaluateJavascript(
+                    "(document.body?document.body.innerText.trim().length:0)",
+                ) { raw ->
+                    val len = raw?.trim()?.trim('"')?.toIntOrNull() ?: -1
+                    if (len in 0..20) {
+                        val why = this@BrowserTab.lastConsoleError
+                        SmartDeskToast.show(
+                            if (why != null) "Страница пуста. Скрипт упал: $why"
+                            else "Страница пуста — сайт ничего не прислал"
+                        )
+                    }
                 }
                 // Журнал посещений. Инкогнито молчит — иначе окно «без следов»
                 // оставляло бы главный след.
@@ -1481,11 +1507,14 @@ private class BrowserTab(
             override fun onConsoleMessage(
                 m: android.webkit.ConsoleMessage?,
             ): Boolean {
+                // Ошибку ЗАПОМИНАЕМ, но молчим: у любого живого сайта в
+                // консоли есть ругань, и кричать о ней поверх работающей
+                // страницы — врать человеку. Скажем только если страница
+                // ОКАЖЕТСЯ пустой (проверка в onPageFinished).
                 if (m?.messageLevel() == android.webkit.ConsoleMessage.MessageLevel.ERROR &&
-                    !this@BrowserTab.consoleShown
+                    this@BrowserTab.lastConsoleError == null
                 ) {
-                    this@BrowserTab.consoleShown = true
-                    SmartDeskToast.show("Скрипт страницы упал: " + m.message().take(120))
+                    this@BrowserTab.lastConsoleError = m.message().take(120)
                 }
                 return super.onConsoleMessage(m)
             }
@@ -1734,6 +1763,11 @@ private fun BrowserApp() {
                 t.webView.clearCache(true)
                 t.webView.clearFormData()
                 t.webView.clearHistory()
+                // Хранилище страниц — тоже след, и теперь оно у приватной
+                // вкладки включено (без него сайты не работают). Стираем
+                // на закрытии: это ровно то, что даёт «без следов», не
+                // ломая при этом сами страницы.
+                android.webkit.WebStorage.getInstance().deleteAllData()
             }
         }
     }
