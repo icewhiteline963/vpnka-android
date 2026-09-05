@@ -147,23 +147,25 @@ private val CATALOG_BY_ID = SMARTDESK_CATALOG.associateBy { it.id }
  * те три приложения, что остаются, и все они уже стоят.
  */
 private val SMARTDESK_HIDDEN = setOf(
-    "store", "calendar", "contacts", "notes", "help",
-    // 03.09, второе решение владельца: мессенджер уходит вместе с сейфом
-    // — без сейфа ему негде держать ключи, а показывать вход, который
-    // ничего не откроет, нечестно. Браузер вернули следом: он сейфа не
-    // требует и живёт сам по себе.
-    "messages",
+    // 05.09, решение владельца: возвращаем на главный ВСЕ приложения облака
+    // — мессенджер, контакты, календарь, заметки, помощь. Дверь сейфа
+    // больше не встаёт перед всем столом: она пер-приложенная (см.
+    // VpnkaSmartDeskScreen), поэтому YouTube и браузер открываются без
+    // пароля, а сейф спрашивается только при открытии приложения из
+    // VAULT_APPS. Скрыт остаётся лишь «store» — это экран управления
+    // раскладкой, а не контентное приложение.
+    "store",
 )
 
 /**
  * Кому нужен сейф.
  *
- * Сейф охраняет личное: переписку, заметки, контакты, календарь. Экран
- * ввода пароля висел на входе в стол ЦЕЛИКОМ — то есть человек, который
- * шёл скачать ролик, упирался в пароль от хранилища, к которому его
- * ролик отношения не имеет. Спрашиваем пароль только если на столе есть
- * то, ради чего он существует; сейчас таких приложений нет, и вход
- * открывается сразу.
+ * Сейф охраняет личное: переписку, заметки, контакты, календарь. Дверь
+ * ввода пароля — ПЕР-ПРИЛОЖЕННАЯ (см. VpnkaSmartDeskScreen): встаёт только
+ * при открытии одного из этих приложений, а не перед всем столом. Поэтому
+ * YouTube и браузер открываются без пароля, а сейф создаётся/спрашивается
+ * ровно тогда, когда человек заходит в мессенджер, контакты, календарь или
+ * заметки.
  */
 private val VAULT_APPS = setOf("messages", "notes", "contacts", "calendar")
 
@@ -173,7 +175,8 @@ fun smartDeskNeedsVault(): Boolean = installedIds().any { it in VAULT_APPS }
 /** Что показываем: витрина магазина и всё, что видит человек. */
 val SMARTDESK_VISIBLE = SMARTDESK_CATALOG.filter { it.id !in SMARTDESK_HIDDEN }
 
-private val DEFAULT_INSTALLED = listOf("messages", "browser", "youtube")
+private val DEFAULT_INSTALLED =
+    listOf("messages", "contacts", "calendar", "notes", "browser", "youtube", "help")
 
 // ---- «Android 17» look: gradient wallpapers + colourful squircle app tiles ----
 
@@ -213,6 +216,12 @@ private const val KEY_HELP_SEEDED = "vpnka_smartdesk_help_seeded"
 private const val KEY_YOUTUBE_SEEDED = "vpnka_smartdesk_youtube_seeded"
 private const val KEY_NOTES_SEEDED = "vpnka_smartdesk_notes_seeded"
 private const val KEY_BROWSER_SEEDED = "vpnka_smartdesk_browser_seeded"
+private const val KEY_MESSAGES_SEEDED = "vpnka_smartdesk_messages_seeded"
+private const val KEY_CONTACTS_SEEDED = "vpnka_smartdesk_contacts_seeded"
+private const val KEY_CALENDAR_SEEDED = "vpnka_smartdesk_calendar_seeded"
+// Пере-досев help+notes после расхиживания 05.09 (их старый досев мог быть
+// вхолостую, пока они были скрыты) — новый ключ, поэтому срабатывает один раз.
+private const val KEY_CLOUD_RESEED = "vpnka_smartdesk_cloud_reseed_20260905"
 
 fun installedIds(): List<String> {
     val stored = MmkvManager.decodeSettingsString(KEY_INSTALLED)
@@ -228,6 +237,10 @@ fun installedIds(): List<String> {
         MmkvManager.encodeSettings(KEY_YOUTUBE_SEEDED, "1")
         MmkvManager.encodeSettings(KEY_NOTES_SEEDED, "1")
         MmkvManager.encodeSettings(KEY_BROWSER_SEEDED, "1")
+        MmkvManager.encodeSettings(KEY_MESSAGES_SEEDED, "1")
+        MmkvManager.encodeSettings(KEY_CONTACTS_SEEDED, "1")
+        MmkvManager.encodeSettings(KEY_CALENDAR_SEEDED, "1")
+        MmkvManager.encodeSettings(KEY_CLOUD_RESEED, "1")
     }
     var seeded = false
     // One-time seeds: existing installs (a stored list without a newly-shipped
@@ -257,6 +270,35 @@ fun installedIds(): List<String> {
     if (stored != null && MmkvManager.decodeSettingsString(KEY_BROWSER_SEEDED) == null) {
         if ("browser" !in ids) ids = ids + "browser"
         MmkvManager.encodeSettings(KEY_BROWSER_SEEDED, "1")
+        seeded = true
+    }
+    // 05.09: приложения облака вернули на главный. Досеваем разово каждому,
+    // кто их не удалял вручную; сейф спрашивается пер-приложенно при открытии.
+    if (stored != null && MmkvManager.decodeSettingsString(KEY_MESSAGES_SEEDED) == null) {
+        if ("messages" !in ids) ids = ids + "messages"
+        MmkvManager.encodeSettings(KEY_MESSAGES_SEEDED, "1")
+        seeded = true
+    }
+    if (stored != null && MmkvManager.decodeSettingsString(KEY_CONTACTS_SEEDED) == null) {
+        if ("contacts" !in ids) ids = ids + "contacts"
+        MmkvManager.encodeSettings(KEY_CONTACTS_SEEDED, "1")
+        seeded = true
+    }
+    if (stored != null && MmkvManager.decodeSettingsString(KEY_CALENDAR_SEEDED) == null) {
+        if ("calendar" !in ids) ids = ids + "calendar"
+        MmkvManager.encodeSettings(KEY_CALENDAR_SEEDED, "1")
+        seeded = true
+    }
+    // help и notes раньше были в SMARTDESK_HIDDEN, и их старый досев мог
+    // отработать ВХОЛОСТУЮ: флаг ставился, но приложение тут же отфильтровывал
+    // `it !in SMARTDESK_HIDDEN`, и в сохранённый список оно не попадало. Тогда
+    // после расхиживания старый флаг не даст им вернуться. Отдельный разовый
+    // «пере-досев» под новым ключом добавляет их сейчас независимо от старых
+    // флагов (кто удалит вручную — этот ключ уже выставлен, назад не вернём).
+    if (stored != null && MmkvManager.decodeSettingsString(KEY_CLOUD_RESEED) == null) {
+        if ("help" !in ids) ids = ids + "help"
+        if ("notes" !in ids) ids = ids + "notes"
+        MmkvManager.encodeSettings(KEY_CLOUD_RESEED, "1")
         seeded = true
     }
     ids = ids.filter { it !in SMARTDESK_HIDDEN }
@@ -343,6 +385,11 @@ fun VpnkaSmartDeskScreen(
     // installed set — the store (a child screen) may have installed/removed
     // apps while this composable stayed in composition.
     var deskTick by remember { mutableIntStateOf(0) }
+    // Пер-приложенный сейф: дверь хранилища встаёт ТОЛЬКО при открытии
+    // приложения, которое им пользуется (мессенджер, контакты, календарь,
+    // заметки), а не перед всем столом. YouTube и браузер открываются без
+    // пароля. Тик пересобирает гейт после успешного создания/входа в сейф.
+    var vaultTick by remember { mutableIntStateOf(0) }
     // The open app is rendered as an animated overlay over the desktop (below),
     // not an early return — so its open/close zoom can play. `lastApp` keeps the
     // app around for the closing animation after `openApp` goes null.
@@ -885,12 +932,27 @@ fun VpnkaSmartDeskScreen(
                   modifier = Modifier.background(VpnkaColors.BgOffMid)
                       .padding(bottom = appBottomOverlay),
               ) {
-                VpnkaSmartDeskAppScreen(
-                    appId = app.id,
-                    // И «Главная» в нижней панели, и «назад» из самого
-                    // приложения ведут в одно место — на главный экран.
-                    onBack = { openApp = null; deskTick++; onBack() },
-                )
+                // Приложениям облака нужен сейф: если он ещё не создан —
+                // VpnkaVaultGate предложит задать пароль, если создан —
+                // спросит его. YouTube и браузер в VAULT_APPS не входят и
+                // открываются сразу.
+                val needsVault = app.id in VAULT_APPS
+                val unlocked = remember(vaultTick, app.id) {
+                    com.v2ray.ang.handler.Vault.isUnlocked()
+                }
+                if (needsVault && !unlocked) {
+                    VpnkaVaultGate(
+                        onUnlocked = { vaultTick++ },
+                        onBack = { openApp = null; deskTick++; onBack() },
+                    )
+                } else {
+                    VpnkaSmartDeskAppScreen(
+                        appId = app.id,
+                        // И «Главная» в нижней панели, и «назад» из самого
+                        // приложения ведут в одно место — на главный экран.
+                        onBack = { openApp = null; deskTick++; onBack() },
+                    )
+                }
               }
             }
         }

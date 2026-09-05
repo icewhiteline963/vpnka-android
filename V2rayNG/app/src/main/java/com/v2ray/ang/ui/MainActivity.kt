@@ -655,8 +655,6 @@ class MainActivity : HelperBaseComponentActivity() {
     // SmartDesk's internal back (pop overlay/app → desktop). Returns true if it
     // handled the press; back closes the whole surface only when it returns false.
     private var smartDeskBack: (() -> Boolean)? = null
-    // Bumped when the zero-knowledge vault is unlocked, to re-evaluate the gate.
-    private var vaultTick by mutableStateOf(0)
     // Set right before a profile refresh that follows claiming/buying a plan,
     // so the sync activates the newly-acquired subscription (its radio).
     private var selectNewestOnSync by mutableStateOf(false)
@@ -1779,37 +1777,25 @@ class MainActivity : HelperBaseComponentActivity() {
         }
 
         if (showSmartDesk && !showServers) {
-            // Zero-knowledge gate: the cloud opens only once the vault is
-            // unlocked (create a passphrase first time, enter it on a fresh
-            // device). Once unlocked the key is cached, so this is skipped.
-            // Пароль от сейфа спрашиваем, только если на столе есть то,
-            // что сейф охраняет. Сейчас там один загрузчик видео — держать
-            // перед ним дверь от хранилища переписки не за чем.
-            val vaultReady = remember(vaultTick) {
-                !com.v2ray.ang.ui.smartDeskNeedsVault() ||
-                    com.v2ray.ang.handler.Vault.isUnlocked()
-            }
-            if (!vaultReady) {
-                VpnkaVaultGate(
-                    onUnlocked = { vaultTick++ },
-                    onBack = { showSmartDesk = false },
-                )
-            } else {
-                VpnkaSmartDeskScreen(
-                    // «На связи» must reflect the live tunnel: SmartDesk apps all
-                    // egress through the VPN, so with the VPN off they're offline
-                    // regardless of the cached feature-reachability ping.
-                    online = smartDeskOnline && uiState.isRunning,
-                    onBack = { showSmartDesk = false },
-                    onToggleVpn = { handleFabAction() },
-                    // Страна и задержка в шапке рабочего стола — как в макете.
-                    serverName = servers.firstOrNull { it.guid == uiState.selectedGuid }
-                        ?.profile?.remarks?.ifBlank { "" } ?: "",
-                    serverDelay = servers.firstOrNull { it.guid == uiState.selectedGuid }
-                        ?.testDelayString?.takeIf { it.isNotBlank() } ?: "",
-                    setBackHandler = { smartDeskBack = it },
-                )
-            }
+            // Zero-knowledge gate теперь ПЕР-ПРИЛОЖЕННЫЙ и живёт внутри
+            // VpnkaSmartDeskScreen: дверь сейфа встаёт только при открытии
+            // приложения облака (мессенджер, контакты, календарь, заметки),
+            // а не перед всем столом. YouTube и браузер открываются сразу,
+            // без пароля. Поэтому здесь стол показываем безусловно.
+            VpnkaSmartDeskScreen(
+                // «На связи» must reflect the live tunnel: SmartDesk apps all
+                // egress through the VPN, so with the VPN off they're offline
+                // regardless of the cached feature-reachability ping.
+                online = smartDeskOnline && uiState.isRunning,
+                onBack = { showSmartDesk = false },
+                onToggleVpn = { handleFabAction() },
+                // Страна и задержка в шапке рабочего стола — как в макете.
+                serverName = servers.firstOrNull { it.guid == uiState.selectedGuid }
+                    ?.profile?.remarks?.ifBlank { "" } ?: "",
+                serverDelay = servers.firstOrNull { it.guid == uiState.selectedGuid }
+                    ?.testDelayString?.takeIf { it.isNotBlank() } ?: "",
+                setBackHandler = { smartDeskBack = it },
+            )
             return
         }
 
