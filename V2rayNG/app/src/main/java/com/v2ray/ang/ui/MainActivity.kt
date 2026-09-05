@@ -766,9 +766,22 @@ class MainActivity : HelperBaseComponentActivity() {
         // Вход по ссылке из бота: код меняем на токен прямо здесь, без
         // экрана ввода. Тост нужен обязательно — иначе для человека
         // «нажал в боте, вернулся» выглядит как «ничего не произошло».
+        //
+        // vpnkaLoginFromLink обнуляем ТОЛЬКО в конце, после fold(). Раньше
+        // обнуляли сразу — но это ключ ЭТОГО ЖЕ LaunchedEffect: запись в
+        // него планирует рекомпозицию, а signIn() внутри уходит в
+        // withContext(Dispatchers.IO) и отпускает главный поток. Рекомпозиция
+        // успевала проскочить именно в этот момент, видела смену ключа
+        // (код → null) и отменяла текущую корутину. Сам обмен кода на токен
+        // при этом всё равно происходил (не суспенд-точка), а вот fold() —
+        // где обновляются signedIn/subReload/subRefreshRequest и тост — уже
+        // не вызывался: резюм отменённой корутины тихо бросал
+        // CancellationException. Итог: человек реально входил (токен
+        // сохранялся), но экран не узнавал об этом, пока не открывал
+        // Профиль — там подписка перечитывается уже другим, не отменённым
+        // эффектом.
         LaunchedEffect(vpnkaLoginFromLink) {
             val code = vpnkaLoginFromLink ?: return@LaunchedEffect
-            vpnkaLoginFromLink = null
             VpnkaAccount.signIn(code).fold(
                 onSuccess = {
                     signedIn = true
@@ -784,6 +797,7 @@ class MainActivity : HelperBaseComponentActivity() {
                     }
                 },
             )
+            vpnkaLoginFromLink = null
         }
 
         // Fetch only while the screen is open, and again on retry. Polling
