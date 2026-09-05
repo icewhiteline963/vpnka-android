@@ -810,21 +810,25 @@ class MainViewModel(
     }
 
     fun updateConfigViaSubAll():
-        SubscriptionUpdateResult =
-        if (subscriptionId.isEmpty()) {
+        SubscriptionUpdateResult {
+        // subscriptionId — это selectedGroupId из uiState (в памяти), а не
+        // свежее чтение хранилища. После выхода из аккаунта старая группа
+        // удаляется из хранилища, но в памяти её id ещё висит, пока
+        // setupGroupTab не пересобрал состояние. Раньше здесь на повисший id
+        // возвращался ПУСТОЙ результат — и обновление молча не качало ничего:
+        // ни триал, ни новую подписку. Симптом — «вышел, а серверов и
+        // бесплатных суток нет». Если выбранной группы в хранилище больше
+        // нет, обновляем ВСЕ подписки, а не выходим пустыми.
+        val id = subscriptionId
+        val item = if (id.isEmpty()) null else MmkvManager.decodeSubscription(id)
+        return if (id.isEmpty() || item == null) {
             AngConfigManager.updateConfigViaSubAll()
         } else {
-            val item = MmkvManager.decodeSubscription(
-                subscriptionId
-            ) ?: return SubscriptionUpdateResult()
-
             AngConfigManager.updateConfigViaSub(
-                SubscriptionCache(
-                    subscriptionId,
-                    item
-                )
+                SubscriptionCache(id, item)
             )
         }
+    }
 
     fun exportAllServer(): Int {
         val list =
