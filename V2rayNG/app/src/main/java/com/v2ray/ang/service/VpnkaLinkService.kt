@@ -67,7 +67,7 @@ class VpnkaLinkService : Service() {
         )
 
         CallManager.attach()
-        CallManager.onIncomingCall = { _, name -> ring(name) }
+        CallManager.onIncomingCall = { _, name, others -> ring(name, others) }
         CallManager.onCallCleared = { stopRinging() }
 
         // Прогреваем zero-knowledge ключ прямо здесь, а не ждём, пока человек
@@ -257,7 +257,19 @@ class VpnkaLinkService : Service() {
         vibrator = null
     }
 
-    private fun ring(name: String) {
+    /** «Человек/человека/человек» — то же правило, что pluralDays/pluralHours
+     *  в ui/, но локально: тянуть зависимость из другого пакета ради одной
+     *  строки уведомления не стоит. */
+    private fun pluralPeople(n: Int): String {
+        val a = kotlin.math.abs(n)
+        return when {
+            a % 10 == 1 && a % 100 != 11 -> "человек"
+            a % 10 in 2..4 && a % 100 !in 12..14 -> "человека"
+            else -> "человек"
+        }
+    }
+
+    private fun ring(name: String, others: Int) {
         // Звучим в любом случае: даже когда мессенджер открыт и рисует свой
         // экран звонка, звук нужен — человек мог отложить телефон.
         startRinging()
@@ -272,9 +284,13 @@ class VpnkaLinkService : Service() {
             Intent(this, VpnkaLinkService::class.java).setAction(ACTION_DECLINE),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        // Групповой звонок — заголовок называет и того, кто позвал, и сколько
+        // ещё человек в приглашении; для обычного 1:1 (others=0) ничего не
+        // меняется.
+        val title = if (others > 0) "$name и ещё $others ${pluralPeople(others)}" else name
         val notif = NotificationCompat.Builder(this, NotificationChannelType.CALL_INCOMING.channelId)
             .setSmallIcon(R.drawable.ic_stat_name)
-            .setContentTitle(name)
+            .setContentTitle(title)
             .setContentText("Входящий звонок")
             .setCategory(NotificationCompat.CATEGORY_CALL)
             .setPriority(NotificationCompat.PRIORITY_MAX)

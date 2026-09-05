@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -31,6 +32,8 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.LocalTextStyle
@@ -43,6 +46,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import android.graphics.Bitmap
@@ -145,6 +149,7 @@ fun VpnkaMessengerApp() {
     var channelResults by remember { mutableStateOf<List<Channels.Channel>>(emptyList()) }
     var openChannel by remember { mutableStateOf<Channels.Channel?>(null) }
     var showCreate by remember { mutableStateOf(false) }
+    var showGroupPicker by remember { mutableStateOf(false) }
     var filter by remember { mutableStateOf(ChatFilter.ALL) }
     var sheetFor by remember { mutableStateOf<Messenger.Contact?>(null) }
     var openProfile by remember { mutableStateOf<Messenger.Contact?>(null) }
@@ -187,6 +192,7 @@ fun VpnkaMessengerApp() {
             confirm != null -> { confirm = null; true }
             sheetFor != null -> { sheetFor = null; true }
             showCreate -> { showCreate = false; true }
+            showGroupPicker -> { showGroupPicker = false; true }
             // tick++ — то, что раньше делала кнопка «‹» в шапке канала. Без
             // него список каналов не перечитывался, и только что подписанный
             // канал не появлялся на полке.
@@ -594,6 +600,7 @@ fun VpnkaMessengerApp() {
                     onCall = { id, name -> CallManager.startCall(appCtx, id, name) },
                     onOpen = { openId = it },
                     onClear = { ChatPrefs.clearCalls(); prefsTick++ },
+                    onStartGroup = { showGroupPicker = true },
                 )
             }
         }
@@ -692,6 +699,79 @@ fun VpnkaMessengerApp() {
                 }) { Text("Создать") }
             },
             dismissButton = { androidx.compose.material3.TextButton(onClick = { showCreate = false }) { Text("Отмена") } },
+            containerColor = VpnkaColors.BgOffCentre,
+        )
+    }
+
+    if (showGroupPicker) {
+        // Первый в приложении экран множественного выбора — переиспользовать
+        // нечего (ни группового чата, ни другого «выбери N из списка» нет
+        // нигде в мессенджере), строим по образцу строк ContactsTab.
+        val selected = remember { mutableStateListOf<Long>() }
+        val limit = CallManager.MAX_GROUP_PARTICIPANTS - 1 // без меня самого
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showGroupPicker = false },
+            title = { Text("Групповой звонок", fontFamily = VpnkaFonts.nunito800, color = VpnkaColors.TextStrong) },
+            text = {
+                Column(modifier = Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState())) {
+                    if (contacts.isEmpty()) {
+                        Text(
+                            "Нет контактов — сначала кого-нибудь добавьте.",
+                            fontFamily = VpnkaFonts.manrope600, fontSize = 13.sp, color = VpnkaColors.TextMuted,
+                        )
+                    } else {
+                        contacts.forEach { c ->
+                            val checked = selected.contains(c.id)
+                            Row(
+                                modifier = Modifier.fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable {
+                                        if (checked) selected.remove(c.id)
+                                        else if (selected.size < limit) selected.add(c.id)
+                                    }
+                                    .padding(vertical = 6.dp, horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Checkbox(
+                                    checked = checked,
+                                    // Дизейбл выключенных чекбоксов сверх лимита — жёстче,
+                                    // чем просто игнорировать клик: человек сразу видит,
+                                    // что дальше выбирать некуда, а не тыкает вслепую.
+                                    enabled = checked || selected.size < limit,
+                                    onCheckedChange = {
+                                        if (it) { if (selected.size < limit) selected.add(c.id) }
+                                        else selected.remove(c.id)
+                                    },
+                                    colors = CheckboxDefaults.colors(checkedColor = VpnkaColors.Accent),
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                MsgAvatar(c.name, size = 32)
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    c.name, fontFamily = VpnkaFonts.manrope600, fontSize = 14.sp,
+                                    color = VpnkaColors.TextStrong, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "Выбрано ${selected.size} из $limit",
+                            fontFamily = VpnkaFonts.manrope600, fontSize = 12.sp, color = VpnkaColors.TextMuted,
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    enabled = selected.isNotEmpty(),
+                    onClick = {
+                        val picked = contacts.filter { selected.contains(it.id) }
+                        showGroupPicker = false
+                        CallManager.startGroupCall(appCtx, picked)
+                    },
+                ) { Text("Позвонить") }
+            },
+            dismissButton = { androidx.compose.material3.TextButton(onClick = { showGroupPicker = false }) { Text("Отмена") } },
             containerColor = VpnkaColors.BgOffCentre,
         )
     }
@@ -807,6 +887,7 @@ private fun CallsTab(
     onCall: (Long, String) -> Unit,
     onOpen: (Long) -> Unit,
     onClear: () -> Unit,
+    onStartGroup: () -> Unit,
 ) {
     val calls = remember(tick) { ChatPrefs.calls() }
     Column(modifier = Modifier.fillMaxSize()) {
@@ -816,6 +897,15 @@ private fun CallsTab(
         ) {
             Text("Звонки", fontFamily = VpnkaFonts.nunito800, fontSize = 18.sp, color = VpnkaColors.TextStrong)
             Spacer(Modifier.weight(1f))
+            // Групповой звонок нужен только когда есть кому звонить — контакт
+            // ровно один смысла не имеет, обычный 1:1 звонок для этого и есть.
+            if (contacts.size >= 2) {
+                Text(
+                    "Групповой", fontFamily = VpnkaFonts.nunito800, fontSize = 12.sp, color = VpnkaColors.Accent,
+                    modifier = Modifier.clip(RoundedCornerShape(12.dp)).clickable(onClick = onStartGroup)
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                )
+            }
             if (calls.isNotEmpty()) {
                 Text(
                     "Очистить", fontFamily = VpnkaFonts.nunito800, fontSize = 12.sp, color = VpnkaColors.TextMuted,
@@ -1873,12 +1963,17 @@ private fun CallScreen() {
     // кнопками: в макете их нет, и на экране, где всё решается одним касанием,
     // они только шумят. Исключение — входящий: «принять» и «отклонить»
     // отличаются не только цветом, и ошибиться тут дороже.
+    val isGroup = CallManager.groupId.isNotBlank()
+
     Column(
         modifier = Modifier.fillMaxSize().background(VpnkaColors.BgOffMid)
             .padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.SpaceBetween,
     ) {
+        if (isGroup) {
+            GroupCallHeader(phase, status)
+        } else {
         Column(
             modifier = Modifier.padding(top = 70.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -1901,6 +1996,7 @@ private fun CallScreen() {
                 "🔒 сквозное шифрование", fontFamily = VpnkaFonts.manrope600, fontSize = 11.sp,
                 color = VpnkaColors.TextFaint,
             )
+        }
         }
 
         Row(
@@ -1940,6 +2036,93 @@ private fun CallScreen() {
                 }
             }
         }
+    }
+}
+
+/**
+ * Шапка группового звонка вместо одного аватара 1:1-экрана: заголовок (кто
+ * зовёт и сколько ещё человек — пока не приняли; иначе общий статус) и
+ * плоский список участников. Без стека аватаров и индикатора «говорит
+ * сейчас» — для звонка на 2-5 человек список имени и статуса достаточен.
+ */
+@Composable
+private fun GroupCallHeader(phase: CallManager.Phase, status: String) {
+    val roster = CallManager.roster
+    Column(
+        modifier = Modifier.padding(top = 60.dp).fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        val title = when (phase) {
+            CallManager.Phase.INCOMING -> {
+                val others = CallManager.pendingInviteOthers
+                val caller = CallManager.peerName.ifBlank { "Собеседник" }
+                if (others > 0) "$caller и ещё $others зовут в звонок" else "$caller зовёт в звонок"
+            }
+            else -> "Групповой звонок"
+        }
+        Text(
+            title, fontFamily = VpnkaFonts.nunito800, fontSize = 18.sp,
+            color = VpnkaColors.TextStrong, textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(10.dp))
+        Text(status, fontFamily = VpnkaFonts.manrope700, fontSize = 12.sp, color = VpnkaColors.Accent)
+        Spacer(Modifier.height(14.dp))
+        // Пока приглашение не принято, ножек ни к кому ещё нет — список
+        // участников появляется после accept(), когда они начинают открываться.
+        if (roster.isNotEmpty()) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                roster.forEach { p -> RosterRow(p) }
+            }
+            Spacer(Modifier.height(10.dp))
+        }
+        Text(
+            "🔒 сквозное шифрование", fontFamily = VpnkaFonts.manrope600, fontSize = 11.sp,
+            color = VpnkaColors.TextFaint,
+        )
+        if (phase != CallManager.Phase.INCOMING && phase != CallManager.Phase.ENDED) {
+            Spacer(Modifier.height(6.dp))
+            // Явно говорим то, что в mesh-звонке иначе легко счесть багом:
+            // повесить трубку рвёт только мою ножку, остальные продолжают.
+            Text(
+                "Повесить трубку — выйти только для себя, остальные продолжат разговор",
+                fontFamily = VpnkaFonts.manrope600, fontSize = 10.sp,
+                color = VpnkaColors.TextFaint, textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+@Composable
+private fun RosterRow(p: CallManager.RosterUi) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        MsgAvatar(p.name, size = 40)
+        Spacer(Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                p.name, fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp,
+                color = VpnkaColors.TextStrong, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+            // Введённый через ростер незнакомец — не персистится как контакт
+            // (см. CallManager.introducedKeys), но об источнике доверия к его
+            // ключу человек должен знать, а не считать, что это старый контакт.
+            if (p.introducedBy.isNotBlank()) {
+                Text(
+                    "Добавлен(а) через ${p.introducedBy}",
+                    fontFamily = VpnkaFonts.manrope600, fontSize = 10.sp, color = VpnkaColors.TextFaint,
+                )
+            }
+        }
+        Text(
+            when (p.legPhase) {
+                CallManager.LegPhase.CONNECTING -> "Соединение…"
+                CallManager.LegPhase.ACTIVE -> "В разговоре"
+                CallManager.LegPhase.ENDED -> "Завершено"
+            },
+            fontFamily = VpnkaFonts.manrope600, fontSize = 11.sp, color = VpnkaColors.TextMuted,
+        )
     }
 }
 

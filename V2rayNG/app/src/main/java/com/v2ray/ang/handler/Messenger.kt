@@ -259,7 +259,8 @@ object Messenger {
      * Подписываем ПЛАЙНТЕКСТ до запечатывания: получатель расшифрует его
      * своим ключом и проверит подпись публичным ключом отправителя.
      */
-    private fun signPayload(json: String): String = runCatching {
+    /** internal: используется CallManager для подписи ростера группового звонка. */
+    internal fun signPayload(json: String): String = runCatching {
         val priv = privateKey() ?: return@runCatching ""
         val sg = java.security.Signature.getInstance("SHA256withRSA")
         sg.initSign(priv)
@@ -267,8 +268,9 @@ object Messenger {
         Base64.encodeToString(sg.sign(), b64f)
     }.getOrDefault("")
 
-    /** Проверить подпись пакета публичным ключом отправителя. */
-    private fun verifyPayload(json: String, sigB64: String, senderPubB64: String): Boolean =
+    /** Проверить подпись пакета публичным ключом отправителя.
+     *  internal: используется CallManager для проверки ростера группового звонка. */
+    internal fun verifyPayload(json: String, sigB64: String, senderPubB64: String): Boolean =
         runCatching {
             if (sigB64.isBlank() || senderPubB64.isBlank()) return@runCatching false
             val kf = KeyFactory.getInstance("RSA")
@@ -682,9 +684,15 @@ object Messenger {
     @Volatile var onCallMiss: ((Long) -> Unit)? = null
 
     /** Seal a call-signaling payload to the peer and push it over the socket. */
-    fun sendCallSignal(to: Long, payloadJson: String): Boolean {
-        val c = contact(to) ?: return false
-        val sealed = try { seal(payloadJson, c.pubKey) } catch (e: Exception) { return false }
+    /**
+     * @param pubKeyOverride Ключ получателя, если он ЕЩЁ не в контактах — так
+     *  доходят ножки группового звонка до участника, введённого через ростер
+     *  инициатора (мы не обязаны быть с ним взаимными контактами). `null` —
+     *  обычный путь: ключ ищем в [contacts].
+     */
+    fun sendCallSignal(to: Long, payloadJson: String, pubKeyOverride: String? = null): Boolean {
+        val pubKey = pubKeyOverride ?: contact(to)?.pubKey ?: return false
+        val sealed = try { seal(payloadJson, pubKey) } catch (e: Exception) { return false }
         val ws = webSocket ?: return false
         return ws.send(gson.toJson(WsCall(to = to, data = sealed)))
     }

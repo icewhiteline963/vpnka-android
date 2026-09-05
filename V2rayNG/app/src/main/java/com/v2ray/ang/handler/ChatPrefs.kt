@@ -84,6 +84,10 @@ object ChatPrefs {
         val ts: Long,
         /** Длительность разговора в секундах; 0 — не состоялся. */
         val sec: Int = 0,
+        /** Id групповой сессии; "" — обычный 1:1 звонок. */
+        val group: String = "",
+        /** Сколько ЕЩЁ участников было в звонке, кроме peerId и меня. */
+        val others: Int = 0,
     )
 
     private const val CALLS = "chat_calls"
