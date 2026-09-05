@@ -364,7 +364,11 @@ fun VpnkaSettingsScreen(
     onBack: () -> Unit,
 ) {
     VpnkaPage(title = "Настройки", onBack = onBack) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState()),
+        ) {
         Spacer(Modifier.height(24.dp))
 
         // First row when it's not granted: this is the setting behind most
@@ -442,7 +446,7 @@ fun VpnkaSettingsScreen(
             )
         }
 
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.height(24.dp))
         }
     }
 }
