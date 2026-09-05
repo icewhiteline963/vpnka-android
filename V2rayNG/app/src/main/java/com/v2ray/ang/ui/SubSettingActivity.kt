@@ -105,7 +105,14 @@ class SubSettingActivity : BaseComponentActivity() {
             val result = AngConfigManager.updateConfigViaSubAll()
             delay(500L)
             launch(Dispatchers.Main) {
-                if (result.successCount + result.failureCount + result.skipCount == 0) {
+                // Сервер прислал причину вместо серверов («Лимит устройств
+                // 3/3», «Пробный период использован») — показываем её
+                // словами. Раньше здесь печаталось «Обновлено профилей: 0»,
+                // и человек шёл искать поломку выдачи, а не свободный слот.
+                val notice = result.notice.orEmpty()
+                if (notice.isNotBlank()) {
+                    toast(notice)
+                } else if (result.successCount + result.failureCount + result.skipCount == 0) {
                     toast(R.string.title_update_subscription_no_subscription)
                 } else if (result.successCount > 0 && result.failureCount + result.skipCount == 0) {
                     toast(getString(R.string.title_update_config_count, result.configCount))
