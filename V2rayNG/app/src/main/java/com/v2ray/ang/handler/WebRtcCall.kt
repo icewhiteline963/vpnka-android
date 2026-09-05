@@ -205,7 +205,7 @@ object CallManager {
         endReason = ""
         groupId = ""
         groupInitiatorId = 0L
-        setPhase(Phase.OUTGOING)
+        phase = Phase.OUTGOING
         val leg = newLeg(contactId, name, Messenger.contacts().firstOrNull { it.id == contactId }?.pubKey ?: "")
         leg.lastOutgoing = true
         armRingTimeout(leg)
@@ -232,7 +232,7 @@ object CallManager {
         val gid = java.util.UUID.randomUUID().toString()
         groupId = gid
         groupInitiatorId = 0L // я сам инициатор
-        setPhase(Phase.OUTGOING)
+        phase = Phase.OUTGOING
 
         val myId = Messenger.myClientId()
         val rosterEntries = listOf(RosterEntry(myId, Messenger.myHandle(), Messenger.myPublicKey())) +
@@ -484,7 +484,7 @@ object CallManager {
         groupId = sig.group
         groupInitiatorId = if (sig.group.isNotBlank()) from else 0L
         pendingInviteOthers = others
-        setPhase(Phase.INCOMING)
+        phase = Phase.INCOMING
         val leg = newLeg(from, sig.name.ifBlank { "Контакт $from" }, contact.pubKey)
         leg.callId = sig.call
         leg.pendingOffer = SessionDescription(SessionDescription.Type.OFFER, sig.sdp)
@@ -768,10 +768,6 @@ object CallManager {
     // человека, потому что наше приложение исключено из собственного
     // туннеля. То есть звонок в «приватном» мессенджере раскрывал адрес и
     // собеседнику, и Google. Нет ретранслятора — нет звонка.
-
-    private fun setPhase(p: Phase) {
-        phase = p
-    }
 
     /**
      * Закрыть ОДНУ ножку: её PeerConnection, запись в журнал, убрать из
