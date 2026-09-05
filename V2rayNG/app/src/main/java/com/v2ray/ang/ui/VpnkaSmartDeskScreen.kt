@@ -212,6 +212,7 @@ fun appTint(id: String): List<Color> = when (id) {
 private const val KEY_HELP_SEEDED = "vpnka_smartdesk_help_seeded"
 private const val KEY_YOUTUBE_SEEDED = "vpnka_smartdesk_youtube_seeded"
 private const val KEY_NOTES_SEEDED = "vpnka_smartdesk_notes_seeded"
+private const val KEY_BROWSER_SEEDED = "vpnka_smartdesk_browser_seeded"
 
 fun installedIds(): List<String> {
     val stored = MmkvManager.decodeSettingsString(KEY_INSTALLED)
@@ -226,6 +227,7 @@ fun installedIds(): List<String> {
         MmkvManager.encodeSettings(KEY_HELP_SEEDED, "1")
         MmkvManager.encodeSettings(KEY_YOUTUBE_SEEDED, "1")
         MmkvManager.encodeSettings(KEY_NOTES_SEEDED, "1")
+        MmkvManager.encodeSettings(KEY_BROWSER_SEEDED, "1")
     }
     var seeded = false
     // One-time seeds: existing installs (a stored list without a newly-shipped
@@ -245,6 +247,16 @@ fun installedIds(): List<String> {
     if (stored != null && MmkvManager.decodeSettingsString(KEY_NOTES_SEEDED) == null) {
         if ("notes" !in ids) ids = ids + "notes"
         MmkvManager.encodeSettings(KEY_NOTES_SEEDED, "1")
+        seeded = true
+    }
+    // Браузер добавили в умолчания позже, чем появился KEY_INSTALLED, а досева
+    // ему не было — давние установки с сохранённым списком без «browser» так и
+    // оставались без значка браузера на главном, хотя SmartDesk включён.
+    // Разовый досев: показать браузер один раз; если пользователь его уберёт,
+    // флаг останется и обратно мы не вернём.
+    if (stored != null && MmkvManager.decodeSettingsString(KEY_BROWSER_SEEDED) == null) {
+        if ("browser" !in ids) ids = ids + "browser"
+        MmkvManager.encodeSettings(KEY_BROWSER_SEEDED, "1")
         seeded = true
     }
     ids = ids.filter { it !in SMARTDESK_HIDDEN }
