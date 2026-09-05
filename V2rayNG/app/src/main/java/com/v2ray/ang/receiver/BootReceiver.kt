@@ -7,6 +7,7 @@ import com.v2ray.ang.AppConfig
 import com.v2ray.ang.core.CoreServiceManager
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SubscriptionUpdater
+import com.v2ray.ang.service.VpnkaLinkService
 import com.v2ray.ang.util.LogUtil
 
 class BootReceiver : BroadcastReceiver() {
@@ -25,6 +26,15 @@ class BootReceiver : BroadcastReceiver() {
             LogUtil.w(AppConfig.TAG, "BootReceiver: Invalid context or action")
             return
         }
+
+        // Мессенджер/звонки — независимо от «запускать VPN при загрузке».
+        //
+        // Сокет мессенджера ходит НАПРЯМУЮ на наш бэкенд (Messenger.http(),
+        // без прокси через туннель), поэтому годен даже если VPN на этом
+        // устройстве вообще не автозапускается. Без этого вызова служба
+        // после ребута не поднималась никогда — start() сам решит по
+        // wanted() (токен + SmartDesk + личная настройка), нужна ли она.
+        VpnkaLinkService.start(context)
 
         if (!MmkvManager.decodeStartOnBoot()) {
             LogUtil.i(AppConfig.TAG, "BootReceiver: Auto-start on boot is disabled")

@@ -17,6 +17,7 @@ import com.v2ray.ang.enums.NotificationChannelType
 import com.v2ray.ang.handler.CallManager
 import com.v2ray.ang.handler.Messenger
 import com.v2ray.ang.handler.MmkvManager
+import com.v2ray.ang.handler.Vault
 import com.v2ray.ang.handler.VpnkaAccount
 import com.v2ray.ang.ui.MainActivity
 import com.v2ray.ang.util.LogUtil
@@ -68,6 +69,24 @@ class VpnkaLinkService : Service() {
         CallManager.attach()
         CallManager.onIncomingCall = { _, name -> ring(name) }
         CallManager.onCallCleared = { stopRinging() }
+
+        // Прогреваем zero-knowledge ключ прямо здесь, а не ждём, пока человек
+        // откроет именно «Сообщения». Раньше служба честно переподключала
+        // сокет после смерти процесса (не только после ребута), но identity
+        // грузилась только из экрана мессенджера — входящий офер приходил на
+        // ЖИВОЙ сокет и тихо не расшифровывался (LogUtil.w и всё), а сервер,
+        // видя живой сокет, отвечал звонящему «доставлено», а не «оффлайн»:
+        // человек просто откручивал полный таймаут и видел «не отвечает».
+        // isUnlocked() только поднимает уже закэшированный на диске MK в
+        // память (без него — return false, это настоящий предел zero-
+        // knowledge: без когда-либо введённого пароля/recovery ключа на этом
+        // устройстве расшифровать нечем, и здесь ничего не поделать).
+        scope.launch {
+            if (Vault.isUnlocked()) {
+                runCatching { Messenger.ensureIdentity() }
+                    .onFailure { LogUtil.w(AppConfig.TAG, "link: ensureIdentity failed: ${it.message}") }
+            }
+        }
 
         // Idempotent: `connectWs` returns immediately while a socket is live and
         // rebuilds it after the listener nulled a dead one. The messenger screen
