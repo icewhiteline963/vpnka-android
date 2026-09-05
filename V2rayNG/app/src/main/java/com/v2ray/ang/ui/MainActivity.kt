@@ -169,6 +169,7 @@ import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyGridState
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.yield
 import kotlin.math.abs
 
@@ -797,6 +798,15 @@ class MainActivity : HelperBaseComponentActivity() {
             if (signedIn) {
                 subLoading = showSubscription
                 val fetched = VpnkaAccount.fetchInfo()
+                // fetchInfo() блокируется в OkHttp execute(); отмена Job не
+                // прерывает сам блокирующий вызов, только доставку значения.
+                // Если этот запуск эффекта уже вытеснен более новым (ключи
+                // сменились раньше, чем ответ пришёл) — здесь бросится
+                // CancellationException, и ничего ниже не выполнится: ни
+                // запись subInfo, ни синк/импорт подписки. Если вытеснения
+                // не было (обычный путь, включая обновление версии) — это
+                // no-op, и всё идёт как раньше.
+                ensureActive()
                 subInfo = fetched
                 vpnkaTelegramLinked = fetched?.telegramLinked == true
                 // A null answer with a token still stored is just a network
