@@ -36,7 +36,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -284,7 +284,14 @@ fun VpnkaSmartDeskAppScreen(
         // У него своя строка адреса и свои кнопки у нижнего края, и вторая
         // полоса поверх них — это две панели одна на другой. Выход из
         // браузера остаётся системной «назад»: она ведёт на главный экран.
-        if (!SmartDeskChrome.barHidden && appId != "browser") {
+        //
+        // Пока открыта клавиатура — панель прячем. Колонка выше поднимается
+        // над клавиатурой (`imePadding`), и вместе с ней всплыла бы и панель:
+        // три иконки зависали посреди экрана над клавиатурой при наборе в
+        // поиске «Видео». При наборе панель не нужна, а закрытие клавиатуры
+        // её возвращает.
+        val imeOpen = WindowInsets.ime.asPaddingValues().calculateBottomPadding() > 0.dp
+        if (!SmartDeskChrome.barHidden && appId != "browser" && !imeOpen) {
             SmartDeskAppTabs(
                 current = appId,
                 onOpen = { id ->
@@ -329,7 +336,13 @@ fun VpnkaSmartDeskAppScreen(
  */
 @Composable
 private fun SmartDeskAppTabs(current: String, onOpen: (String) -> Unit) {
-    val navInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    // БЕЗ собственного отступа под системную навигацию.
+    //
+    // Инсет навигации уже отводит ВНЕШНИЙ Box в SmartDeskScreen
+    // (`appBottomOverlay`), в который завёрнут весь экран приложения. Когда
+    // панель добавляла `padding(bottom = navInset)` ещё раз, отступ считался
+    // дважды — и панель зависала на высоту системной навигации (~48 dp) выше
+    // нижнего края, ЗАМЕТНО даже без клавиатуры. Один инсет — снаружи.
     // Порядок по решению владельца: сначала выход на главную, потом сам
     // раздел и его полка.
     val items = listOf(
@@ -339,10 +352,6 @@ private fun SmartDeskAppTabs(current: String, onOpen: (String) -> Unit) {
     )
     Row(
         modifier = Modifier.fillMaxWidth()
-            // Инсет системной навигации резервируем СНАРУЖИ фона (некрашеным),
-            // иначе он закрашивался как часть бара — отсюда «слишком высокая
-            // панель», а асимметричный нижний паддинг гнал иконки вверх.
-            .padding(bottom = navInset)
             .background(VpnkaColors.BgOffCentre)
             .padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
