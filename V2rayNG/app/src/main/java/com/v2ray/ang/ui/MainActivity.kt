@@ -1442,13 +1442,18 @@ class MainActivity : HelperBaseComponentActivity() {
                         // profile sync below cannot cover it either — it only
                         // syncs when the account already has plans, and a
                         // brand-new anonymous account has none.
-                        if (MmkvManager.ensureTrialSubscription()) {
-                            importConfigViaSub()
-                        }
                         signedIn = VpnkaAccount.isSignedIn()
                         subReload++
-                        mainViewModel.setupGroupTab(forceRefresh = true)
-                        mainViewModel.reloadServerList()
+                        if (MmkvManager.ensureTrialSubscription()) {
+                            // importConfigViaSub сам сведёт экран к хранилищу
+                            // по завершении фетча — синхронный refresh ниже
+                            // здесь только гонялся бы с ним по пустому
+                            // хранилищу (триал ещё не скачан) и мелькал пустотой.
+                            importConfigViaSub()
+                        } else {
+                            mainViewModel.setupGroupTab(forceRefresh = true)
+                            mainViewModel.reloadServerList()
+                        }
                     }
                 },
                 onGetCode = { navigateTo("vpnka_app_code") },
@@ -2321,10 +2326,18 @@ class MainActivity : HelperBaseComponentActivity() {
                             )
                         )
                 }
-                if (result.configCount > 0) {
-                    mainViewModel.setupGroupTab(forceRefresh = true)
-                    mainViewModel.refreshSelectedGuid()
-                }
+                // Пере-рисовываем экран из ХРАНИЛИЩА всегда, а не только при
+                // configCount>0. Неудачное обновление (сеть легла, пришла
+                // заглушка) серверы в хранилище не трогает, но раньше
+                // оставляло экран в пустом «загрузочном» состоянии: список
+                // появлялся только после перезапуска приложения, когда
+                // onCreate перечитывал хранилище заново. Именно так у людей
+                // «пропадали серверы» после входа/выхода/ручного обновления
+                // с выключенным туннелем. Теперь финал импорта ВСЕГДА сводит
+                // то, что на экране, к тому, что реально лежит в хранилище:
+                // успех показывает свежие серверы, неудача возвращает прежние.
+                mainViewModel.setupGroupTab(forceRefresh = true)
+                mainViewModel.refreshSelectedGuid()
                 // Подписку тянули РАДИ подключения — доводим начатое, а не
                 // возвращаем человека к кнопке, которую он уже нажал.
                 if (startWhenReady) {
