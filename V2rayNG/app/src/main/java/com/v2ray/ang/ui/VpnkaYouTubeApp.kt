@@ -23,12 +23,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -427,28 +425,32 @@ fun YouTubeApp() {
                             "✕", fontSize = 13.sp, color = VpnkaColors.TextMuted,
                             modifier = Modifier.clip(CircleShape)
                                 .clickable { query = ""; loadHome() }
-                                .padding(horizontal = 8.dp, vertical = 8.dp),
+                                .padding(horizontal = 4.dp),
                         )
-                        Spacer(Modifier.width(2.dp))
+                        Spacer(Modifier.width(4.dp))
                     }
                     Text(
                         "➤", fontSize = 13.sp, color = VpnkaColors.Accent,
                         modifier = Modifier.clip(CircleShape)
                             .clickable { runSearch() }
-                            .padding(horizontal = 8.dp, vertical = 8.dp),
+                            .padding(horizontal = 3.dp),
                     )
                 }
-                // Поле забирает всю свободную ширину, а счётчик загрузок и
-                // сортировка встают справа по своему размеру. Раньше правая
-                // половина висела на `weight(1f)` и на главной (ни загрузок,
-                // ни выдачи) оставляла поле шириной в пол-экрана с пустым
-                // провалом справа. Разделитель — только когда справа что-то есть.
-                if (activeDls > 0 || (tab == 0 && results.isNotEmpty())) {
-                    Spacer(Modifier.width(8.dp))
-                }
+                // Правая половина строки — то, что раньше стояло ПОД полем.
+                //
+                // Поиск занимал всю ширину, а сортировка висела отдельной
+                // строкой ниже: две строки подряд ради одного чипа. Теперь
+                // поле — ровно левая половина, а сортировка и счётчик
+                // загрузок встают справа на том же уровне.
+                Spacer(Modifier.width(8.dp))
                 Row(
+                    modifier = Modifier.weight(1f),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    // Сортировка — у самого правого края, счётчик загрузок
+                    // левее её: так у строки есть край, а не два предмета,
+                    // висящих где придётся.
+                    Spacer(Modifier.weight(1f))
                     if (activeDls > 0) {
                         Row(
                             modifier = Modifier.clip(RoundedCornerShape(9.dp))
@@ -508,9 +510,7 @@ fun YouTubeApp() {
                 // Подсказки живут вместе с полем: без него это просто ряд
                 // кнопок непонятно к чему.
                 Row(
-                    modifier = Modifier.fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .padding(bottom = 8.dp),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(7.dp),
                 ) {
                     // Недавние запросы — они полезнее выдуманных рубрик:
@@ -547,10 +547,7 @@ fun YouTubeApp() {
                                 textAlign = TextAlign.Center)
                         }
                     }
-                    else -> LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = 12.dp),
-                    ) {
+                    else -> LazyColumn(modifier = Modifier.fillMaxSize()) {
                         items(sortVideos(results, searchSort)) { v ->
                             VideoRow(v, onClick = { open(v.url) },
                                 onAdd = { addTo = YouTubePlaylists.Item(it.url, it.title, it.uploader, it.durationSec) })
@@ -568,10 +565,7 @@ fun YouTubeApp() {
                         null, null,
                     )
                 } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(top = 8.dp, bottom = 12.dp),
-                    ) {
+                    LazyColumn(modifier = Modifier.fillMaxSize().padding(top = 8.dp)) {
                         items(favs, key = { it.url }) { f ->
                             VideoRow(
                                 YouTubeService.Video(f.url, f.title, f.uploader, f.durationSec, null),
@@ -598,10 +592,7 @@ fun YouTubeApp() {
                         null, null,
                     )
                 } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(top = 8.dp, bottom = 12.dp),
-                    ) {
+                    LazyColumn(modifier = Modifier.fillMaxSize().padding(top = 8.dp)) {
                         item {
                             Row(
                                 modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
@@ -625,10 +616,7 @@ fun YouTubeApp() {
                 val pls = remember(plTick) { YouTubePlaylists.all() }
                 val current = openPl?.let { id -> pls.firstOrNull { it.id == id } }
                 if (current == null) {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(top = 8.dp, bottom = 12.dp),
-                    ) {
+                    LazyColumn(modifier = Modifier.fillMaxSize().padding(top = 8.dp)) {
                         item {
                             Box(
                                 modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(11.dp))
@@ -693,10 +681,7 @@ fun YouTubeApp() {
                                 color = VpnkaColors.TextMuted, fontFamily = VpnkaFonts.manrope600, textAlign = TextAlign.Center)
                         }
                     } else {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(bottom = 12.dp),
-                        ) {
+                        LazyColumn(modifier = Modifier.fillMaxSize()) {
                             items(sortItems(current.videos, plSort), key = { it.url }) { itv ->
                                 VideoRow(
                                     YouTubeService.Video(itv.url, itv.title, itv.uploader, itv.durationSec, null),
@@ -938,7 +923,7 @@ fun YouTubeApp() {
                                             YouTubeLater.setQuality(i.url, if (on) "" else q)
                                             laterTick++
                                         }
-                                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                                        .padding(horizontal = 5.dp, vertical = 3.dp),
                                 )
                             }
                             Spacer(Modifier.width(4.dp))
@@ -959,14 +944,7 @@ fun YouTubeApp() {
                 }
 
                 if (dls.isEmpty() && later.isEmpty()) {
-                    // Фиксированная высота, а не fillMaxSize: этот блок живёт
-                    // внутри verticalScroll, где по главной оси приходит
-                    // бесконечность — fillMaxSize там не центрирует, а
-                    // схлопывается к высоте контента и липнет к блокам выше.
-                    Box(
-                        modifier = Modifier.fillMaxWidth().height(240.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
+                    CenterBox {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text("⬇", fontSize = 44.sp, color = VpnkaColors.TextMuted)
                             Spacer(Modifier.height(10.dp))
@@ -984,14 +962,12 @@ fun YouTubeApp() {
                     val kinds = listOf("Все") + dls.map { it.kind }.distinct()
                     if (kinds.size > 2) {
                         Row(
-                            modifier = Modifier.fillMaxWidth()
-                                .horizontalScroll(rememberScrollState())
-                                .padding(top = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             kinds.forEach { k ->
                                 YtTabChip(k, selected = dlFilter == k) { dlFilter = k }
+                                Spacer(Modifier.width(6.dp))
                             }
                         }
                     }
@@ -1008,9 +984,6 @@ fun YouTubeApp() {
                         shown.forEach { e -> key(e.id) { DownloadRow(e) } }
                     }
                 }
-                // Воздух под последней строкой: без него список упирался в
-                // нижнюю панель супер-приложения впритык.
-                Spacer(Modifier.height(16.dp))
                 }
             }
         }
@@ -1216,13 +1189,13 @@ private fun sortItems(list: List<YouTubePlaylists.Item>, s: YtSort): List<YouTub
 private fun YtSortChip(current: YtSort, options: List<YtSort>, onPick: (YtSort) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
-        // Форма и высота — как у соседних чипов (радиус 7, кегль 11, 11×9):
+        // Форма и высота — как у соседних чипов (радиус 7, кегль 11, 11×6):
         // со своими 12/12×8 он стоял в одном ряду с ними и выбивался.
         Box(
             modifier = Modifier.clip(RoundedCornerShape(7.dp))
                 .background(VpnkaColors.CardServer)
                 .clickable { open = true }
-                .padding(horizontal = 11.dp, vertical = 9.dp),
+                .padding(horizontal = 11.dp, vertical = 6.dp),
             contentAlignment = Alignment.Center,
         ) {
             Text(
@@ -1320,7 +1293,7 @@ private fun YtTabChip(label: String, selected: Boolean, onClick: () -> Unit) {
         modifier = Modifier.clip(RoundedCornerShape(7.dp))
             .background(if (selected) VpnkaColors.Accent else VpnkaColors.CardServer)
             .clickable(onClick = onClick)
-            .padding(horizontal = 11.dp, vertical = 9.dp),
+            .padding(horizontal = 11.dp, vertical = 6.dp),
     ) {
         Text(label, fontFamily = VpnkaFonts.nunito800, fontSize = 11.sp,
             color = if (selected) VpnkaColors.OnAccent else VpnkaColors.TextMuted)
@@ -1409,7 +1382,7 @@ private fun YtHistoryRow(
             .fillMaxWidth()
             .clip(RoundedCornerShape(11.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 6.dp, vertical = 9.dp),
+            .padding(horizontal = 10.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text("▶", fontSize = 12.sp, color = VpnkaColors.Accent)
@@ -1468,7 +1441,7 @@ private fun VideoRow(
     // размером с ноготь ничего не показывает, и приходится читать заголовки.
     Column(modifier = Modifier.fillMaxWidth().padding(vertical = 9.dp)) {
         Box(
-            modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f)
+            modifier = Modifier.fillMaxWidth().height(198.dp)
                 .clip(RoundedCornerShape(13.dp))
                 .clickable(onClick = onClick),
         ) {
@@ -1522,15 +1495,8 @@ private fun VideoRow(
             }
         }
         Spacer(Modifier.height(9.dp))
-        // Действия — с отступом под аватар, ровно как в макете. Ряд
-        // прокручивается вбок: в плейлисте у карточки пять чипов (＋ и 🗑
-        // вдобавок), и после отступа 45 dp они не помещались в ширину —
-        // «В очереди» и корзина обрезались краем.
-        Row(
-            modifier = Modifier.fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(start = 45.dp),
-        ) {
+        // Действия — с отступом под аватар, ровно как в макете.
+        Row(modifier = Modifier.fillMaxWidth().padding(start = 45.dp)) {
             YtTabChip("↓ Скачать", selected = false) {
                 YouTubeDownloads.enqueueVideoByUrl(context, v.url, v.title)
                 SmartDeskToast.show("Добавлено в загрузки", "Открыть", "downloads")
@@ -2056,21 +2022,18 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
             SmartDeskChrome.barHidden = true
             onDispose { SmartDeskChrome.barHidden = false }
         }
-        // Плеер прячет нижний бар (barHidden), а хост держит только status/ime
-        // паддинги — без этого нижние вкладки (главы/транскрипт/заметки) уходили
-        // под системную навигацию. Резервируем её здесь.
-        Column(modifier = Modifier.fillMaxSize().navigationBarsPadding()) {
+        Column(modifier = Modifier.fillMaxSize()) {
             // Одна шапка: «‹», название экрана и домен источника мелким моно.
             Row(
-                modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 10.dp),
+                modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(
-                    modifier = Modifier.size(40.dp).clip(RoundedCornerShape(10.dp))
+                    modifier = Modifier.size(32.dp).clip(RoundedCornerShape(10.dp))
                         .background(VpnkaColors.CardServer)
                         .clickable(onClick = onBack),
                     contentAlignment = Alignment.Center,
-                ) { Text("‹", fontSize = 17.sp, color = VpnkaColors.TextStrong) }
+                ) { Text("‹", fontSize = 15.sp, color = VpnkaColors.TextStrong) }
                 Spacer(Modifier.width(11.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text("Плеер", fontFamily = VpnkaFonts.nunito800, fontSize = 14.sp, color = VpnkaColors.TextStrong)
@@ -2330,7 +2293,7 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
+                    .padding(horizontal = 12.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .clickable { bgPlay = !bgPlay }
                     .padding(horizontal = 10.dp, vertical = 8.dp),
@@ -2475,7 +2438,7 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
             // название, а не на сокращение в одну строку.
             var moreOpen by remember { mutableStateOf(false) }
             Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.Top,
             ) {
@@ -2601,7 +2564,7 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                                         .background(
                                             if (active) VpnkaColors.CardServer else Color.Transparent
                                         )
-                                        .padding(horizontal = 16.dp, vertical = 9.dp),
+                                        .padding(horizontal = 14.dp, vertical = 9.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Text(
@@ -2652,7 +2615,7 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                                     focusedBorderColor = VpnkaColors.Accent,
                                     unfocusedBorderColor = VpnkaColors.CardServer,
                                 ),
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp),
                             )
                             val shown = if (q.isBlank()) cs
                                 else cs.filter { it.text.contains(q, ignoreCase = true) }
@@ -2663,7 +2626,7 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                                     Row(
                                         modifier = Modifier.fillMaxWidth()
                                             .clickable { player?.seekTo(c.atSec * 1000) }
-                                            .padding(horizontal = 16.dp, vertical = 7.dp),
+                                            .padding(horizontal = 14.dp, vertical = 7.dp),
                                     ) {
                                         Text(
                                             fmtDuration(c.atSec),
@@ -2694,7 +2657,7 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                                 Row(
                                     modifier = Modifier.fillMaxWidth()
                                         .clickable { player?.seekTo(n.atSec * 1000) }
-                                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                                        .padding(horizontal = 14.dp, vertical = 8.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Text(
@@ -2728,7 +2691,7 @@ private fun YouTubePlayerScreen(pb: YouTubeService.Playback, onBack: () -> Unit)
                                 Row(
                                     modifier = Modifier.fillMaxWidth()
                                         .clickable { player?.seekTo(m.atSec * 1000) }
-                                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                                        .padding(horizontal = 14.dp, vertical = 8.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Text(
@@ -3211,7 +3174,7 @@ private fun DownloadRow(e: YouTubeDownloads.Entry) {
 private fun DlAction(label: String, onClick: () -> Unit) {
     Box(
         modifier = Modifier.clip(RoundedCornerShape(11.dp)).background(VpnkaColors.CardServer).border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(11.dp))
-            .clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 9.dp),
+            .clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 7.dp),
     ) {
         Text(label, fontFamily = VpnkaFonts.nunito800, fontSize = 12.sp, color = VpnkaColors.TextStrong)
     }
