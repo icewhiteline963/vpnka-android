@@ -796,21 +796,7 @@ class MainActivity : HelperBaseComponentActivity() {
         LaunchedEffect(showSubscription, subReload, signedIn, subRefreshRequest) {
             if (signedIn) {
                 subLoading = showSubscription
-                // Токен НА МОМЕНТ старта запроса.
-                //
-                // fetchInfo блокируется в OkHttp execute(), и отмена корутины
-                // его НЕ прерывает. Поэтому запрос, ушедший со старым токеном
-                // (суточный триал свежей установки), мог завершиться ПОСЛЕ
-                // входа по коду из бота и затереть уже полученный профиль с
-                // месяцем: плашка «кончается меньше чем через сутки»
-                // возвращалась и уходила только после захода в профиль и
-                // обратно. Ответ чужого аккаунта отбрасываем.
-                val tokenAtStart = MmkvManager.getAccountToken()
                 val fetched = VpnkaAccount.fetchInfo()
-                if (MmkvManager.getAccountToken() != tokenAtStart) {
-                    subLoading = false
-                    return@LaunchedEffect
-                }
                 subInfo = fetched
                 vpnkaTelegramLinked = fetched?.telegramLinked == true
                 // A null answer with a token still stored is just a network
