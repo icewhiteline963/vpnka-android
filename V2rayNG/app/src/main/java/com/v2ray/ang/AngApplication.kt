@@ -52,6 +52,14 @@ class AngApplication : Application() {
          */
         var vpnkaPendingLoginCode: String? = null
 
+        /**
+         * Ссылка на YouTube-ролик, пришедшая через «Поделиться → VPNka».
+         * UrlSchemeActivity кладёт её сюда, MainActivity открывает раздел
+         * «Видео» с этим роликом (готовым к скачиванию). Переживает паузу,
+         * потребляется однократно.
+         */
+        var vpnkaPendingYouTubeUrl: String? = null
+
         /** Long-lived scope for first-launch work that must not block it. */
         internal val vpnkaScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     }

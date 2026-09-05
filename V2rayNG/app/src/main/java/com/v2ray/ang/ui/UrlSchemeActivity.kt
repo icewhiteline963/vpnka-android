@@ -33,7 +33,17 @@ class UrlSchemeActivity : BaseComponentActivity() {
                 if (action == Intent.ACTION_SEND) {
                     if ("text/plain" == type) {
                         intent.getStringExtra(Intent.EXTRA_TEXT)?.let {
-                            asking = parseUri(it, null)
+                            // «Поделиться → VPNka» из YouTube (или любого
+                            // приложения) шлёт text/plain со ссылкой на ролик.
+                            // Если это YouTube-ссылка — уводим в раздел «Видео»
+                            // (готово к скачиванию), а не пытаемся импортировать
+                            // как VPN-конфиг.
+                            val yt = extractYouTubeUrl(it)
+                            if (yt != null) {
+                                AngApplication.vpnkaPendingYouTubeUrl = yt
+                            } else {
+                                asking = parseUri(it, null)
+                            }
                         }
                     }
                 } else if (action == Intent.ACTION_VIEW) {
@@ -92,6 +102,24 @@ class UrlSchemeActivity : BaseComponentActivity() {
 
     @Composable
     override fun ScreenContent() {
+    }
+
+    /**
+     * Выдрать ссылку на YouTube-ролик из шаринга. Текст может содержать
+     * подпись вокруг адреса («Смотри: https://youtu.be/…»), поэтому ищем
+     * ссылку внутри. Поддержаны watch/shorts/live/embed и youtu.be; резолвинг
+     * (в т.ч. плейлисты) — на стороне NewPipeExtractor в «Видео».
+     */
+    private fun extractYouTubeUrl(text: String): String? =
+        YT_URL_RE.find(text)?.value
+
+    companion object {
+        private val YT_URL_RE = Regex(
+            "https?://(?:www\\.|m\\.|music\\.)?" +
+                "(?:youtube\\.com/(?:watch\\?\\S*v=|shorts/|live/|embed/)[\\w\\-]+" +
+                "|youtu\\.be/[\\w\\-]+)\\S*",
+            RegexOption.IGNORE_CASE,
+        )
     }
 
     /**

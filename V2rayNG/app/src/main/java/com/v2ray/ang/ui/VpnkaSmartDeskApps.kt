@@ -148,6 +148,18 @@ object SmartDeskChrome {
         return p
     }
 
+    /** URL ролика, пришедший через «Поделиться → VPNka»: «Видео» открывает
+     *  его (resolve + плеер, откуда доступно скачивание). В отличие от
+     *  pendingPlayback здесь ещё не разрешённый поток, а адрес — резолвит сам
+     *  раздел «Видео» через прокси. */
+    var pendingYtUrl by mutableStateOf<String?>(null)
+
+    fun consumePendingYtUrl(): String? {
+        val u = pendingYtUrl
+        pendingYtUrl = null
+        return u
+    }
+
     /**
      * Куда открыть «Видео»: 2 — сразу на вкладку загрузок (нижняя панель).
      *

@@ -267,6 +267,11 @@ fun YouTubeApp() {
     LaunchedEffect(SmartDeskChrome.pendingPlayback) {
         SmartDeskChrome.consumePendingPlayback()?.let { playing = it }
     }
+    // Ролик пришёл из «Поделиться → VPNka»: резолвим и открываем плеер,
+    // откуда доступно скачивание. Может прийти и когда «Видео» уже открыто.
+    LaunchedEffect(SmartDeskChrome.pendingYtUrl) {
+        SmartDeskChrome.consumePendingYtUrl()?.let { open(it) }
+    }
     var addTo by remember { mutableStateOf<YouTubePlaylists.Item?>(null) }
     var newPlDialog by remember { mutableStateOf(false) }
     var renamePl by remember { mutableStateOf<YouTubePlaylists.Playlist?>(null) }

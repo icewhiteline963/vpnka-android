@@ -258,6 +258,7 @@ class MainActivity : HelperBaseComponentActivity() {
         openDeskFromIntent(intent)
         // Приложение уже было открыто, когда пришли по ссылке из бота.
         consumeLoginFromLink()
+        consumeYouTubeShare()
     }
 
     /**
@@ -357,12 +358,19 @@ class MainActivity : HelperBaseComponentActivity() {
         // завершался только после перезапуска. onResume ловит любой возврат;
         // vpnkaPendingLoginCode переживает паузу, а consume пустой — no-op.
         consumeLoginFromLink()
+        consumeYouTubeShare()
         // Вернулись из привязки Telegram: месяц мог активироваться на этом же
         // аккаунте на сервере. Перечитываем подписку, иначе на экране остаётся
         // старый суточный триал («кончается меньше чем через сутки»).
         if (awaitTelegramReturn) {
             awaitTelegramReturn = false
-            subRefreshRequest++
+            // Только когда кода входа НЕТ (месяц активировали на этом же
+            // аккаунте). Если код пришёл — подписку перечитает сам вход, уже с
+            // НОВЫМ токеном. Свой запрос здесь ушёл бы со СТАРЫМ токеном
+            // триала, а fetchInfo блокируется в OkHttp execute() и отменой
+            // корутины не прерывается — он завершался последним и возвращал
+            // «кончается меньше чем через сутки» поверх активного месяца.
+            if (vpnkaLoginFromLink == null) subRefreshRequest++
         }
         val stored = MmkvManager.decodeSettingsString(KEY_PENDING_PAYMENT)
         val pid = VpnkaLogic.pendingId(stored) ?: return
@@ -508,6 +516,7 @@ class MainActivity : HelperBaseComponentActivity() {
             vpnkaOpenProfileAfterPayment = true
         }
         consumeLoginFromLink()
+        consumeYouTubeShare()
     }
 
     /**
@@ -521,6 +530,21 @@ class MainActivity : HelperBaseComponentActivity() {
         val code = AngApplication.vpnkaPendingLoginCode ?: return
         AngApplication.vpnkaPendingLoginCode = null
         vpnkaLoginFromLink = code
+    }
+
+    /**
+     * Ролик из «Поделиться → VPNka»: открываем стол на «Видео» с этим адресом
+     * (раздел его резолвит через прокси и покажет плеер, откуда доступно
+     * скачивание). Вызываем на любом входе (onCreate/onNewIntent/onResume) —
+     * UrlSchemeActivity могла вернуть нас без доставки интента в onNewIntent.
+     */
+    private fun consumeYouTubeShare() {
+        val url = AngApplication.vpnkaPendingYouTubeUrl ?: return
+        AngApplication.vpnkaPendingYouTubeUrl = null
+        com.v2ray.ang.ui.SmartDeskChrome.pendingAppId = "youtube"
+        com.v2ray.ang.ui.SmartDeskChrome.pendingYtUrl = url
+        clearOverlaysForDesk()
+        showSmartDesk = true
     }
 
     // Which overlay is open, owned by the activity rather than by the
