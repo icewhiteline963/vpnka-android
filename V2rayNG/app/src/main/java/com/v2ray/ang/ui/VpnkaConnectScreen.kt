@@ -165,6 +165,9 @@ fun VpnkaConnectScreen(
     onOpenDownloads: () -> Unit,
     /** Открыть приложение стола по его id — со значка на главном экране. */
     onOpenDeskApp: (String) -> Unit = {},
+    /** Показывать плашку «Все загрузки завершены», когда ничего не качается
+     *  (тумблер в настройках приложения YouTube). */
+    showDownloadsDonePlaque: Boolean = true,
     expiryDaysLeft: Int?,
     /**
      * План, который кончается РАНЬШЕ остальных, когда за ним есть другой:
@@ -397,6 +400,9 @@ fun VpnkaConnectScreen(
                         delay = serverDelay,
                         isRunning = isRunning,
                         liveName = liveName,
+                        // «Авто» — балансировщик: показываем глобус + флаг
+                        // страны, на которую он приземлился, и пинг.
+                        isAuto = serverName.contains("Авто"),
                         leaking = leaking,
                         accent = accent,
                         onClick = onChangeServer,
@@ -407,8 +413,16 @@ fun VpnkaConnectScreen(
                     // колонку: подписи «ЗАГРУЖЕНО» и «ОТДАНО» упирались в
                     // край и обрезались на узких экранах.
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        VpnkaStatCard("ОТДАНО", upBytes, Modifier.fillMaxWidth())
-                        VpnkaStatCard("ЗАГРУЖЕНО", downBytes, Modifier.fillMaxWidth())
+                        // Стрелки: отдано вверх (красная), загружено вниз
+                        // (зелёная) — направление читается без чтения подписи.
+                        VpnkaStatCard(
+                            "ОТДАНО", upBytes, Modifier.fillMaxWidth(),
+                            arrow = "↑", arrowColor = VpnkaColors.TrafficUp,
+                        )
+                        VpnkaStatCard(
+                            "ЗАГРУЖЕНО", downBytes, Modifier.fillMaxWidth(),
+                            arrow = "↓", arrowColor = VpnkaColors.TrafficDown,
+                        )
                     }
                 }
             }
@@ -515,6 +529,10 @@ fun VpnkaConnectScreen(
                         // нажавший на строку о своих файлах, попадал на
                         // чужие ролики и искал полку сам.
                         onClick = onOpenDownloads,
+                        // Плашку «Все загрузки завершены» (когда ничего не
+                        // качается) показываем только если это включено в
+                        // настройках приложения YouTube.
+                        showWhenIdle = showDownloadsDonePlaque,
                     )
                     VpnkaAppGrid(isRunning = isRunning, onOpen = onOpenDeskApp)
                 }
@@ -682,6 +700,7 @@ private fun VpnkaDownloadWidget(
     accent: Color,
     onAccent: Color,
     onClick: () -> Unit,
+    showWhenIdle: Boolean,
 ) {
     // Журнал скачанного живёт на диске, а список — в памяти, и поднимал
     // его только экран «Видео». До первого захода туда полоска на главном
@@ -699,6 +718,10 @@ private fun VpnkaDownloadWidget(
     // пока ниже шли две настоящие.
     val active = entries.firstOrNull { it.state == YouTubeDownloads.State.RUNNING }
         ?: entries.firstOrNull { it.state == YouTubeDownloads.State.QUEUED }
+    // Ничего не качается и плашка «Все загрузки завершены» в настройках
+    // выключена — не показываем полоску вовсе. Активную загрузку показываем
+    // всегда: она про то, что происходит прямо сейчас.
+    if (active == null && !showWhenIdle) return
     val pct = active?.let {
         if (it.total > 0L) (it.done * 100 / it.total).toInt().coerceIn(0, 100) else 0
     } ?: 0
@@ -1143,6 +1166,7 @@ private fun VpnkaHomeServerCard(
     delay: String,
     isRunning: Boolean,
     liveName: String?,
+    isAuto: Boolean,
     leaking: Boolean,
     accent: Color,
     onClick: () -> Unit,
@@ -1187,11 +1211,25 @@ private fun VpnkaHomeServerCard(
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                text = when {
-                    leaking -> "трафик идёт мимо VPN"
-                    liveName != null -> liveName
-                    delay.isNotBlank() -> "$name · $delay"
-                    else -> name
+                text = run {
+                    // Пинг — это delay выбранного варианта; плейсхолдер
+                    // «нажмите …» пингом не считаем.
+                    val ping = delay.takeIf {
+                        it.isNotBlank() && !it.startsWith("нажмите")
+                    }
+                    when {
+                        leaking -> "трафик идёт мимо VPN"
+                        // Авто и туннель поднят: глобус + флаг живой страны
+                        // (liveName уже начинается с флага) + пинг.
+                        isAuto && isRunning && liveName != null ->
+                            "🌍 $liveName" + (ping?.let { " · $it" } ?: "")
+                        // Авто, но ещё не подключились: глобус + «Авто» (+ пинг,
+                        // если сервер уже успели пропинговать).
+                        isAuto -> "🌍 Авто" + (ping?.let { " · $it" } ?: "")
+                        liveName != null -> liveName
+                        ping != null -> "$name · $ping"
+                        else -> name
+                    }
                 },
                 fontFamily = VpnkaFonts.manrope700,
                 fontWeight = VpnkaWeight.Bold,
@@ -1216,7 +1254,13 @@ private fun VpnkaHomeServerCard(
  * строке; здесь их две в узкой правой колонке рядом с цветком.
  */
 @Composable
-private fun VpnkaStatCard(label: String, bytes: Long, modifier: Modifier = Modifier) {
+private fun VpnkaStatCard(
+    label: String,
+    bytes: Long,
+    modifier: Modifier = Modifier,
+    arrow: String? = null,
+    arrowColor: Color = VpnkaColors.TextStrong,
+) {
     val (value, unit) = formatTraffic(bytes)
     // Одна строка: подпись слева, число справа.
     //
@@ -1232,6 +1276,17 @@ private fun VpnkaStatCard(label: String, bytes: Long, modifier: Modifier = Modif
             .padding(horizontal = 10.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (arrow != null) {
+            Text(
+                text = arrow,
+                fontFamily = VpnkaFonts.manrope700,
+                fontWeight = VpnkaWeight.Bold,
+                fontSize = 12.sp,
+                color = arrowColor,
+                maxLines = 1,
+            )
+            Spacer(Modifier.width(5.dp))
+        }
         Text(
             text = label,
             fontFamily = VpnkaFonts.manrope600,

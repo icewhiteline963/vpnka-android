@@ -586,6 +586,7 @@ class MainActivity : HelperBaseComponentActivity() {
         showTopUp -> { showTopUp = false; true }
         showPlansList -> { showPlansList = false; true }
         showNotificationSettings -> { showNotificationSettings = false; true }
+        showYouTubeSettings -> { showYouTubeSettings = false; true }
         showSettings -> { showSettings = false; true }
         showSubscription -> { showSubscription = false; true }
         showServers -> { showServers = false; true }
@@ -652,6 +653,14 @@ class MainActivity : HelperBaseComponentActivity() {
     private var smartDeskOnline by mutableStateOf(false)
     // Privacy toggle: hide the SmartDesk entry; a 5-tap corner gesture reveals it.
     private var smartDeskHidden by mutableStateOf(MmkvManager.decodeSettingsBool("vpnka_smartdesk_hidden"))
+    // Настройка приложения YouTube: показывать ли на главном плашку «Все
+    // загрузки завершены», когда ничего не качается. По умолчанию включено —
+    // прежнее поведение; тумблер живёт в настройках приложения YouTube.
+    private var ytShowDownloadsDone by mutableStateOf(
+        MmkvManager.decodeSettingsBool("vpnka_yt_downloads_done_plaque", true)
+    )
+    // Открыт ли экран настроек приложения YouTube (над общими настройками).
+    private var showYouTubeSettings by mutableStateOf(false)
     // SmartDesk's internal back (pop overlay/app → desktop). Returns true if it
     // handled the press; back closes the whole surface only when it returns false.
     private var smartDeskBack: (() -> Boolean)? = null
@@ -1188,7 +1197,7 @@ class MainActivity : HelperBaseComponentActivity() {
             showServerPicker || showPlanPicker || showPlansList ||
             showShop || showTopUp ||
             openedPlan != null || showSubscription ||
-            showSettings || showNotificationSettings ||
+            showSettings || showNotificationSettings || showYouTubeSettings ||
             showServers || showTickets || openedTicket != null
         BackHandler(enabled = anyOverlay) { closeTopVpnkaScreen() }
 
@@ -1265,7 +1274,7 @@ class MainActivity : HelperBaseComponentActivity() {
         // profile, and the profile block returns — so while it sat lower the
         // flag was set and the screen never changed. Placed here, back from
         // settings lands on the profile it was opened from.
-        if (showSettings && !showNotificationSettings && !showServers) {
+        if (showSettings && !showNotificationSettings && !showYouTubeSettings && !showServers) {
             VpnkaSettingsScreen(
                 onPerAppProxy = { navigateTo("per_app_proxy") },
                 batteryExempt = PowerSaveHelper.isExempt(this),
@@ -1292,6 +1301,7 @@ class MainActivity : HelperBaseComponentActivity() {
                     smartDeskHidden = hidden
                     MmkvManager.encodeSettings("vpnka_smartdesk_hidden", hidden)
                 },
+                onYouTubeSettings = { showYouTubeSettings = true },
                 betaChannel = betaChannel,
                 onBetaChannelChange = { on ->
                     betaChannel = on
@@ -1348,6 +1358,20 @@ class MainActivity : HelperBaseComponentActivity() {
                     }
                 },
                 onBack = { showNotificationSettings = false },
+            )
+            return
+        }
+
+        // Настройки приложения YouTube — над общими настройками, «назад»
+        // возвращает в настройки (тот же приём, что у экрана уведомлений).
+        if (showYouTubeSettings && !showServers) {
+            VpnkaYouTubeSettingsScreen(
+                downloadsDonePlaque = ytShowDownloadsDone,
+                onDownloadsDonePlaqueChange = { on ->
+                    ytShowDownloadsDone = on
+                    MmkvManager.encodeSettings("vpnka_yt_downloads_done_plaque", on)
+                },
+                onBack = { showYouTubeSettings = false },
             )
             return
         }
@@ -1956,6 +1980,9 @@ class MainActivity : HelperBaseComponentActivity() {
                     com.v2ray.ang.ui.SmartDeskChrome.pendingAppId = id
                     showSmartDesk = true
                 },
+                // Настройка приложения YouTube: показывать ли плашку «Все
+                // загрузки завершены» на главном, когда ничего не качается.
+                showDownloadsDonePlaque = ytShowDownloadsDone,
                 // Предупреждаем о том дне, когда доступ кончится СОВСЕМ, то
                 // есть по самому дальнему плану.
                 //

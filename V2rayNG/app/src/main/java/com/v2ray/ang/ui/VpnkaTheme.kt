@@ -111,6 +111,12 @@ object VpnkaColors {
     // inside the last one, so the change of colour carries the urgency.
     val Amber: Color get() = pick(Color(0xFFB26B00), Color(0xFFE8A33C), Color(0xFFFFC61F))
 
+    // Стрелки в счётчиках трафика: отдано (вверх) — красная, загружено
+    // (вниз) — зелёная. Направление, а не тревога, поэтому это отдельные
+    // цвета, а не Warning/AccentOn (те несут смысл «истекает»/«подключено»).
+    val TrafficUp: Color get() = pick(Color(0xFFD32F2F), Color(0xFFFF6B6B), Color(0xFFFF7A5C))
+    val TrafficDown: Color get() = pick(Color(0xFF2E7D32), Color(0xFF6FBF73), Color(0xFF7DBF5E))
+
     // Text, darkest first — and lightest first once inverted.
     val TextStrong: Color get() = pick(Color(0xFF5C3D10), Color(0xFFF6E7CE), Color(0xFFF8F1E6))
     val TextBrand: Color get() = pick(Color(0xFF7A4A12), Color(0xFFEBD3AC), Color(0xFFEFE5D6))

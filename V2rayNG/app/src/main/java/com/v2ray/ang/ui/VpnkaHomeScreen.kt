@@ -359,6 +359,8 @@ fun VpnkaSettingsScreen(
     smartDeskEligible: Boolean = false,
     smartDeskHidden: Boolean = false,
     onSmartDeskHiddenChange: (Boolean) -> Unit = {},
+    /** Открыть настройки приложения YouTube (появляется, когда есть облако). */
+    onYouTubeSettings: () -> Unit = {},
     betaChannel: Boolean = false,
     onBetaChannelChange: (Boolean) -> Unit = {},
     onBack: () -> Unit,
@@ -430,6 +432,21 @@ fun VpnkaSettingsScreen(
         if (smartDeskEligible) {
             Spacer(Modifier.height(10.dp))
             Text(
+                text = "Настройки приложений",
+                fontSize = 13.sp,
+                fontFamily = VpnkaFonts.manrope600,
+                fontWeight = VpnkaWeight.Semi,
+                color = VpnkaColors.TextMuted,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp),
+            )
+            VpnkaSettingsRow(
+                title = "YouTube",
+                subtitle = "Плашка загрузок на главном и другие параметры «Видео»",
+                onClick = onYouTubeSettings,
+            )
+
+            Spacer(Modifier.height(10.dp))
+            Text(
                 text = "Безопасность",
                 fontSize = 13.sp,
                 fontFamily = VpnkaFonts.manrope600,
@@ -447,6 +464,35 @@ fun VpnkaSettingsScreen(
         }
 
         Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+/**
+ * Настройки приложения YouTube («Видео»). Первый экран пер-приложенных
+ * настроек: сюда добавляются параметры, относящиеся только к «Видео».
+ */
+@Composable
+fun VpnkaYouTubeSettingsScreen(
+    downloadsDonePlaque: Boolean,
+    onDownloadsDonePlaqueChange: (Boolean) -> Unit,
+    onBack: () -> Unit,
+) {
+    VpnkaPage(title = "YouTube", onBack = onBack) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState()),
+        ) {
+            Spacer(Modifier.height(24.dp))
+            NotifyToggleRow(
+                title = "Плашка «Все загрузки завершены»",
+                subtitle = "Показывать на главном полоску загрузок, даже когда ничего не качается. Активная загрузка показывается всегда.",
+                checked = downloadsDonePlaque,
+                enabled = true,
+                onCheckedChange = onDownloadsDonePlaqueChange,
+            )
+            Spacer(Modifier.height(24.dp))
         }
     }
 }
