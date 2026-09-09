@@ -561,36 +561,48 @@ object AngConfigManager {
             val proxyUsername = SettingsManager.getSocksUsername()
             val proxyPassword = SettingsManager.getSocksPassword()
 
-            var configText = try {
-                val httpPort = SettingsManager.getHttpPort()
+            // Через локальный прокси (туннель) и напрямую — обе попытки, но
+            // ПОРЯДОК зависит от того, поднят ли ВПН.
+            //
+            // Прокси-first нужен, когда адрес подписки достаётся только через
+            // туннель. Но на ПЕРВОМ запуске ВПН ещё выключен, порт прокси
+            // мёртв, и попытка висела до 15-секундного таймаута ПЕРЕД прямым
+            // запросом — отсюда «профиль долго не скачивался». get.vpnka.io
+            // (РФ-edge) в России достаётся напрямую, поэтому при выключенном
+            // ВПН идём сразу напрямую, а прокси оставляем как запас.
+            fun viaProxy(): String = try {
                 HttpUtil.getUrlContentWithUserAgent(
                     UrlContentRequest(
                         url = url,
                         userAgent = userAgent,
                         requestHeaders = requestHeaders,
                         timeout = 15000,
-                        httpPort = httpPort,
+                        httpPort = SettingsManager.getHttpPort(),
                         proxyUsername = proxyUsername,
-                        proxyPassword = proxyPassword
+                        proxyPassword = proxyPassword,
                     )
-                )
+                ).orEmpty()
             } catch (e: Exception) {
                 LogUtil.e(AppConfig.ANG_PACKAGE, "Update subscription: proxy not ready or other error", e)
                 ""
             }
-            if (configText.isEmpty()) {
-                configText = try {
-                    HttpUtil.getUrlContentWithUserAgent(
-                        UrlContentRequest(
-                            url = url,
-                            userAgent = userAgent,
-                            requestHeaders = requestHeaders
-                        )
+            fun direct(): String = try {
+                HttpUtil.getUrlContentWithUserAgent(
+                    UrlContentRequest(
+                        url = url,
+                        userAgent = userAgent,
+                        requestHeaders = requestHeaders,
                     )
-                } catch (e: Exception) {
-                    LogUtil.e(AppConfig.TAG, "Update subscription: Failed to get URL content with user agent", e)
-                    ""
-                }
+                ).orEmpty()
+            } catch (e: Exception) {
+                LogUtil.e(AppConfig.TAG, "Update subscription: direct fetch failed", e)
+                ""
+            }
+
+            val vpnUp = com.v2ray.ang.core.CoreServiceManager.isRunning()
+            var configText = if (vpnUp) viaProxy() else direct()
+            if (configText.isEmpty()) {
+                configText = if (vpnUp) direct() else viaProxy()
             }
             if (configText.isEmpty()) {
                 return SubscriptionUpdateResult(failureCount = 1)
