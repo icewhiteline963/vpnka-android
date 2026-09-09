@@ -26,24 +26,33 @@ object UpdateCheckerManager {
         val proxyUsername = SettingsManager.getSocksUsername()
         val proxyPassword = SettingsManager.getSocksPassword()
 
-        var response = HttpUtil.getUrlContent(
-            UrlContentRequest(
-                url = url,
-                timeout = 5000
-            )
-        )
-        if (response.isNullOrEmpty()) {
-            val httpPort = SettingsManager.getHttpPort()
-            response = HttpUtil.getUrlContent(
+        // Тянем URL напрямую, а при пустом ответе — через локальный прокси
+        // (работает, когда поднят ВПН: так dl достаётся сквозь туннель, даже
+        // если провайдер режет его напрямую).
+        fun fetch(u: String): String? {
+            val direct = HttpUtil.getUrlContent(UrlContentRequest(url = u, timeout = 5000))
+            if (!direct.isNullOrEmpty()) return direct
+            return HttpUtil.getUrlContent(
                 UrlContentRequest(
-                    url = url,
+                    url = u,
                     timeout = 5000,
-                    httpPort = httpPort,
+                    httpPort = SettingsManager.getHttpPort(),
                     proxyUsername = proxyUsername,
-                    proxyPassword = proxyPassword
+                    proxyPassword = proxyPassword,
                 )
             )
-                ?: throw IllegalStateException("Failed to get response")
+        }
+
+        var response = fetch(url)
+        // Основной манифест (dl.vpnka.io) не дошёл — пробуем резерв на втором
+        // РФ-домене (get.vpnka.io/u). Только для single-object манифеста:
+        // у массивного releases.json (pre-release) резерва нет.
+        if (response.isNullOrEmpty() && !includePreRelease) {
+            LogUtil.i(AppConfig.TAG, "primary manifest unreachable, trying RU fallback")
+            response = fetch(AppConfig.APP_API_LATEST_FALLBACK_URL)
+        }
+        if (response.isNullOrEmpty()) {
+            throw IllegalStateException("Failed to get response")
         }
 
         val latestRelease = if (includePreRelease) {

@@ -154,6 +154,22 @@ object AppConfig {
         } else {
             BuildConfig.UPDATE_MANIFEST
         }
+
+    /**
+     * Резервный манифест на ВТОРОМ РФ-домене (get.vpnka.io/u), если основной
+     * dl.vpnka.io недоступен (например, заблокирован по домену). Тот же
+     * хостер, но другой домен — через него уже идут подписки и лендинг, то
+     * есть у тех, у кого dl не открывается, get обычно работает. Ссылки на
+     * APK внутри этого манифеста ведут на get.vpnka.io/u, а не на dl.
+     * Только для single-object манифеста (latest.json/beta.json); массивный
+     * releases.json сюда не дублируется.
+     */
+    val APP_API_LATEST_FALLBACK_URL: String
+        get() = if (BuildConfig.DISTRIBUTION == "Dev" || MmkvManager.betaChannel()) {
+            "https://get.vpnka.io/u/beta.json"
+        } else {
+            "https://get.vpnka.io/u/latest.json"
+        }
     const val APP_ISSUES_URL = "$APP_URL/issues"
     const val APP_WIKI_MODE = "$APP_URL/wiki/Mode"
     const val APP_PRIVACY_POLICY = "$GITHUB_RAW_URL/2dust/v2rayNG/master/CR.md"
