@@ -1988,7 +1988,9 @@ class MainActivity : HelperBaseComponentActivity() {
                 onOpenProfile = { showSubscription = true },
                 telegramLinked = subInfo?.telegramLinked == true,
                 // Telegram name on the top-left account button when linked.
-                accountName = subInfo?.telegramUsername?.let { "@$it" },
+                // «@username», а если его нет — имя из Telegram (first_name).
+                accountName = subInfo?.telegramUsername?.let { "@$it" }
+                    ?: subInfo?.telegramName?.takeIf { it.isNotBlank() },
                 onLinkTelegram = { openTelegramLinkGuarded() },
                 onChangeServer = { showServerPicker = true },
                 // The launch check only lights the dot; the screen behind the

@@ -78,6 +78,9 @@ object VpnkaAccount {
         // Telegram display name (username) for the profile button; null when
         // no Telegram is linked.
         @SerializedName("telegram_username") val telegramUsername: String? = null,
+        // Telegram first name — shown on the profile button when the account
+        // has no @username (many linked accounts don't have one).
+        @SerializedName("telegram_name") val telegramName: String? = null,
         // A free-month trial tariff is configured and live. With no active
         // paid plan, the home screen shows the «Месяц бесплатно» button.
         @SerializedName("free_month_enabled") val freeMonthEnabled: Boolean = false,
