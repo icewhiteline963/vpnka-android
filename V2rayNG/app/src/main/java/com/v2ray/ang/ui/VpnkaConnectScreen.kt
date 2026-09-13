@@ -556,9 +556,14 @@ fun VpnkaConnectScreen(
                 // Подписка — на месте бывшего виджета загрузок (виджет убран
                 // по решению владельца): над сеткой приложений и всегда видна.
                 planRow()
-                if (smartDeskEnabled) {
-                    VpnkaAppGrid(isRunning = isRunning, onOpen = onOpenDeskApp)
-                }
+                // Браузер и YouTube-загрузчик — у ВСЕХ; остальные приложения
+                // сейфа (мессенджер/контакты/календарь/заметки/помощь) — только
+                // при активном сейфе. Сетка сама отфильтрует состав.
+                VpnkaAppGrid(
+                    isRunning = isRunning,
+                    smartDeskEnabled = smartDeskEnabled,
+                    onOpen = onOpenDeskApp,
+                )
                 // Сервер уже показан в блоке подключения — второй карточки
                 // здесь нет: одни и те же имя и задержка стояли на экране
                 // дважды.
@@ -623,10 +628,22 @@ fun VpnkaConnectScreen(
     }
 }
 
+// Приложения, доступные ВСЕМ без сейфа: браузер и YouTube-загрузчик
+// (загрузки живут внутри YouTube). Всё остальное из каталога сейфа
+// показываем только при активном сейфе.
+private val ALWAYS_ON_DESK_APPS = setOf("browser", "youtube")
+
 @Composable
-private fun VpnkaAppGrid(isRunning: Boolean, onOpen: (String) -> Unit) {
+private fun VpnkaAppGrid(
+    isRunning: Boolean,
+    smartDeskEnabled: Boolean,
+    onOpen: (String) -> Unit,
+) {
     // Показываем то, что человек поставил себе на стол, тем же порядком.
-    val installed = remember { com.v2ray.ang.ui.smartDeskInstalledApps() }
+    val all = remember { com.v2ray.ang.ui.smartDeskInstalledApps() }
+    // Без сейфа — только браузер и YouTube; с сейфом — весь стол.
+    val installed = if (smartDeskEnabled) all
+        else all.filter { it.id in ALWAYS_ON_DESK_APPS }
     if (installed.isEmpty()) return
 
     // Заголовка «ПРИЛОЖЕНИЯ» в макете нет: сетка значков в подписи не
@@ -1398,7 +1415,10 @@ private fun VpnkaFreeTrafficPlaque(
         // Title on top, traffic below — the one-row layout clipped the text
         // once the speed was added.
         Text(
-            text = if (speedLimitMbps != null)
+            // При троттле номинальную скорость не показываем — она уже не
+            // действует (строка ниже говорит «0,5 Мбит»), иначе заголовок и
+            // строка трафика противоречили бы друг другу.
+            text = if (!throttled && speedLimitMbps != null)
                 "🎁 Бесплатный месяц · $speedLimitMbps Мбит/с"
             else "🎁 Бесплатный месяц",
             fontFamily = VpnkaFonts.manrope600,
