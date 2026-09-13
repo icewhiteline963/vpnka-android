@@ -194,7 +194,15 @@ fun VpnkaHomeScreen(
                 // it replaced — the picture changed, not what the user has
                 // to work out.
                 .clip(CircleShape)
-                .clickable(enabled = !isLoading, onClick = onToggle),
+                // Disconnecting is always allowed: stopping a running tunnel
+                // is a safety action and must never be gated by a background
+                // load (e.g. a subscription refresh that hangs while logged
+                // out left this stuck "on" with an unresponsive button). Only
+                // *starting* waits for loading to finish.
+                .clickable(
+                    enabled = isRunning || !isLoading,
+                    onClick = onToggle,
+                ),
             contentAlignment = Alignment.Center,
         ) {
             VpnkaFlower(

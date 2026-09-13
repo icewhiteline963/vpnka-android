@@ -1427,6 +1427,14 @@ class MainActivity : HelperBaseComponentActivity() {
                     }
                 },
                 onSignOut = {
+                    // Logout must also drop the tunnel. Otherwise a signed-out
+                    // app kept routing all traffic through the ex-account's
+                    // key — a live VPN on a dropped identity (and the reason a
+                    // post-logout speed test still saw the paid key's full
+                    // speed). Stop it before the account/servers are wiped.
+                    if (mainViewModel.uiState.value.isRunning) {
+                        CoreServiceManager.stopVService(this@MainActivity)
+                    }
                     lifecycleScope.launch {
                         VpnkaAccount.signOut()
                         subInfo = null
@@ -2258,9 +2266,9 @@ class MainActivity : HelperBaseComponentActivity() {
     }
 
     private fun importBatchConfig(server: String?) {
-        mainViewModel.setLoading(true)
         lifecycleScope.launch {
             try {
+                mainViewModel.setLoading(true)
                 val (count, countSub) = withContext(Dispatchers.IO) {
                     AngConfigManager.importBatchConfig(
                         server,
@@ -2300,14 +2308,17 @@ class MainActivity : HelperBaseComponentActivity() {
     }
 
     private fun importConfigViaSub(silent: Boolean = false) {
-        mainViewModel.setLoading(true)
         // Флаг снимаем СРАЗУ: иначе неудачная попытка оставила бы его
         // висеть, и следующее обновление подписки — хоть по кнопке, хоть
         // по расписанию — молча включило бы ВПН само.
         val startWhenReady = pendingStartAfterImport
         pendingStartAfterImport = false
         lifecycleScope.launch {
+            // setLoading(true) INSIDE the launch so a coroutine cancelled
+            // before its body runs (activity teardown mid-refresh) can't leak
+            // the loading counter and wedge the UI in a "loading" state.
             try {
+                mainViewModel.setLoading(true)
                 val result = withContext(Dispatchers.IO) {
                     mainViewModel.updateConfigViaSubAll()
                 }
@@ -2372,9 +2383,9 @@ class MainActivity : HelperBaseComponentActivity() {
     }
 
     private fun exportAll() {
-        mainViewModel.setLoading(true)
         lifecycleScope.launch {
             try {
+                mainViewModel.setLoading(true)
                 val ret = withContext(Dispatchers.IO) {
                     mainViewModel.exportAllServer()
                 }
@@ -2392,9 +2403,9 @@ class MainActivity : HelperBaseComponentActivity() {
     }
 
     private fun delAllConfig() {
-        mainViewModel.setLoading(true)
         lifecycleScope.launch {
             try {
+                mainViewModel.setLoading(true)
                 val ret = withContext(Dispatchers.IO) {
                     mainViewModel.removeAllServer()
                 }
@@ -2412,9 +2423,9 @@ class MainActivity : HelperBaseComponentActivity() {
     }
 
     private fun delDuplicateConfig() {
-        mainViewModel.setLoading(true)
         lifecycleScope.launch {
             try {
+                mainViewModel.setLoading(true)
                 val ret = withContext(Dispatchers.IO) {
                     mainViewModel.removeDuplicateServer()
                 }
@@ -2432,9 +2443,9 @@ class MainActivity : HelperBaseComponentActivity() {
     }
 
     private fun delInvalidConfig() {
-        mainViewModel.setLoading(true)
         lifecycleScope.launch {
             try {
+                mainViewModel.setLoading(true)
                 val ret = withContext(Dispatchers.IO) {
                     mainViewModel.removeInvalidServer()
                 }
@@ -2452,9 +2463,9 @@ class MainActivity : HelperBaseComponentActivity() {
     }
 
     private fun sortByTestResults() {
-        mainViewModel.setLoading(true)
         lifecycleScope.launch {
             try {
+                mainViewModel.setLoading(true)
                 withContext(Dispatchers.IO) {
                     mainViewModel.sortByTestResults()
                 }
