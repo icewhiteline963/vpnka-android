@@ -721,6 +721,13 @@ class MainActivity : HelperBaseComponentActivity() {
      *  дотянуться — а именно оттуда приходит новость об оплате. */
     private var subRefreshRequest by mutableStateOf(0)
 
+    /** Bounded retries for the first profile fetch after a fresh install: the
+     *  account's first-run subscription is provisioned a moment AFTER
+     *  registration, so a cold-start fetch can land before it exists and the
+     *  screen shows no servers until a manual restart. Reset once a live plan
+     *  is seen; capped so a genuinely sub-less account doesn't poll forever. */
+    private var subFirstRunRetries = 0
+
     @Composable
     override fun ScreenContent() {
         // Our one-button screen is what the app opens on; upstream's full
@@ -907,7 +914,19 @@ class MainActivity : HelperBaseComponentActivity() {
                         preferGroupToken = null
                     }
                 }
-                subLoading = false
+                // First-run retry: a fresh install's subscription is
+                // provisioned a beat after registration, so a cold-start
+                // fetch can come back with no live plan — leaving the screen
+                // with no servers until a manual restart. Wait briefly and
+                // re-read (bounded) so it appears on its own.
+                if (fetched != null && live.isEmpty() && subFirstRunRetries < 5) {
+                    subFirstRunRetries++
+                    kotlinx.coroutines.delay(2500)
+                    subRefreshRequest++
+                } else {
+                    if (live.isNotEmpty()) subFirstRunRetries = 0
+                    subLoading = false
+                }
             }
         }
         var updateVersion by remember { mutableStateOf<String?>(null) }
@@ -1896,6 +1915,7 @@ class MainActivity : HelperBaseComponentActivity() {
                 // (composable also guards on paidSubscription).
                 freeTrafficUsedBytes = freePlan?.trafficUsedBytes,
                 freeTrafficLimitGb = freePlan?.trafficLimitGb,
+                freeSpeedLimitMbps = freePlan?.speedLimitMbps,
                 // Бесплатный месяц продлевается сколько угодно раз, но пока
                 // текущий идёт, забрать следующий нельзя — сервер отдаёт его
                 // только в последние сутки. Поэтому карточку прячем на всё

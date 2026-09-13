@@ -103,6 +103,7 @@ object VpnkaAccount {
         // null on paid plans (unlimited) — then no bar is shown.
         @SerializedName("traffic_used_bytes") val trafficUsedBytes: Long? = null,
         @SerializedName("traffic_limit_gb") val trafficLimitGb: Int? = null,
+        @SerializedName("speed_limit_mbps") val speedLimitMbps: Int? = null,
     )
 
     private data class TokenResponse(

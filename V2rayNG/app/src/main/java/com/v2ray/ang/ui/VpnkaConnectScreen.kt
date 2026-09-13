@@ -143,6 +143,7 @@ fun VpnkaConnectScreen(
     // account is on a capped free month with NO paid plan; null → no plaque.
     freeTrafficUsedBytes: Long? = null,
     freeTrafficLimitGb: Int? = null,
+    freeSpeedLimitMbps: Int? = null,
     freeMonthEnabled: Boolean,
     /** Бесплатный месяц ещё идёт и кончается в ближайшие сутки. */
     freeMonthWaiting: Boolean,
@@ -435,7 +436,9 @@ fun VpnkaConnectScreen(
                         VpnkaFreeTrafficPlaque(
                             usedBytes = freeTrafficUsedBytes ?: 0L,
                             limitGb = freeTrafficLimitGb,
+                            speedLimitMbps = freeSpeedLimitMbps,
                             accent = accent,
+                            onBuy = onChangeSubscription,
                         )
                     }
                 }
@@ -1347,8 +1350,11 @@ private fun VpnkaStatCard(
 private fun VpnkaFreeTrafficPlaque(
     usedBytes: Long,
     limitGb: Int,
+    speedLimitMbps: Int?,
     accent: Color,
+    onBuy: () -> Unit,
 ) {
+    var showInfo by remember { mutableStateOf(false) }
     val limitBytes = limitGb.toLong() * 1_073_741_824L
     val fraction =
         if (limitBytes > 0) (usedBytes.toFloat() / limitBytes).coerceIn(0f, 1f)
@@ -1361,31 +1367,32 @@ private fun VpnkaFreeTrafficPlaque(
             .clip(RoundedCornerShape(11.dp))
             .background(VpnkaColors.CardSpeed)
             .border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(11.dp))
+            .clickable { showInfo = true }
             .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = "🎁 Бесплатный месяц",
-                fontFamily = VpnkaFonts.manrope600,
-                fontWeight = VpnkaWeight.Semi,
-                fontSize = 9.sp,
-                letterSpacing = 0.06.em,
-                color = VpnkaColors.fg(0.8f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
-            )
-            Spacer(Modifier.weight(1f))
-            Text(
-                text = "$usedGb из $limitGb ГБ",
-                fontFamily = VpnkaFonts.manrope700,
-                fontWeight = VpnkaWeight.Bold,
-                fontSize = 12.sp,
-                color = VpnkaColors.TextStrong,
-                maxLines = 1,
-            )
-        }
+        // Title on top, traffic below — the one-row layout clipped the text
+        // once the speed was added.
+        Text(
+            text = if (speedLimitMbps != null)
+                "🎁 Бесплатный месяц · $speedLimitMbps Мбит/с"
+            else "🎁 Бесплатный месяц",
+            fontFamily = VpnkaFonts.manrope600,
+            fontWeight = VpnkaWeight.Semi,
+            fontSize = 11.sp,
+            color = VpnkaColors.fg(0.85f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text(
+            text = "$usedGb из $limitGb ГБ",
+            fontFamily = VpnkaFonts.manrope700,
+            fontWeight = VpnkaWeight.Bold,
+            fontSize = 12.sp,
+            color = VpnkaColors.TextStrong,
+            maxLines = 1,
+        )
         // Track + fill, drawn with plain Boxes so we add no progress-bar
         // dependency and keep the app's own rounded look.
         Box(
@@ -1403,6 +1410,34 @@ private fun VpnkaFreeTrafficPlaque(
                     .background(barColor),
             )
         }
+    }
+
+    if (showInfo) {
+        val limits = buildString {
+            append("Бесплатный месяц — с ограничениями: до ")
+            append(limitGb)
+            append(" ГБ трафика")
+            if (speedLimitMbps != null) {
+                append(" и скорость до ")
+                append(speedLimitMbps)
+                append(" Мбит/с")
+            }
+            append(".\n\nНужна полная скорость и без лимита трафика — ")
+            append("оформите платную подписку.")
+        }
+        AlertDialog(
+            onDismissRequest = { showInfo = false },
+            title = { Text("Бесплатный месяц") },
+            text = { Text(limits) },
+            confirmButton = {
+                TextButton(onClick = { showInfo = false; onBuy() }) {
+                    Text("Купить подписку")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showInfo = false }) { Text("Закрыть") }
+            },
+        )
     }
 }
 
