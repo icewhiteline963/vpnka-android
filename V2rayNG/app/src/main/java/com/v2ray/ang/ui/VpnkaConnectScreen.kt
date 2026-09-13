@@ -326,9 +326,12 @@ fun VpnkaConnectScreen(
                 updateAvailable = updateVersion != null,
                 onCheckUpdate = onCheckUpdate,
                 topPadding = headerTop,
-                // Status sits on the icons' line — it is the one fact the
-                // screen exists to state, and it belongs at the top of it
-                // rather than floating above the button.
+            )
+
+            // Состояние защиты — НАД кнопкой подключения (перенесено из шапки:
+            // пилюля вверху выбивалась из дизайна).
+            Spacer(Modifier.height(14.dp))
+            VpnkaStatusPill(
                 status = when {
                     leaking -> "МИМО VPN"
                     isRunning -> "ЗАЩИЩЕНО"
@@ -946,6 +949,79 @@ private fun VpnkaAppTile(
     }
 }
 
+/**
+ * Пилюля состояния защиты + подсказка под ней.
+ *
+ * Раньше жила в центре шапки; вверху она читалась как заголовок экрана и
+ * выбивалась из макета. Перенесена НАД кнопку подключения — там это подпись
+ * к действию, которым и является. Центрируется по ширине.
+ */
+@Composable
+private fun VpnkaStatusPill(
+    status: String,
+    statusColor: Color,
+    /** Включён ли туннель — от этого зависит цвет точки и её ореол. */
+    statusOn: Boolean,
+    hint: String,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(20.dp))
+                .background(VpnkaColors.CardSpeed)
+                .border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(20.dp))
+                .padding(start = 9.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            // Ореол вокруг точки — только он отличает «горит» от «просто
+            // кружок». Коробка всегда 16, ореол — тень (места не занимает),
+            // иначе пилюля раздвигалась на восемь точек при поднятии туннеля.
+            Box(
+                modifier = Modifier.size(16.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (statusOn) {
+                    Box(
+                        modifier = Modifier.size(16.dp).clip(CircleShape)
+                            .background(statusColor.copy(alpha = 0.22f)),
+                    )
+                }
+                Box(
+                    modifier = Modifier.size(8.dp).clip(CircleShape)
+                        .background(
+                            if (statusOn) statusColor
+                            else VpnkaColors.TextMuted.copy(alpha = 0.55f)
+                        ),
+                )
+            }
+            Text(
+                text = status,
+                fontFamily = VpnkaFonts.manrope700,
+                fontWeight = VpnkaWeight.Bold,
+                fontSize = 11.sp,
+                letterSpacing = 0.12.em,
+                color = statusColor,
+                maxLines = 1,
+            )
+        }
+        Text(
+            text = hint,
+            fontFamily = VpnkaFonts.manrope600,
+            fontWeight = VpnkaWeight.Semi,
+            fontSize = 11.5.sp,
+            color = VpnkaColors.fg(0.8f),
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
 @Composable
 private fun VpnkaHeader(
     onOpenProfile: () -> Unit,
@@ -953,12 +1029,6 @@ private fun VpnkaHeader(
     updateAvailable: Boolean,
     onCheckUpdate: () -> Unit,
     topPadding: Dp,
-    status: String,
-    statusColor: Color,
-    /** Включён ли туннель — от этого зависит цвет точки в пилюле. */
-    statusOn: Boolean,
-    /** Строка под пилюлей: «Трафик зашифрован» / «Нажмите на цветочек». */
-    hint: String,
 ) {
     Column(modifier = Modifier.fillMaxWidth().padding(top = topPadding)) {
     Row(
@@ -1002,75 +1072,10 @@ private fun VpnkaHeader(
             }
         }
 
-        // Статус — ПИЛЮЛЯ с точкой, а не просто надпись в разрядку.
-        //
-        // В макете это скруглённая плашка: точка слева (при включённом ВПН
-        // акцентная и с ореолом) и текст акцентом. Надпись сама по себе
-        // читалась как заголовок экрана, а не как состояние.
-        // Пилюля и подсказка — ОДНОЙ колонкой по центру.
-        //
-        // Подсказка стояла отдельной строкой во всю ширину под шапкой и
-        // жила своей жизнью: 15 точек жирным, тогда как в макете это
-        // 11.5 обычной толщины прямо под состоянием, зазор 6.
-        Column(
-            modifier = Modifier.weight(1f),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(11.dp),
-        ) {
-            Row(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(VpnkaColors.CardSpeed)
-                    .border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(20.dp))
-                    .padding(start = 9.dp, end = 12.dp, top = 6.dp, bottom = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(7.dp),
-            ) {
-                // Ореол вокруг точки — он в макете есть и только он
-                // отличает «горит» от «просто кружок»: box-shadow 0 0 0 4px
-                // на акценте с прозрачностью .22.
-                // Коробка всегда 16: ореол в макете — тень, места он не
-                // занимает, а размер по состоянию раздвигал пилюлю на
-                // восемь точек в тот момент, когда туннель вставал.
-                Box(
-                    modifier = Modifier.size(16.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (statusOn) {
-                        Box(
-                            modifier = Modifier.size(16.dp).clip(CircleShape)
-                                .background(statusColor.copy(alpha = 0.22f)),
-                        )
-                    }
-                    Box(
-                        modifier = Modifier.size(8.dp).clip(CircleShape)
-                            .background(
-                                if (statusOn) statusColor
-                                else VpnkaColors.TextMuted.copy(alpha = 0.55f)
-                            ),
-                    )
-                }
-                Text(
-                    text = status,
-                    fontFamily = VpnkaFonts.manrope700,
-                    fontWeight = VpnkaWeight.Bold,
-                    fontSize = 11.sp,
-                    letterSpacing = 0.12.em,
-                    color = statusColor,
-                    maxLines = 1,
-                )
-            }
-            Text(
-                text = hint,
-                fontFamily = VpnkaFonts.manrope600,
-                fontWeight = VpnkaWeight.Semi,
-                fontSize = 11.5.sp,
-                color = VpnkaColors.fg(0.8f),
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+        // Статус-пилюля и подсказка переехали из шапки: вверху они выбивались
+        // из макета. Теперь VpnkaStatusPill стоит НАД кнопкой подключения.
+        // Шапка держит только аккаунт слева и кнопку обновления справа.
+        Spacer(Modifier.weight(1f))
 
         // App update, top right. Always present — tapping it re-checks even
         // when we already believe we're current, because the check runs once
