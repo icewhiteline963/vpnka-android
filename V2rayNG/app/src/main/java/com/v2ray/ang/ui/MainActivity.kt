@@ -1871,6 +1871,11 @@ class MainActivity : HelperBaseComponentActivity() {
             val activeToken = MmkvManager.vpnkaTokenForGuid(selectedSub)
             val activePlan = subInfo?.subscriptions.orEmpty()
                 .firstOrNull { it.groupToken != null && it.groupToken == activeToken }
+            // The capped free month, if that's what the account holds. Used
+            // for the "X ГБ из 50" plaque; the composable hides it when a paid
+            // plan exists (paidSubscription).
+            val freePlan = subInfo?.subscriptions.orEmpty()
+                .firstOrNull { it.isTrial && !it.frozen && it.trafficLimitGb != null }
 
             Box(modifier = Modifier.fillMaxSize()) {
             VpnkaConnectScreen(
@@ -1887,6 +1892,10 @@ class MainActivity : HelperBaseComponentActivity() {
                 // the home-screen card order (server first when paid).
                 paidSubscription = subInfo?.subscriptions.orEmpty()
                     .any { !it.frozen && !it.isTrial },
+                // Free-month traffic plaque «X ГБ из 50». Null on paid/unlimited
+                // (composable also guards on paidSubscription).
+                freeTrafficUsedBytes = freePlan?.trafficUsedBytes,
+                freeTrafficLimitGb = freePlan?.trafficLimitGb,
                 // Бесплатный месяц продлевается сколько угодно раз, но пока
                 // текущий идёт, забрать следующий нельзя — сервер отдаёт его
                 // только в последние сутки. Поэтому карточку прячем на всё

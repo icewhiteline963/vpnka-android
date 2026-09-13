@@ -139,6 +139,10 @@ fun VpnkaConnectScreen(
     subscriptionName: String?,
     canSwitchSubscription: Boolean,
     paidSubscription: Boolean,
+    // Free-month traffic for the "X ГБ из 50" plaque. Non-null only when the
+    // account is on a capped free month with NO paid plan; null → no plaque.
+    freeTrafficUsedBytes: Long? = null,
+    freeTrafficLimitGb: Int? = null,
     freeMonthEnabled: Boolean,
     /** Бесплатный месяц ещё идёт и кончается в ближайшие сутки. */
     freeMonthWaiting: Boolean,
@@ -422,6 +426,16 @@ fun VpnkaConnectScreen(
                         VpnkaStatCard(
                             "ЗАГРУЖЕНО", downBytes, Modifier.fillMaxWidth(),
                             arrow = "↓", arrowColor = VpnkaColors.TrafficDown,
+                        )
+                    }
+                    // Free-month traffic budget. Only on a capped free month
+                    // with no paid plan (see call site) — paid plans are
+                    // unlimited and show nothing here.
+                    if (!paidSubscription && freeTrafficLimitGb != null) {
+                        VpnkaFreeTrafficPlaque(
+                            usedBytes = freeTrafficUsedBytes ?: 0L,
+                            limitGb = freeTrafficLimitGb,
+                            accent = accent,
                         )
                     }
                 }
@@ -1319,6 +1333,75 @@ private fun VpnkaStatCard(
 }
 
 /**
+ * Free-month traffic budget: «🎁 Бесплатный месяц · X ГБ из 50». Shown only
+ * on a capped free month with no paid plan (the caller gates it). A thin bar
+ * fills toward the cap and turns red past 90 %, so the person sees the day
+ * their free traffic runs out coming.
+ */
+@Composable
+private fun VpnkaFreeTrafficPlaque(
+    usedBytes: Long,
+    limitGb: Int,
+    accent: Color,
+) {
+    val limitBytes = limitGb.toLong() * 1_073_741_824L
+    val fraction =
+        if (limitBytes > 0) (usedBytes.toFloat() / limitBytes).coerceIn(0f, 1f)
+        else 0f
+    val usedGb = "%.1f".format(usedBytes / 1_073_741_824.0)
+    val barColor = if (fraction >= 0.9f) VpnkaColors.TrafficUp else accent
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(11.dp))
+            .background(VpnkaColors.CardSpeed)
+            .border(1.dp, VpnkaColors.Hairline, RoundedCornerShape(11.dp))
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "🎁 Бесплатный месяц",
+                fontFamily = VpnkaFonts.manrope600,
+                fontWeight = VpnkaWeight.Semi,
+                fontSize = 9.sp,
+                letterSpacing = 0.06.em,
+                color = VpnkaColors.fg(0.8f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = "$usedGb из $limitGb ГБ",
+                fontFamily = VpnkaFonts.manrope700,
+                fontWeight = VpnkaWeight.Bold,
+                fontSize = 12.sp,
+                color = VpnkaColors.TextStrong,
+                maxLines = 1,
+            )
+        }
+        // Track + fill, drawn with plain Boxes so we add no progress-bar
+        // dependency and keep the app's own rounded look.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(6.dp)
+                .clip(RoundedCornerShape(3.dp))
+                .background(VpnkaColors.fg(0.15f)),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(fraction)
+                    .fillMaxHeight()
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(barColor),
+            )
+        }
+    }
+}
+
+/**
  * Строка главного экрана — как в макете «Поток».
  *
  * Раньше каждый пункт был карточкой с заголовком и двумя строками
@@ -1607,7 +1690,12 @@ private fun VpnkaConnectButton(
                 .clickable(
                     interactionSource = interaction,
                     indication = null,
-                    enabled = !isLoading,
+                    // Disconnecting is always allowed: stopping a running
+                    // tunnel is a safety action and must never be gated by a
+                    // background load (a subscription refresh hanging while
+                    // logged out left this stuck "on", unresponsive). Only
+                    // *starting* waits for loading to finish.
+                    enabled = isRunning || !isLoading,
                     onClick = onToggle,
                 ),
             contentAlignment = Alignment.Center,
