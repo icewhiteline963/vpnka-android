@@ -35,7 +35,6 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -1043,8 +1042,11 @@ private fun VpnkaHeader(
         // saying the same thing twice on one screen.
         // Аккаунт: аватар + имя Telegram (если привязан). Вся связка —
         // одна кнопка в «Профиль». Круги 32 точки и плёнка — как в макете.
+        // Аккаунт забирает всё свободное место шапки (пилюля статуса уехала
+        // вниз), поэтому имя эллипсится по реальной ширине, а не по жёсткому
+        // потолку — раньше 120dp обрезали его на середине.
         Row(
-            modifier = Modifier.clickable(onClick = onOpenProfile),
+            modifier = Modifier.weight(1f).clickable(onClick = onOpenProfile),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(7.dp),
         ) {
@@ -1067,15 +1069,12 @@ private fun VpnkaHeader(
                     color = VpnkaColors.TextStrong,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.widthIn(max = 120.dp),
+                    modifier = Modifier.weight(1f, fill = false),
                 )
             }
         }
 
-        // Статус-пилюля и подсказка переехали из шапки: вверху они выбивались
-        // из макета. Теперь VpnkaStatusPill стоит НАД кнопкой подключения.
-        // Шапка держит только аккаунт слева и кнопку обновления справа.
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.width(10.dp))
 
         // App update, top right. Always present — tapping it re-checks even
         // when we already believe we're current, because the check runs once
