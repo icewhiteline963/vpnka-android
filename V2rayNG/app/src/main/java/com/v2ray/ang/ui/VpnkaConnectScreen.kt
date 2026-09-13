@@ -491,7 +491,12 @@ fun VpnkaConnectScreen(
                 // 24-hour first-run trial and nothing more.
                 if (!paidSubscription && freeMonthEnabled) {
                     VpnkaFreeMonthCard(
-                        waiting = freeMonthWaiting,
+                        // «Следующий месяц — завтра» имеет смысл только когда
+                        // бесплатный месяц реально идёт — т.е. у привязанного
+                        // аккаунта. У разлогиненного (24ч-триал) месяца не было,
+                        // поэтому карточка зовёт войти через Телеграм за ним, а
+                        // не показывает ложное ожидание следующего месяца.
+                        waiting = freeMonthWaiting && telegramLinked,
                         claiming = claimingFreeMonth,
                         telegramLinked = telegramLinked,
                         bgColor = accent,
@@ -546,20 +551,10 @@ fun VpnkaConnectScreen(
                 // Полоска загрузок — она в макете стоит ПЕРЕД сеткой
                 // значков и говорит то, ради чего экран открывают на ходу:
                 // что качается прямо сейчас и сколько осталось.
+                // Подписка — на месте бывшего виджета загрузок (виджет убран
+                // по решению владельца): над сеткой приложений и всегда видна.
+                planRow()
                 if (smartDeskEnabled) {
-                    VpnkaDownloadWidget(
-                        accent = accent,
-                        onAccent = onAccent,
-                        // Полоска про загрузки и вести должна в загрузки.
-                        // Она открывала «Видео» на ленте — то есть человек,
-                        // нажавший на строку о своих файлах, попадал на
-                        // чужие ролики и искал полку сам.
-                        onClick = onOpenDownloads,
-                        // Плашку «Все загрузки завершены» (когда ничего не
-                        // качается) показываем только если это включено в
-                        // настройках приложения YouTube.
-                        showWhenIdle = showDownloadsDonePlaque,
-                    )
                     VpnkaAppGrid(isRunning = isRunning, onOpen = onOpenDeskApp)
                 }
                 // Сервер уже показан в блоке подключения — второй карточки
@@ -596,7 +591,7 @@ fun VpnkaConnectScreen(
                         onClick = onLinkTelegram,
                     )
                 }
-                planRow()
+                // «Подписка» переехала выше (на место виджета загрузок).
                 // Дальше — строки, а не карточки.
                 //
                 // Каждый пункт был карточкой с заголовком и двумя строками
