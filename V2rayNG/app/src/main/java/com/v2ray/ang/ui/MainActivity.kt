@@ -1916,6 +1916,7 @@ class MainActivity : HelperBaseComponentActivity() {
                 freeTrafficUsedBytes = freePlan?.trafficUsedBytes,
                 freeTrafficLimitGb = freePlan?.trafficLimitGb,
                 freeSpeedLimitMbps = freePlan?.speedLimitMbps,
+                freeTrafficThrottled = freePlan?.throttled == true,
                 // Бесплатный месяц продлевается сколько угодно раз, но пока
                 // текущий идёт, забрать следующий нельзя — сервер отдаёт его
                 // только в последние сутки. Поэтому карточку прячем на всё

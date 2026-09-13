@@ -145,6 +145,7 @@ fun VpnkaConnectScreen(
     freeTrafficUsedBytes: Long? = null,
     freeTrafficLimitGb: Int? = null,
     freeSpeedLimitMbps: Int? = null,
+    freeTrafficThrottled: Boolean = false,
     freeMonthEnabled: Boolean,
     /** Бесплатный месяц ещё идёт и кончается в ближайшие сутки. */
     freeMonthWaiting: Boolean,
@@ -441,6 +442,7 @@ fun VpnkaConnectScreen(
                             usedBytes = freeTrafficUsedBytes ?: 0L,
                             limitGb = freeTrafficLimitGb,
                             speedLimitMbps = freeSpeedLimitMbps,
+                            throttled = freeTrafficThrottled,
                             accent = accent,
                             onBuy = onChangeSubscription,
                         )
@@ -1369,16 +1371,20 @@ private fun VpnkaFreeTrafficPlaque(
     usedBytes: Long,
     limitGb: Int,
     speedLimitMbps: Int?,
+    throttled: Boolean,
     accent: Color,
     onBuy: () -> Unit,
 ) {
     var showInfo by remember { mutableStateOf(false) }
     val limitBytes = limitGb.toLong() * 1_073_741_824L
+    // Cap spent → bar is full and red; the number gives way to a plain-language
+    // "лимит исчерпан", since "50 из 50 ГБ" reads like an error, not a state.
     val fraction =
-        if (limitBytes > 0) (usedBytes.toFloat() / limitBytes).coerceIn(0f, 1f)
+        if (throttled) 1f
+        else if (limitBytes > 0) (usedBytes.toFloat() / limitBytes).coerceIn(0f, 1f)
         else 0f
     val usedGb = "%.1f".format(usedBytes / 1_073_741_824.0)
-    val barColor = if (fraction >= 0.9f) VpnkaColors.TrafficUp else accent
+    val barColor = if (throttled || fraction >= 0.9f) VpnkaColors.TrafficUp else accent
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1404,11 +1410,12 @@ private fun VpnkaFreeTrafficPlaque(
             modifier = Modifier.fillMaxWidth(),
         )
         Text(
-            text = "$usedGb из $limitGb ГБ",
+            text = if (throttled) "Лимит исчерпан · 0,5 Мбит"
+            else "$usedGb из $limitGb ГБ",
             fontFamily = VpnkaFonts.manrope700,
             fontWeight = VpnkaWeight.Bold,
             fontSize = 12.sp,
-            color = VpnkaColors.TextStrong,
+            color = if (throttled) VpnkaColors.TrafficUp else VpnkaColors.TextStrong,
             maxLines = 1,
         )
         // Track + fill, drawn with plain Boxes so we add no progress-bar
@@ -1432,16 +1439,22 @@ private fun VpnkaFreeTrafficPlaque(
 
     if (showInfo) {
         val limits = buildString {
-            append("Бесплатный месяц — с ограничениями: до ")
-            append(limitGb)
-            append(" ГБ трафика")
-            if (speedLimitMbps != null) {
-                append(" и скорость до ")
-                append(speedLimitMbps)
-                append(" Мбит/с")
+            if (throttled) {
+                append("Трафик бесплатного месяца исчерпан — скорость снижена ")
+                append("до 0,5 Мбит/с, но интернет продолжает работать.\n\n")
+                append("Нужна полная скорость — оформите платную подписку.")
+            } else {
+                append("Бесплатный месяц — с ограничениями: до ")
+                append(limitGb)
+                append(" ГБ трафика")
+                if (speedLimitMbps != null) {
+                    append(" и скорость до ")
+                    append(speedLimitMbps)
+                    append(" Мбит/с")
+                }
+                append(".\n\nНужна полная скорость и без лимита трафика — ")
+                append("оформите платную подписку.")
             }
-            append(".\n\nНужна полная скорость и без лимита трафика — ")
-            append("оформите платную подписку.")
         }
         AlertDialog(
             onDismissRequest = { showInfo = false },

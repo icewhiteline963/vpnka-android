@@ -107,6 +107,10 @@ object VpnkaAccount {
         @SerializedName("traffic_used_bytes") val trafficUsedBytes: Long? = null,
         @SerializedName("traffic_limit_gb") val trafficLimitGb: Int? = null,
         @SerializedName("speed_limit_mbps") val speedLimitMbps: Int? = null,
+        // True once this cycle's traffic crossed the soft cap → the key is
+        // throttled to 0.5 Mbit (internet still works). Plaque says so instead
+        // of showing a "0 ГБ осталось" bar.
+        @SerializedName("throttled") val throttled: Boolean = false,
     )
 
     private data class TokenResponse(
