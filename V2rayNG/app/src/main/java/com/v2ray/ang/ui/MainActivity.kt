@@ -1986,6 +1986,8 @@ class MainActivity : HelperBaseComponentActivity() {
                 onToggle = ::handleFabAction,
                 onOpenProfile = { showSubscription = true },
                 telegramLinked = subInfo?.telegramLinked == true,
+                // Telegram name on the top-left account button when linked.
+                accountName = subInfo?.telegramUsername?.let { "@$it" },
                 onLinkTelegram = { openTelegramLinkGuarded() },
                 onChangeServer = { showServerPicker = true },
                 // The launch check only lights the dot; the screen behind the

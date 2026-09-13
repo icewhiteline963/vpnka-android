@@ -75,6 +75,9 @@ object VpnkaAccount {
         // the app registers an account on first launch, so everyone has a
         // token, and only this says whether they are in their real account.
         @SerializedName("telegram_linked") val telegramLinked: Boolean = false,
+        // Telegram display name (username) for the profile button; null when
+        // no Telegram is linked.
+        @SerializedName("telegram_username") val telegramUsername: String? = null,
         // A free-month trial tariff is configured and live. With no active
         // paid plan, the home screen shows the «Месяц бесплатно» button.
         @SerializedName("free_month_enabled") val freeMonthEnabled: Boolean = false,

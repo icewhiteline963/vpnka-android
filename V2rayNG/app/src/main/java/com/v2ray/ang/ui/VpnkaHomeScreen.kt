@@ -813,9 +813,12 @@ fun VpnkaSubscriptionScreen(
             subtitle = if (VpnkaColors.dark) "Вернуть тёплое оформление"
             else "Тёмное оформление для вечера",
         )
-        if (signedIn) {
+        if (telegramLinked) {
+            // Only a Telegram-linked account has something to log out OF; an
+            // anonymous auto-account (signedIn but not linked) would just lose
+            // its shell, so hide the button for it.
             TextButton(onClick = onSignOut) { Text("Выйти из аккаунта") }
-        } else {
+        } else if (!signedIn) {
             // Signed out means running on the shipped 24h trial: say what
             // they're actually on, so nothing above reads as a fault.
             Spacer(Modifier.height(8.dp))

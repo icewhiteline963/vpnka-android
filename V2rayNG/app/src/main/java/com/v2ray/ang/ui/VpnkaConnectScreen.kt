@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -184,6 +185,8 @@ fun VpnkaConnectScreen(
     activeDevicesUsed: Int?,
     activeDevicesLimit: Int?,
     telegramLinked: Boolean,
+    /** Telegram display name for the top-left account button; null = не показывать. */
+    accountName: String? = null,
     /** «Войти через Телеграм» — открыть бота (с предложением поднять ВПН). */
     onLinkTelegram: () -> Unit,
     onLeaveReview: () -> Unit,
@@ -318,6 +321,7 @@ fun VpnkaConnectScreen(
         ) {
             VpnkaHeader(
                 onOpenProfile = onOpenProfile,
+                accountName = accountName,
                 updateAvailable = updateVersion != null,
                 onCheckUpdate = onCheckUpdate,
                 topPadding = headerTop,
@@ -931,6 +935,7 @@ private fun VpnkaAppTile(
 @Composable
 private fun VpnkaHeader(
     onOpenProfile: () -> Unit,
+    accountName: String? = null,
     updateAvailable: Boolean,
     onCheckUpdate: () -> Unit,
     topPadding: Dp,
@@ -952,17 +957,35 @@ private fun VpnkaHeader(
         // above the server, where it sits next to the thing it governs; the
         // trial countdown went with it. A header that repeated either was
         // saying the same thing twice on one screen.
-        // Круги 32 точки и плёнка вместо белого — как в макете.
-        Box(
-            modifier = Modifier
-                .size(32.dp)
-                .clip(CircleShape)
-                .background(VpnkaColors.CardSpeed)
-                .border(1.dp, VpnkaColors.Hairline, CircleShape)
-                .clickable(onClick = onOpenProfile),
-            contentAlignment = Alignment.Center,
+        // Аккаунт: аватар + имя Telegram (если привязан). Вся связка —
+        // одна кнопка в «Профиль». Круги 32 точки и плёнка — как в макете.
+        Row(
+            modifier = Modifier.clickable(onClick = onOpenProfile),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
         ) {
-            VpnkaPersonGlyph()
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(VpnkaColors.CardSpeed)
+                    .border(1.dp, VpnkaColors.Hairline, CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                VpnkaPersonGlyph()
+            }
+            if (accountName != null) {
+                Text(
+                    text = accountName,
+                    fontFamily = VpnkaFonts.manrope600,
+                    fontWeight = VpnkaWeight.Semi,
+                    fontSize = 13.sp,
+                    color = VpnkaColors.TextStrong,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.widthIn(max = 120.dp),
+                )
+            }
         }
 
         // Статус — ПИЛЮЛЯ с точкой, а не просто надпись в разрядку.
