@@ -39,6 +39,10 @@ object SettingsManager {
     @Volatile
     private var runtimeSocksPort: Int? = null
 
+    // One-time flag: existing installs on the wrong index-0 routing default
+    // get moved to the RU preset (see initRoutingRulesets).
+    private const val PREF_ROUTING_RU_MIGRATED = "pref_routing_ru_migrated"
+
     fun initApp(context: Context) {
         ensureDefaultSettings()
         //ensureDefaultSubscription()
@@ -54,8 +58,27 @@ object SettingsManager {
     private fun initRoutingRulesets(context: Context) {
         val exist = MmkvManager.decodeRoutingRulesets()
         if (exist.isNullOrEmpty()) {
-            val rulesetList = getPresetRoutingRulesets(context)
+            // Default for our RU audience: WHITE_RUSSIA routes RU domains/IPs
+            // DIRECT (banks, gosuslugi, nalog work off the real RU address)
+            // and everything else through the tunnel. Upstream's index-0
+            // "WHITE" (bypass mainland China) proxied every RU site → they
+            // geoblocked foreign exits and broke.
+            val rulesetList =
+                getPresetRoutingRulesets(context, RoutingType.WHITE_RUSSIA.ordinal)
             MmkvManager.encodeRoutingRulesets(rulesetList)
+        } else if (!MmkvManager.decodeSettingsBool(PREF_ROUTING_RU_MIGRATED, false)) {
+            // One-time fix for installs that took the wrong index-0 default
+            // before this change: if the user never touched routing (it's the
+            // exact WHITE preset still), move them to the RU preset. Anyone
+            // who customized routing is left untouched.
+            val whitePreset = getPresetRoutingRulesets(context, RoutingType.WHITE.ordinal)
+            if (whitePreset != null &&
+                JsonUtil.toJson(exist) == JsonUtil.toJson(whitePreset)
+            ) {
+                getPresetRoutingRulesets(context, RoutingType.WHITE_RUSSIA.ordinal)
+                    ?.let { MmkvManager.encodeRoutingRulesets(it) }
+            }
+            MmkvManager.encodeSettings(PREF_ROUTING_RU_MIGRATED, true)
         }
     }
 
