@@ -514,8 +514,13 @@ fun VpnkaConnectScreen(
                         },
                         accent = accent,
                         onAccent = onAccent,
-                        onClick = if (canSwitchSubscription) onChangeSubscription
-                            else onOpenProfile,
+                        // Always the subscription screen (plan list + shop),
+                        // even with a single plan. Previously a one-plan
+                        // account (e.g. just the free month) fell through to
+                        // the profile, so "Подписка" opened the wrong screen
+                        // for exactly the users most likely to want to buy.
+                        // The profile still has its own entry (the header).
+                        onClick = onChangeSubscription,
                     )
                 }
                 // Отдельной строки про загрузчик здесь больше нет.
