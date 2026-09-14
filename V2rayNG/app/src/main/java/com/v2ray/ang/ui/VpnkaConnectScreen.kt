@@ -375,7 +375,6 @@ fun VpnkaConnectScreen(
                     ) {
                         VpnkaConnectButton(
                             isRunning = isRunning,
-                            isLoading = isLoading,
                             accent = accent,
                             onToggle = onToggle,
                             outerSize = 146.dp,
@@ -1704,7 +1703,6 @@ private fun VpnkaPersonGlyph() {
 @Composable
 private fun VpnkaConnectButton(
     isRunning: Boolean,
-    isLoading: Boolean,
     accent: Color,
     onToggle: () -> Unit,
     outerSize: Dp,
@@ -1785,12 +1783,16 @@ private fun VpnkaConnectButton(
                 .clickable(
                     interactionSource = interaction,
                     indication = null,
-                    // Disconnecting is always allowed: stopping a running
-                    // tunnel is a safety action and must never be gated by a
-                    // background load (a subscription refresh hanging while
-                    // logged out left this stuck "on", unresponsive). Only
-                    // *starting* waits for loading to finish.
-                    enabled = isRunning || !isLoading,
+                    // Всегда нажимаема — в ОБЕ стороны. `isLoading` здесь — это
+                    // фоновый ИМПОРТ подписки (fetchInfo/updateConfigViaSub), а
+                    // НЕ подключение к VPN. Гейт старта по нему оставлял кнопку
+                    // мёртвой на свежей установке: при первом открытии авто-
+                    // фетч триала держит isLoading, и «цветочек» не реагировал,
+                    // хотя статус писал «Подключаемся…». Отключение — действие
+                    // безопасности; включение само откладывается и импортирует
+                    // конфиг, если серверов ещё нет (pendingStartAfterImport),
+                    // так что ждать импорт кнопке незачем.
+                    enabled = true,
                     onClick = onToggle,
                 ),
             contentAlignment = Alignment.Center,
