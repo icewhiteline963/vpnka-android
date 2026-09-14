@@ -849,11 +849,48 @@ object MmkvManager {
     fun getOrCreateInstallId(): String {
         settingsStorage.decodeString(KEY_VPNKA_INSTALL_ID)?.takeIf { it.isNotBlank() }
             ?.let { return it }
-        // Hyphen-free so it stays well within the backend's 128-char cap and
-        // can't be confused with any structured id we might add later.
-        val id = java.util.UUID.randomUUID().toString().replace("-", "")
+        // СТАБИЛЬНЫЙ id из ANDROID_ID (хешируем), чтобы ПЕРЕУСТАНОВКА на том же
+        // телефоне сохраняла тот же Hwid и сервер реклеймил слот устройства, а
+        // не жёг новый: MMKV и random-UUID в нём стираются при удалении, и на
+        // тарифе «1 устройство» это лочило после каждой переустановки. Наружу
+        // уходит СОЛЁНЫЙ SHA-256, а не сырой ANDROID_ID — «железный»
+        // идентификатор телефон не покидает. Fallback на random, если
+        // ANDROID_ID недоступен/битый (старые/рутованные устройства). Hyphen-free
+        // и в пределах 128-char cap бэкенда в обоих случаях.
+        val id = androidIdInstallId()
+            ?: java.util.UUID.randomUUID().toString().replace("-", "")
         settingsStorage.encode(KEY_VPNKA_INSTALL_ID, id)
         return id
+    }
+
+    private const val INSTALL_ID_SALT = "vpnka-install-v1"
+
+    /** Соль+SHA-256 от ANDROID_ID — стабилен между переустановками, но не
+     *  раскрывает сам ANDROID_ID. null, если ANDROID_ID недоступен/битый. */
+    private fun androidIdInstallId(): String? {
+        val ctx = try {
+            com.v2ray.ang.AngApplication.application
+        } catch (e: Throwable) {
+            return null
+        }
+        val aid = try {
+            android.provider.Settings.Secure.getString(
+                ctx.contentResolver,
+                android.provider.Settings.Secure.ANDROID_ID,
+            )
+        } catch (e: Throwable) {
+            null
+        }
+        if (aid.isNullOrBlank() || aid == "9774d56d682e549c" || aid.all { it == '0' }) {
+            return null
+        }
+        return try {
+            java.security.MessageDigest.getInstance("SHA-256")
+                .digest("$INSTALL_ID_SALT:$aid".toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it) }
+        } catch (e: Throwable) {
+            null
+        }
     }
 
     /**
