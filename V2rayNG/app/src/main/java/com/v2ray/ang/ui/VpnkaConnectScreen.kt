@@ -466,6 +466,15 @@ fun VpnkaConnectScreen(
                     .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
+                // Свежая установка живёт на анонимном аккаунте: 24-часовой
+                // триал есть, но доступ и подписка держатся только на этом
+                // телефоне и пропадут при переустановке. Единственная точка,
+                // которая раньше говорила «войди», — маленький значок в углу,
+                // неотличимый от «не входил вовсе». Пока Telegram не привязан,
+                // ставим это в слова заметной плашкой первой строкой.
+                if (!telegramLinked) {
+                    VpnkaTelegramBanner(onClick = onLinkTelegram)
+                }
                 // The launch check already knew this; until now it only lit
                 // a dot on a button in the corner, which is indistinguishable
                 // from not checking at all. Say it in words, where the eye
@@ -1138,6 +1147,48 @@ private fun VpnkaUpdateBanner(version: String, onClick: () -> Unit) {
             Spacer(Modifier.height(2.dp))
             Text(
                 text = "Нажмите, чтобы установить",
+                fontFamily = VpnkaFonts.manrope600,
+                fontWeight = VpnkaWeight.Semi,
+                fontSize = 12.sp,
+                color = VpnkaColors.TextMuted,
+            )
+        }
+        Text(text = "›", fontSize = 18.sp, color = VpnkaColors.Accent)
+    }
+}
+
+/**
+ * Пока Telegram не привязан — заметное приглашение войти.
+ *
+ * Анонимный аккаунт свежей установки держит доступ только на этом телефоне:
+ * без Telegram человек не заберёт бесплатный месяц, не восстановит подписку
+ * после переустановки и не войдёт со второго устройства. Говорим об этом
+ * словами, акцентной плашкой, а не значком в углу.
+ */
+@Composable
+private fun VpnkaTelegramBanner(onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(VpnkaColors.Accent.copy(alpha = 0.14f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text = "✈", fontSize = 18.sp, color = VpnkaColors.Accent)
+        Spacer(Modifier.width(11.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = "Войдите через Telegram",
+                fontFamily = VpnkaFonts.nunito800,
+                fontWeight = VpnkaWeight.Extra,
+                fontSize = 15.sp,
+                color = VpnkaColors.Accent,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = "Чтобы не потерять доступ и подписку",
                 fontFamily = VpnkaFonts.manrope600,
                 fontWeight = VpnkaWeight.Semi,
                 fontSize = 12.sp,
