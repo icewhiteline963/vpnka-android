@@ -1535,6 +1535,13 @@ class MainActivity : HelperBaseComponentActivity() {
                 }
             }
 
+            // Путь 1 (второй телефон с нашим приложением): login-код по кнопке.
+            var loginCode by remember(plan.groupToken) { mutableStateOf<String?>(null) }
+            var loginQr by remember(plan.groupToken) {
+                mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null)
+            }
+            var loginLoading by remember(plan.groupToken) { mutableStateOf(false) }
+
             LaunchedEffect(plan.groupToken, deviceReload) {
                 val token = plan.groupToken
                 if (token != null) {
@@ -1551,6 +1558,23 @@ class MainActivity : HelperBaseComponentActivity() {
                 devices = devices,
                 devicesLoading = devicesLoading,
                 qr = qr,
+                loginQr = loginQr,
+                loginCode = loginCode,
+                loginLoading = loginLoading,
+                onGenerateLoginCode = {
+                    lifecycleScope.launch {
+                        loginLoading = true
+                        val dc = VpnkaAccount.deviceCode()
+                        if (dc != null) {
+                            loginCode = dc.code
+                            loginQr = QRCodeDecoder
+                                .createQRCode(dc.deeplink, 600)?.asImageBitmap()
+                        } else {
+                            toast("Не удалось получить код — проверьте сеть")
+                        }
+                        loginLoading = false
+                    }
+                },
                 onCopySubscription = {
                     plan.groupToken?.let { token ->
                         Utils.setClipboard(
@@ -1977,6 +2001,13 @@ class MainActivity : HelperBaseComponentActivity() {
                     }
                 },
                 onChangeSubscription = { showPlansList = true },
+                onOpenDevices = {
+                    // Открываем детали активного плана — там список устройств и
+                    // добавление второго. Нет активного — на экран подписки.
+                    val p = activePlan
+                        ?: subInfo?.subscriptions.orEmpty().firstOrNull()
+                    if (p != null) openedPlan = p else showSubscription = true
+                },
                 serverName = options.firstOrNull { it.guid == uiState.selectedGuid }
                     ?.name ?: "Выбрать сервер",
                 serverDelay = options.firstOrNull { it.guid == uiState.selectedGuid }

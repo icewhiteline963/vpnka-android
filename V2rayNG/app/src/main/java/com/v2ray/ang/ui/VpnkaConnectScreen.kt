@@ -158,6 +158,7 @@ fun VpnkaConnectScreen(
     onToggle: () -> Unit,
     onOpenProfile: () -> Unit,
     onChangeSubscription: () -> Unit,
+    onOpenDevices: () -> Unit = {},
     onChangeServer: () -> Unit,
     updateVersion: String?,
     onCheckUpdate: () -> Unit,
@@ -557,6 +558,16 @@ fun VpnkaConnectScreen(
                 // Подписка — на месте бывшего виджета загрузок (виджет убран
                 // по решению владельца): над сеткой приложений и всегда видна.
                 planRow()
+                // Устройства — под «Подпиской»: список своих устройств и
+                // добавление второго (QR входа для нашего приложения / QR
+                // подписки для iPhone/ПК). Открывает детали активного плана.
+                VpnkaHomeRow(
+                    icon = "▣",
+                    label = "Устройства",
+                    accent = accent,
+                    onAccent = onAccent,
+                    onClick = onOpenDevices,
+                )
                 // Браузер и YouTube-загрузчик — у ВСЕХ; остальные приложения
                 // сейфа (мессенджер/контакты/календарь/заметки/помощь) — только
                 // при активном сейфе. Сетка сама отфильтрует состав.
@@ -2336,6 +2347,12 @@ fun VpnkaPlanDetailScreen(
     devices: List<VpnkaAccount.Device>,
     devicesLoading: Boolean,
     qr: androidx.compose.ui.graphics.ImageBitmap?,
+    // Путь 1 — вход второго телефона с нашим приложением по одноразовому коду.
+    // MainActivity минтит код (/app/auth/device-code) и рисует его QR.
+    loginQr: androidx.compose.ui.graphics.ImageBitmap? = null,
+    loginCode: String? = null,
+    loginLoading: Boolean = false,
+    onGenerateLoginCode: () -> Unit = {},
     onCopySubscription: () -> Unit,
     onShareSubscription: () -> Unit,
     onRevokeDevice: (Long) -> Unit,
@@ -2357,11 +2374,80 @@ fun VpnkaPlanDetailScreen(
                         VpnkaDetailRow("Осталось", "$days ${pluralDays(days)}")
                     }
                     if (plan.devicesLimit != null) {
-                        VpnkaDetailRow(
-                            "Устройства",
-                            "${plan.devicesUsed ?: 0} из ${plan.devicesLimit}",
+                        val used = plan.devicesUsed ?: 0
+                        VpnkaDetailRow("Устройства", "$used из ${plan.devicesLimit}")
+                        if (used >= plan.devicesLimit) {
+                            Text(
+                                text = "Достигнут лимит тарифа. Чтобы добавить " +
+                                    "ещё устройство — оформите тариф на большее " +
+                                    "число устройств.",
+                                fontFamily = VpnkaFonts.manrope600,
+                                fontWeight = VpnkaWeight.Semi,
+                                fontSize = 12.sp,
+                                color = VpnkaColors.TrafficUp,
+                                modifier = Modifier.padding(top = 6.dp),
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+
+                // Путь 1 — ВТОРОЙ ТЕЛЕФОН С НАШИМ ПРИЛОЖЕНИЕМ: одноразовый код
+                // входа. Второй телефон сканирует QR камерой → открывается наше
+                // приложение (vpnka://login) и входит в ЭТОТ аккаунт (не просто
+                // импорт конфига). Код минтит /app/auth/device-code, живёт 10 мин.
+                Text(
+                    text = "ЕЩЁ ТЕЛЕФОН С ПРИЛОЖЕНИЕМ VPNKA",
+                    fontFamily = VpnkaFonts.manrope700,
+                    fontWeight = VpnkaWeight.Bold,
+                    fontSize = 11.sp,
+                    letterSpacing = 1.sp,
+                    color = VpnkaColors.TextFaint,
+                )
+                Spacer(Modifier.height(8.dp))
+                if (loginQr != null && loginCode != null) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(Color.White)
+                            .padding(20.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Image(
+                            bitmap = loginQr,
+                            contentDescription = "QR-код для входа",
+                            modifier = Modifier.size(200.dp),
                         )
                     }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "Код: $loginCode",
+                        fontFamily = VpnkaFonts.mono,
+                        fontWeight = VpnkaWeight.Bold,
+                        fontSize = 18.sp,
+                        letterSpacing = 2.sp,
+                        color = VpnkaColors.TextStrong,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "Отсканируйте этот QR камерой второго телефона — " +
+                            "он откроет приложение VPNka и войдёт в этот аккаунт. " +
+                            "Код действует 10 минут.",
+                        fontFamily = VpnkaFonts.manrope600,
+                        fontWeight = VpnkaWeight.Semi,
+                        fontSize = 12.sp,
+                        color = VpnkaColors.TextFaint,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                } else {
+                    VpnkaSecondaryButton(
+                        text = if (loginLoading) "Готовим код…" else "Показать QR для входа",
+                        onClick = onGenerateLoginCode,
+                    )
                 }
                 Spacer(Modifier.height(16.dp))
 
@@ -2380,7 +2466,7 @@ fun VpnkaPlanDetailScreen(
 
                 if (qr != null) {
                     Text(
-                        text = "ДОБАВИТЬ НА ДРУГОЕ УСТРОЙСТВО",
+                        text = "iPhone / КОМПЬЮТЕР / ДРУГОЕ ПРИЛОЖЕНИЕ",
                         fontFamily = VpnkaFonts.manrope700,
                         fontWeight = VpnkaWeight.Bold,
                         fontSize = 11.sp,

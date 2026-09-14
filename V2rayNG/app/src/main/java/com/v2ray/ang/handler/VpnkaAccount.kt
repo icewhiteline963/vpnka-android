@@ -299,6 +299,40 @@ object VpnkaAccount {
      * is now worthless, so it's dropped and the app falls back to the
      * sign-in screen rather than retrying forever against a dead session.
      */
+    /** Одноразовый код входа для ВТОРОГО устройства (экран «Устройства»).
+     *  Сервер минтит login-код на этот аккаунт; второй телефон с нашим
+     *  приложением сканирует QR (`vpnka://login?code=…`) и входит в ту же
+     *  учётку. Возвращает null, если не залогинены или сеть легла. */
+    data class DeviceCode(val code: String, val deeplink: String, val ttlSeconds: Int)
+
+    private data class DeviceCodeResponse(
+        @SerializedName("code") val code: String? = null,
+        @SerializedName("deeplink") val deeplink: String? = null,
+        @SerializedName("ttl_seconds") val ttlSeconds: Int? = null,
+    )
+
+    suspend fun deviceCode(): DeviceCode? = withContext(Dispatchers.IO) {
+        val token = MmkvManager.getAccountToken() ?: return@withContext null
+        try {
+            http().newCall(
+                Request.Builder()
+                    .url("$BASE/app/auth/device-code")
+                    .header("Authorization", "Bearer $token")
+                    .post("".toRequestBody("application/json".toMediaType()))
+                    .build()
+            ).execute().use { resp ->
+                if (!resp.isSuccessful) return@withContext null
+                val r = JsonUtil.fromJsonSafe(
+                    resp.body?.string().orEmpty(), DeviceCodeResponse::class.java
+                )
+                val code = r?.code ?: return@withContext null
+                DeviceCode(code, r.deeplink.orEmpty(), r.ttlSeconds ?: 600)
+            }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     suspend fun fetchInfo(): Info? = withContext(Dispatchers.IO) {
         val token = MmkvManager.getAccountToken() ?: return@withContext null
         try {
