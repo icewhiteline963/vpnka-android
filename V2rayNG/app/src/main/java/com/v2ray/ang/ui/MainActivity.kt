@@ -505,7 +505,10 @@ class MainActivity : HelperBaseComponentActivity() {
 
         if (AngApplication.vpnkaNeedsTrialFetch) {
             AngApplication.vpnkaNeedsTrialFetch = false
-            importConfigViaSub()
+            // silent: первый-запусковый импорт триала ретраится (гонка с
+            // register), и non-silent путь сыпал бы тостами «нет подписки» на
+            // каждой пустой попытке. Человек ничего не обновлял — молчим.
+            importConfigViaSub(silent = true)
         }
 
         // Reopened by the post-payment link. The subscription is settled by
@@ -2448,7 +2451,10 @@ class MainActivity : HelperBaseComponentActivity() {
                     importConfigViaSub(silent)
                     return@launch
                 }
-                if (!stillEmpty) trialImportRetries = 0
+                // Сюда попадаем, только если НЕ ретраим (серверы есть, либо
+                // заглушка, либо исчерпали 5 попыток) — сбрасываем счётчик,
+                // чтобы будущий импорт (pull-to-refresh) снова мог ретраить.
+                trialImportRetries = 0
                 // Подписку тянули РАДИ подключения — доводим начатое, а не
                 // возвращаем человека к кнопке, которую он уже нажал.
                 if (startWhenReady) {
