@@ -505,15 +505,7 @@ class MainActivity : HelperBaseComponentActivity() {
 
         if (AngApplication.vpnkaNeedsTrialFetch) {
             AngApplication.vpnkaNeedsTrialFetch = false
-            importConfigViaSub(silent = true, firstRun = true)
-        } else if (MmkvManager.firstRunReimportPending()) {
-            // Мы перезапустились после пустого первого импорта. register() к
-            // этому моменту уже создал устройство на бэкенде — вторая попытка
-            // обычно приезжает с серверами. Повторяем импорт, но НЕ как
-            // firstRun: одноразовый рестарт уже израсходован, второй раз не
-            // перезапускаемся (защита от цикла).
-            MmkvManager.setFirstRunReimportPending(false)
-            importConfigViaSub(silent = true, firstRun = false)
+            importConfigViaSub(silent = true)
         }
 
         // Reopened by the post-payment link. The subscription is settled by
@@ -735,6 +727,11 @@ class MainActivity : HelperBaseComponentActivity() {
      *  screen shows no servers until a manual restart. Reset once a live plan
      *  is seen; capped so a genuinely sub-less account doesn't poll forever. */
     private var subFirstRunRetries = 0
+    // Ограниченный ретрай ИМПОРТА триала на свежей установке, пока /qr/app
+    // пуст из-за гонки с фоновой register(). Сбрасывается ТОЛЬКО когда серверы
+    // приехали; на неудаче залипает на пределе — цикла нет (регресс 3.0.34.14
+    // был именно в безусловном сбросе счётчика).
+    private var trialImportRetries = 0
 
     @Composable
     override fun ScreenContent() {
@@ -2380,26 +2377,7 @@ class MainActivity : HelperBaseComponentActivity() {
         }
     }
 
-    /**
-     * Полный холодный перезапуск приложения: гасим текущий процесс и поднимаем
-     * лаунч-активити заново. Нужен на первом запуске — новый процесс перечитает
-     * MMKV, а фоновая register() к этому моменту уже создаст устройство, и
-     * триал приедет с серверами (см. [importConfigViaSub], firstRun-ветка).
-     */
-    private fun restartApp() {
-        val intent = packageManager.getLaunchIntentForPackage(packageName)
-        if (intent != null) {
-            intent.addFlags(
-                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-            )
-            startActivity(intent)
-        }
-        // Гасим процесс целиком — иначе UI-процесс остался бы с уже прочитанным
-        // пустым MMKV, а весь смысл в чистом старте.
-        Runtime.getRuntime().exit(0)
-    }
-
-    private fun importConfigViaSub(silent: Boolean = false, firstRun: Boolean = false) {
+    private fun importConfigViaSub(silent: Boolean = false) {
         // Флаг снимаем СРАЗУ: иначе неудачная попытка оставила бы его
         // висеть, и следующее обновление подписки — хоть по кнопке, хоть
         // по расписанию — молча включило бы ВПН само.
@@ -2454,27 +2432,27 @@ class MainActivity : HelperBaseComponentActivity() {
                 // успех показывает свежие серверы, неудача возвращает прежние.
                 mainViewModel.setupGroupTab(forceRefresh = true)
                 mainViewModel.refreshSelectedGuid()
-                // Свежая установка: /qr/app отвечает пусто, пока фоновая
-                // VpnkaAccount.register() не успела создать устройство на
-                // бэкенде (гонка onCreate). Внутри-процессный ретрай это не
-                // лечит — устройства нет весь первый запуск. Владелец «лечил»
-                // вручную kill+reopen: во ВТОРОМ процессе register() уже
-                // завершён и серверы приезжают. Делаем это сами — ОДИН
-                // авто-рестарт за установку, только когда серверов реально нет
-                // и это первый запуск (не по кнопке). Флаг израсходования и
-                // «повторить импорт» лежат в MULTI_PROCESS настройках и
-                // переживают убийство процесса — цикла не будет.
+                // Свежая установка гонит фоновую VpnkaAccount.register():
+                // устройство на бэкенде может быть ещё не создано, и первый
+                // /qr/app иногда приходит пустым (гонка onCreate). Короткий
+                // ограниченный ретрай ИМПОРТА ловит это в пределах сессии —
+                // register() завершается за пару секунд, и setupGroupTab выше
+                // сведёт экран к хранилищу на первой же непустой попытке.
+                // Счётчик сбрасываем ТОЛЬКО когда серверы приехали; на неудаче
+                // он залипает на пределе — цикла нет (регресс 3.0.34.14 был в
+                // безусловном сбросе). Guard notice не даёт крутиться на
+                // честной заглушке («лимит устройств»).
                 val stillEmpty = withContext(Dispatchers.IO) {
                     MmkvManager.decodeAllServerList().isEmpty()
                 }
-                if (firstRun && stillEmpty && notice.isBlank() &&
-                    !MmkvManager.firstRunRestartUsed()
-                ) {
-                    MmkvManager.markFirstRunRestartUsed()
-                    MmkvManager.setFirstRunReimportPending(true)
-                    restartApp()
+                if (stillEmpty && notice.isBlank() && trialImportRetries < 4) {
+                    trialImportRetries++
+                    if (startWhenReady) pendingStartAfterImport = true
+                    delay(2500)
+                    importConfigViaSub(silent)
                     return@launch
                 }
+                if (!stillEmpty) trialImportRetries = 0
                 // Подписку тянули РАДИ подключения — доводим начатое, а не
                 // возвращаем человека к кнопке, которую он уже нажал.
                 if (startWhenReady) {

@@ -923,29 +923,6 @@ object MmkvManager {
     }
 
     /**
-     * Первый запуск гонит фоновый register(): устройство на бэкенде ещё не
-     * создано, и /qr/app отдаёт пустой список. Второй холодный старт — когда
-     * register() уже завершился — обычно приезжает с серверами; именно так
-     * владелец «лечил» пустой первый запуск вручную (kill+reopen). Разрешаем
-     * ОДИН авто-рестарт за установку (флаг в MULTI_PROCESS настройках переживёт
-     * убийство процесса), чтобы не зациклиться, если серверов нет по-настоящему.
-     */
-    fun firstRunRestartUsed(): Boolean =
-        settingsStorage.decodeBool(KEY_VPNKA_FIRST_RUN_RESTARTED, false)
-
-    fun markFirstRunRestartUsed() {
-        settingsStorage.encode(KEY_VPNKA_FIRST_RUN_RESTARTED, true)
-    }
-
-    /** Пометить/снять «на следующем старте повторить импорт триала». */
-    fun firstRunReimportPending(): Boolean =
-        settingsStorage.decodeBool(KEY_VPNKA_FIRST_RUN_REIMPORT, false)
-
-    fun setFirstRunReimportPending(pending: Boolean) {
-        settingsStorage.encode(KEY_VPNKA_FIRST_RUN_REIMPORT, pending)
-    }
-
-    /**
      * Вернуть прежний отпечаток, если вошли в ТОТ ЖЕ аккаунт.
      *
      * @return true — отпечаток восстановлен, устройство осталось прежним.
@@ -984,12 +961,6 @@ object MmkvManager {
 
     /** «<id аккаунта>:<прежний отпечаток>» — см. [rememberInstallOwner]. */
     private const val KEY_VPNKA_PREV_INSTALL = "vpnka_prev_install"
-
-    /** Одноразовый авто-рестарт после пустого первого импорта уже израсходован. */
-    private const val KEY_VPNKA_FIRST_RUN_RESTARTED = "vpnka_first_run_restarted"
-
-    /** На следующем холодном старте нужно повторить импорт триала (после рестарта). */
-    private const val KEY_VPNKA_FIRST_RUN_REIMPORT = "vpnka_first_run_reimport_pending"
 
     /**
      * URL the app ships with as its default subscription.
