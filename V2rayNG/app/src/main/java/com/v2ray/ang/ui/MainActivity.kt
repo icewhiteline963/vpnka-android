@@ -727,6 +727,10 @@ class MainActivity : HelperBaseComponentActivity() {
      *  screen shows no servers until a manual restart. Reset once a live plan
      *  is seen; capped so a genuinely sub-less account doesn't poll forever. */
     private var subFirstRunRetries = 0
+    // Ретрай ИМПОРТА триала на свежей установке, пока /qr/app пуст из-за гонки
+    // с фоновой register() (не путать с subFirstRunRetries — тот ретраит
+    // профиль). Сбрасывается, как только серверы приехали.
+    private var trialImportRetries = 0
 
     @Composable
     override fun ScreenContent() {
@@ -2427,6 +2431,24 @@ class MainActivity : HelperBaseComponentActivity() {
                 // успех показывает свежие серверы, неудача возвращает прежние.
                 mainViewModel.setupGroupTab(forceRefresh = true)
                 mainViewModel.refreshSelectedGuid()
+                // Свежая установка: /qr/app мог ответить пусто, пока фоновая
+                // VpnkaAccount.register() не успела создать устройство на
+                // бэкенде (гонка onCreate). Ретраим сам ИМПОРТ (а не только
+                // профиль — тот у триала не пересобирает список), пока триал
+                // не приедет; setupGroupTab выше сведёт экран к хранилищу на
+                // первой же непустой попытке — без рестарта. Guard notice
+                // не даёт зациклиться на честной заглушке («лимит устройств»).
+                val stillEmpty = withContext(Dispatchers.IO) {
+                    MmkvManager.decodeAllServerList().isEmpty()
+                }
+                if (stillEmpty && notice.isBlank() && trialImportRetries < 5) {
+                    trialImportRetries++
+                    if (startWhenReady) pendingStartAfterImport = true
+                    delay(2500)
+                    importConfigViaSub(silent)
+                    return@launch
+                }
+                if (!stillEmpty) trialImportRetries = 0
                 // Подписку тянули РАДИ подключения — доводим начатое, а не
                 // возвращаем человека к кнопке, которую он уже нажал.
                 if (startWhenReady) {
