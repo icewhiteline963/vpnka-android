@@ -827,6 +827,28 @@ class MainActivity : HelperBaseComponentActivity() {
         // connect button never opens «Профиль», so the plans were never
         // synced — the shipped trial stayed in the list and stayed selected
         // while their paid subscription sat unused.
+        // Свежая установка: анонимный аккаунт заводит ФОНОВАЯ register() (не
+        // awaited в AngApplication), и пока она не сохранила токен,
+        // isSignedIn()==false → signedIn стартует false. Поднимали его в true
+        // раньше ТОЛЬКО входы по коду — на завершение анонимной register()
+        // никто не реагировал, поэтому профиль-эффект ниже (гейт signedIn) не
+        // запускался и профиль/триал/план не грузились. «Лечил» только
+        // перезапуск: на втором старте register() уже готова, и signedIn
+        // стартует true. Ждём токен в пределах сессии и поднимаем signedIn —
+        // тогда профиль подтягивается без перезапуска.
+        LaunchedEffect(Unit) {
+            if (!signedIn) {
+                var tries = 0
+                while (!VpnkaAccount.isSignedIn() && tries < 20) {
+                    tries++
+                    kotlinx.coroutines.delay(500)
+                }
+                if (VpnkaAccount.isSignedIn()) {
+                    signedIn = true
+                    subRefreshRequest++
+                }
+            }
+        }
         LaunchedEffect(showSubscription, subReload, signedIn, subRefreshRequest) {
             if (signedIn) {
                 subLoading = showSubscription
