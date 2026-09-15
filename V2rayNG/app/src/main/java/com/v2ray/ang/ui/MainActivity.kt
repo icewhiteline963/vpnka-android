@@ -1529,18 +1529,16 @@ class MainActivity : HelperBaseComponentActivity() {
                         // profile sync below cannot cover it either — it only
                         // syncs when the account already has plans, and a
                         // brand-new anonymous account has none.
-                        signedIn = VpnkaAccount.isSignedIn()
-                        subReload++
-                        if (MmkvManager.ensureTrialSubscription()) {
-                            // importConfigViaSub сам сведёт экран к хранилищу
-                            // по завершении фетча — синхронный refresh ниже
-                            // здесь только гонялся бы с ним по пустому
-                            // хранилищу (триал ещё не скачан) и мелькал пустотой.
-                            importConfigViaSub()
-                        } else {
-                            mainViewModel.setupGroupTab(forceRefresh = true)
-                            mainViewModel.reloadServerList()
-                        }
+                        // Свежий аккаунт уже имеет tariff-42-ПЛАН, и в сессии
+                        // локальный триал-импорт (/qr/app) гоняется с
+                        // профиль-синком плана (/sub/g) — группа пустеет,
+                        // серверы не появляются до перезапуска. Холодный старт
+                        // это делает чисто (план уже есть → профиль синкает
+                        // сразу), поэтому доводим до того же состояния явным
+                        // перезапуском. Триал-саб засеиваем, чтобы старт его
+                        // подхватил как первый запуск.
+                        MmkvManager.ensureTrialSubscription()
+                        restartApp()
                     }
                 },
                 onGetCode = { navigateTo("vpnka_app_code") },
@@ -2439,6 +2437,25 @@ class MainActivity : HelperBaseComponentActivity() {
                 LogUtil.e(AppConfig.TAG, "Failed to read content from URI", e)
             }
         }
+    }
+
+    /**
+     * Полный холодный перезапуск: гасим процесс и поднимаем лаунч-активити.
+     * Нужен ПОСЛЕ выхода из аккаунта: свежий аккаунт уже имеет tariff-42-план,
+     * и в сессии локальный триал-импорт (/qr/app) гоняется с профиль-синком
+     * плана (/sub/g) — группа пустеет, серверы не появляются. Холодный старт
+     * это делает чисто (план уже есть, профиль синкает сразу), что владелец и
+     * подтвердил как рабочее «после выхода из приложения».
+     */
+    private fun restartApp() {
+        val intent = packageManager.getLaunchIntentForPackage(packageName)
+        if (intent != null) {
+            intent.addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+            )
+            startActivity(intent)
+        }
+        Runtime.getRuntime().exit(0)
     }
 
     /** Целых часов от «сейчас» до ISO-момента (expires_at подписки). Бэкенд
