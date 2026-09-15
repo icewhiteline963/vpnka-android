@@ -1108,6 +1108,13 @@ object MmkvManager {
     fun setServerPickedByUser(byUser: Boolean) =
         encodeSettings(VPNKA_SERVER_BY_USER, byUser)
 
+    /** Имя (remarks) последнего ВЫБРАННОГО пользователем сервера — чтобы
+     *  восстановить выбор по имени после ре-импорта, сменившего guid'ы. */
+    fun serverPickName(): String? = decodeSettingsString(VPNKA_SERVER_PICK_NAME)
+
+    fun setServerPickName(name: String) =
+        encodeSettings(VPNKA_SERVER_PICK_NAME, name)
+
     /**
      * Тёмное оформление. Умолчание — ДА, как в макете «Поток».
      *
@@ -1158,6 +1165,7 @@ object MmkvManager {
     private const val VPNKA_DARK_THEME = "vpnka_dark_theme"
     private const val VPNKA_EXPIRY_STAGE = "vpnka_expiry_stage"
     private const val VPNKA_SERVER_BY_USER = "vpnka_server_by_user"
+    private const val VPNKA_SERVER_PICK_NAME = "vpnka_server_pick_name"
 
     /**
      * This install's account token, or null when signed out.

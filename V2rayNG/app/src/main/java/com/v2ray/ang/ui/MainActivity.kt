@@ -1935,8 +1935,20 @@ class MainActivity : HelperBaseComponentActivity() {
                 val stillListed = options.any { it.guid == chosen }
                 val auto = options.firstOrNull { it.name.contains("Авто") }
                 when {
-                    !stillListed && options.isNotEmpty() ->
-                        setSelectServer((auto ?: options.first()).guid)
+                    !stillListed && options.isNotEmpty() -> {
+                        // Выбор по старому guid устарел после ре-импорта, но
+                        // сам сервер обычно остаётся под НОВЫМ guid — ищем по
+                        // ИМЕНИ последнего ручного выбора и восстанавливаем
+                        // его, а не сбрасываем на «Авто»/Амстердам (из-за чего
+                        // ручной выбор «перекидывало»). «Авто»/первый — только
+                        // если такого имени в списке действительно нет.
+                        val byName = if (MmkvManager.wasServerPickedByUser())
+                            options.firstOrNull {
+                                it.name == MmkvManager.serverPickName()
+                            } else null
+                        if (byName != null) setSelectServer(byName.guid, byUser = true)
+                        else setSelectServer((auto ?: options.first()).guid)
+                    }
 
                     // Still listed, but never actually chosen by anyone: an
                     // automatic pick from a day when «Авто» was missing stays
@@ -2806,6 +2818,17 @@ class MainActivity : HelperBaseComponentActivity() {
 
     private fun setSelectServer(guid: String, byUser: Boolean = false) {
         MmkvManager.setServerPickedByUser(byUser)
+        val cfg = MmkvManager.decodeServerConfig(guid)
+        // Ручной выбор помним ПО ИМЕНИ, а не только по guid: ре-импорт триала
+        // пересоздаёт серверы с новыми guid (parseCustomConfigServer сносит и
+        // заводит заново), и выбор по старому guid становится «устаревшим». По
+        // имени его восстанавливает LaunchedEffect(options) ниже — вместо
+        // сброса на «Авто»/Амстердам, из-за которого выбор «перекидывало».
+        if (byUser && cfg != null) {
+            // То же нормализованное имя, что показывает пикер
+            // (VpnkaServerOption.name), иначе сравнение по имени не совпадёт.
+            MmkvManager.setServerPickName(cfg.remarks.ifBlank { "Сервер" })
+        }
         // A guid the picker offered but storage cannot decode is stale, and
         // worth refreshing over. But the selection still has to happen:
         // this same method is what auto-picks a server at startup, and
@@ -2816,7 +2839,7 @@ class MainActivity : HelperBaseComponentActivity() {
         // So: select regardless, and kick off a refresh. When it lands, the
         // list changes, and the effect that watches it picks a live server
         // if this one is gone.
-        if (MmkvManager.decodeServerConfig(guid) == null) {
+        if (cfg == null) {
             android.util.Log.e(
                 "VPNKA_BACK",
                 "stale server guid=$guid group=${mainViewModel.uiState.value.selectedGroupId}",
