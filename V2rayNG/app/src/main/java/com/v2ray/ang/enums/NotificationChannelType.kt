@@ -73,5 +73,17 @@ enum class NotificationChannelType(
         channelName = "Входящий звонок",
         notificationId = 19,
         importance = android.app.NotificationManager.IMPORTANCE_HIGH
+    ),
+
+    /**
+     * Новости и напоминания от сервиса (например «мы починили, попробуйте
+     * подключиться»). Приходит фоновым воркером [NoticeNotifier] без Google —
+     * периодический опрос /app/notifications, без FCM и постоянного сокета.
+     */
+    NOTICE(
+        channelId = "notice_channel",
+        channelName = "Новости и напоминания",
+        notificationId = 20,
+        importance = android.app.NotificationManager.IMPORTANCE_DEFAULT
     )
 }

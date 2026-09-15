@@ -15,6 +15,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import com.v2ray.ang.handler.MmkvManager
 import com.v2ray.ang.handler.SettingsManager
+import com.v2ray.ang.handler.NoticeNotifier
 import com.v2ray.ang.handler.UpdateNotifier
 import com.v2ray.ang.handler.UpdatePrefetcher
 
@@ -173,5 +174,8 @@ class AngApplication : Application() {
         // network that posts a notification when a release is out — the
         // prefetcher above only wakes on Wi-Fi and can miss it for days.
         UpdateNotifier.schedule(this)
+        // Push без Google: фоновый опрос /app/notifications → локальное
+        // уведомление, чтобы дотянуться до установки, которую не открывают.
+        NoticeNotifier.schedule(this)
     }
 }
