@@ -328,6 +328,33 @@ fun VpnkaConnectScreen(
                 topPadding = headerTop,
             )
 
+            // Онбординг-плашки — СРАЗУ под шапкой, над кнопкой, чтобы их было
+            // видно без прокрутки. Раньше они жили в нижней зоне баннеров, а
+            // та — прямой ребёнок скролла ниже блока подключения, то есть под
+            // сгибом: «заметная плашка» оказывалась невидимой на телефоне.
+            // Показываем только когда есть что сказать (триал идёт / не вошёл),
+            // у обычного оплаченного аккаунта здесь пусто.
+            if (trialHoursLeft != null || !telegramLinked) {
+                Column(
+                    modifier = Modifier.padding(
+                        start = 16.dp, end = 16.dp, top = 12.dp,
+                    ),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    if (trialHoursLeft != null) {
+                        VpnkaTrialBanner(
+                            hoursLeft = trialHoursLeft,
+                            telegramLinked = telegramLinked,
+                            onGetMonth = onLinkTelegram,
+                            onOpenPlans = onRenew,
+                        )
+                    }
+                    if (!telegramLinked) {
+                        VpnkaTelegramBanner(onClick = onLinkTelegram)
+                    }
+                }
+            }
+
             // Состояние защиты — НАД кнопкой подключения (перенесено из шапки:
             // пилюля вверху выбивалась из дизайна).
             Spacer(Modifier.height(14.dp))
@@ -466,27 +493,6 @@ fun VpnkaConnectScreen(
                     .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                // Пробный доступ — сам факт и остаток времени. Свежий
-                // пользователь не понимал, что уже подключён на 24 часа и что
-                // это временный триал: срок висел мелкой строкой в списке.
-                // Ставим статусом-плашкой; CTA зависит от наличия Telegram.
-                if (trialHoursLeft != null) {
-                    VpnkaTrialBanner(
-                        hoursLeft = trialHoursLeft,
-                        telegramLinked = telegramLinked,
-                        onGetMonth = onLinkTelegram,
-                        onOpenPlans = onRenew,
-                    )
-                }
-                // Свежая установка живёт на анонимном аккаунте: 24-часовой
-                // триал есть, но доступ и подписка держатся только на этом
-                // телефоне и пропадут при переустановке. Единственная точка,
-                // которая раньше говорила «войди», — маленький значок в углу,
-                // неотличимый от «не входил вовсе». Пока Telegram не привязан,
-                // ставим это в слова заметной плашкой первой строкой.
-                if (!telegramLinked) {
-                    VpnkaTelegramBanner(onClick = onLinkTelegram)
-                }
                 // The launch check already knew this; until now it only lit
                 // a dot on a button in the corner, which is indistinguishable
                 // from not checking at all. Say it in words, where the eye
