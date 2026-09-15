@@ -1962,10 +1962,29 @@ class MainActivity : HelperBaseComponentActivity() {
             VpnkaConnectScreen(
                 isRunning = uiState.isRunning,
                 isLoading = uiState.isLoading,
-                // Real subscription, not the handoff's «Премиум · 214 дней»:
-                // the plan the user actually holds and the days actually
-                // left, or a plain word when there is no purchase yet.
-                trialHoursLeft = subInfo?.takeIf { !it.active }?.trialHoursLeft,
+                // Остаток пробного доступа — из ДВУХ представлений триала,
+                // иначе плашка «Пробный доступ» зависит от того, каким путём
+                // пришёл триал:
+                //  • анонимный грант отдаёт trial_hours_left напрямую (путь
+                //    первого запуска: 64-hex install_id регэксп бэкенда
+                //    отклоняет → анон-грант, active=false);
+                //  • зарегистрированный клиент получает триал как активную
+                //    is_trial-подписку tariff-42 (путь после выхода: 32-hex
+                //    install после rotateInstallId проходит регэксп) — там
+                //    trial_hours_left пуст и active=true, часы считаем из её
+                //    expires_at. Потолок ≤48ч отсекает 30-дневный free-месяц и
+                //    3-дневный пробник (у них своя подача, не «N часов»).
+                trialHoursLeft = subInfo?.let { info ->
+                    info.trialHoursLeft
+                        ?: info.subscriptions.orEmpty()
+                            .filter { it.isTrial }
+                            .mapNotNull { it.expiresAt }
+                            .mapNotNull {
+                                runCatching { hoursUntilIso(it) }.getOrNull()
+                            }
+                            .filter { it in 0..48 }
+                            .maxOrNull()
+                },
                 subscriptionName = subs.firstOrNull { it.first == selectedSub }?.second
                     ?: subs.firstOrNull()?.second,
                 canSwitchSubscription = subs.size > 1,
@@ -2408,6 +2427,14 @@ class MainActivity : HelperBaseComponentActivity() {
                 LogUtil.e(AppConfig.TAG, "Failed to read content from URI", e)
             }
         }
+    }
+
+    /** Целых часов от «сейчас» до ISO-момента (expires_at подписки). Бэкенд
+     *  отдаёт `+00:00`-offset (Python isoformat), поэтому OffsetDateTime. */
+    private fun hoursUntilIso(iso: String): Int {
+        val exp = java.time.OffsetDateTime.parse(iso).toInstant()
+        val secs = java.time.Duration.between(java.time.Instant.now(), exp).seconds
+        return (secs / 3600).toInt()
     }
 
     private fun importConfigViaSub(silent: Boolean = false) {
