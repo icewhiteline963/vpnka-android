@@ -401,7 +401,20 @@ object AngConfigManager {
 
                 if (serverList.isNotEmpty()) {
                     val removedSelected = getRemovedSelectedProfile(subid, append)
+                    // Стабильные guid между ре-импортами: до сноса запоминаем
+                    // guid по ИМЕНИ (remarks) серверов этой подписки, и при
+                    // пересоздании одноимённый сервер получает ТОТ ЖЕ guid.
+                    // Иначе каждый ре-импорт триала пересоздаёт guid'ы, ручной
+                    // выбор по старому guid «устаревает» и экран сбрасывает
+                    // сервер на «Авто»/Амстердам (корень бага 3.0.34.23).
+                    val oldGuidByRemarks = mutableMapOf<String, String>()
                     if (!append) {
+                        for (g in MmkvManager.decodeAllServerList()) {
+                            val c = MmkvManager.decodeServerConfig(g) ?: continue
+                            if (c.subscriptionId == subid && c.remarks.isNotBlank()) {
+                                oldGuidByRemarks.putIfAbsent(c.remarks, g)
+                            }
+                        }
                         MmkvManager.removeServerViaSubid(subid)
                     }
                     var count = 0
@@ -410,7 +423,9 @@ object AngConfigManager {
                         val config = CustomFmt.parse(JsonUtil.toJson(srv)) ?: continue
                         config.subscriptionId = subid
                         config.description = generateDescription(config)
-                        val key = MmkvManager.encodeServerConfig("", config)
+                        // Переиспользуем прежний guid одноимённого сервера.
+                        val reuse = oldGuidByRemarks[config.remarks] ?: ""
+                        val key = MmkvManager.encodeServerConfig(reuse, config)
                         MmkvManager.encodeServerRaw(key, JsonUtil.toJsonPretty(srv) ?: "")
                         keyToProfile[key] = config
                         count += 1
