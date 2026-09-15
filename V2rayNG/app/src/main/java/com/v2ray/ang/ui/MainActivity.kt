@@ -1506,6 +1506,17 @@ class MainActivity : HelperBaseComponentActivity() {
                         // stale revoked flag first or register() refuses.
                         MmkvManager.setSessionRevoked(false)
                         VpnkaAccount.register()
+                        // Выход = новый триал-контекст. Счётчики ретраев
+                        // session-global и сбрасываются лишь при появлении
+                        // серверов/плана — а у триала плана нет, так что к
+                        // этому моменту они уже могли упереться в предел на
+                        // прошлом триале. Без сброса ни импорт серверов
+                        // (trialImportRetries), ни ре-фетч профиля с остатком
+                        // триала (subFirstRunRetries) не переретраятся, и до
+                        // перезапуска приложения не появятся ни серверы, ни
+                        // плашка «Пробный доступ». Даём свежий бюджет ретраев.
+                        trialImportRetries = 0
+                        subFirstRunRetries = 0
                         // …and give that fresh account the 24-hour trial,
                         // exactly as a first launch would. Signing out wipes
                         // every subscription including the trial, but the
