@@ -551,7 +551,8 @@ fun VpnkaConnectScreen(
                         icon = "★",
                         label = "Подписка",
                         right = when {
-                            trialHoursLeft != null -> pluralHours(trialHoursLeft)
+                            trialHoursLeft != null ->
+                                "$trialHoursLeft ${pluralHours(trialHoursLeft)}"
                             activeDaysLeft != null -> "$activeDaysLeft дн"
                             else -> subscriptionName.orEmpty()
                         },
@@ -1246,8 +1247,8 @@ private fun VpnkaTrialBanner(
         Spacer(Modifier.width(11.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = if (hoursLeft <= 1) "Пробный доступ · меньше часа"
-                else "Пробный доступ · осталось ${pluralHours(hoursLeft)}",
+                text = if (hoursLeft < 1) "Пробный доступ · меньше часа"
+                else "Пробный доступ · осталось $hoursLeft ${pluralHours(hoursLeft)}",
                 fontFamily = VpnkaFonts.nunito800,
                 fontWeight = VpnkaWeight.Extra,
                 fontSize = 15.sp,
