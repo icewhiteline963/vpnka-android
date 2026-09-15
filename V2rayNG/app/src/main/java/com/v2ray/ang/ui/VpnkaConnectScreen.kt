@@ -466,6 +466,18 @@ fun VpnkaConnectScreen(
                     .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
+                // Пробный доступ — сам факт и остаток времени. Свежий
+                // пользователь не понимал, что уже подключён на 24 часа и что
+                // это временный триал: срок висел мелкой строкой в списке.
+                // Ставим статусом-плашкой; CTA зависит от наличия Telegram.
+                if (trialHoursLeft != null) {
+                    VpnkaTrialBanner(
+                        hoursLeft = trialHoursLeft,
+                        telegramLinked = telegramLinked,
+                        onGetMonth = onLinkTelegram,
+                        onOpenPlans = onRenew,
+                    )
+                }
                 // Свежая установка живёт на анонимном аккаунте: 24-часовой
                 // триал есть, но доступ и подписка держатся только на этом
                 // телефоне и пропадут при переустановке. Единственная точка,
@@ -1196,6 +1208,56 @@ private fun VpnkaTelegramBanner(onClick: () -> Unit) {
             )
         }
         Text(text = "›", fontSize = 18.sp, color = VpnkaColors.Accent)
+    }
+}
+
+/**
+ * Идёт пробный доступ — статус и остаток времени, заметной плашкой.
+ *
+ * Свежий пользователь не понимал, что уже подключён на 24 часа и что это
+ * триал: срок висел мелкой строкой «Подписка · N ч». Тон янтарный — не
+ * тревога, а «время ограничено». CTA ведёт туда, где триал продолжают: без
+ * Telegram — вход за бесплатным месяцем, с Telegram — к тарифам.
+ */
+@Composable
+private fun VpnkaTrialBanner(
+    hoursLeft: Int,
+    telegramLinked: Boolean,
+    onGetMonth: () -> Unit,
+    onOpenPlans: () -> Unit,
+) {
+    val tint = VpnkaColors.Amber
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(tint.copy(alpha = 0.14f))
+            .clickable(onClick = if (telegramLinked) onOpenPlans else onGetMonth)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text = "⏱", fontSize = 18.sp)
+        Spacer(Modifier.width(11.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = if (hoursLeft <= 1) "Пробный доступ · меньше часа"
+                else "Пробный доступ · осталось ${pluralHours(hoursLeft)}",
+                fontFamily = VpnkaFonts.nunito800,
+                fontWeight = VpnkaWeight.Extra,
+                fontSize = 15.sp,
+                color = tint,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = if (telegramLinked) "Дальше — оформите тариф в подписке"
+                else "Войдите в Telegram и заберите бесплатный месяц",
+                fontFamily = VpnkaFonts.manrope600,
+                fontWeight = VpnkaWeight.Semi,
+                fontSize = 12.sp,
+                color = VpnkaColors.TextMuted,
+            )
+        }
+        Text(text = "›", fontSize = 18.sp, color = tint)
     }
 }
 
