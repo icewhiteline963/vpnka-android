@@ -423,8 +423,11 @@ object AngConfigManager {
                         val config = CustomFmt.parse(JsonUtil.toJson(srv)) ?: continue
                         config.subscriptionId = subid
                         config.description = generateDescription(config)
-                        // Переиспользуем прежний guid одноимённого сервера.
-                        val reuse = oldGuidByRemarks[config.remarks] ?: ""
+                        // Переиспользуем прежний guid одноимённого сервера, но
+                        // КАЖДЫЙ старый guid — не больше раза (remove): если в
+                        // подписке два сервера с одинаковым remarks, второй не
+                        // затрёт первого одним guid, а получит свежий.
+                        val reuse = oldGuidByRemarks.remove(config.remarks) ?: ""
                         val key = MmkvManager.encodeServerConfig(reuse, config)
                         MmkvManager.encodeServerRaw(key, JsonUtil.toJsonPretty(srv) ?: "")
                         keyToProfile[key] = config
