@@ -2263,7 +2263,11 @@ class MainActivity : HelperBaseComponentActivity() {
                 return
             }
             "vpnka_month" -> {
-                Utils.openUri(this, "https://t.me/vpnka_io_bot?start=app")
+                // Через тот же VPN-гард, что и карточка free-месяца: у кого
+                // Telegram заблокирован, прямой openUri молча не открывался, а
+                // это самый заметный вход за месяцем. Гард сперва предлагает
+                // включить VPN, потом ведёт в бота.
+                openTelegramLinkGuarded()
                 return
             }
             // Straight to the card that mints a sign-in code, so the user

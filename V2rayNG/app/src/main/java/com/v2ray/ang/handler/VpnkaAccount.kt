@@ -108,8 +108,9 @@ object VpnkaAccount {
         @SerializedName("frozen") val frozen: Boolean = false,
         // The free month is a trial-tariff plan; a paid plan is not.
         @SerializedName("is_trial") val isTrial: Boolean = false,
-        // Per-plan traffic for the home-screen "X ГБ из 50" bar. Limit is
-        // null on paid plans (unlimited) — then no bar is shown.
+        // Per-plan traffic for the home-screen "X ГБ из N" bar, where N is
+        // this limit (server-set, ~100 ГБ — never hard-coded). Limit is null
+        // on paid plans (unlimited) — then no bar is shown.
         @SerializedName("traffic_used_bytes") val trafficUsedBytes: Long? = null,
         @SerializedName("traffic_limit_gb") val trafficLimitGb: Int? = null,
         @SerializedName("speed_limit_mbps") val speedLimitMbps: Int? = null,

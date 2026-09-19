@@ -530,6 +530,7 @@ fun VpnkaConnectScreen(
                         waiting = freeMonthWaiting && telegramLinked,
                         claiming = claimingFreeMonth,
                         telegramLinked = telegramLinked,
+                        trafficLimitGb = freeTrafficLimitGb,
                         bgColor = accent,
                         onClaim = onClaimFreeMonth,
                     )
@@ -1512,7 +1513,8 @@ private fun VpnkaStatCard(
 }
 
 /**
- * Free-month traffic budget: «🎁 Бесплатный месяц · X ГБ из 50». Shown only
+ * Free-month traffic budget: «🎁 Бесплатный месяц · X ГБ из N», where N is the
+ * server limit (`trafficLimitGb`, ~100 ГБ — never hard-coded here). Shown only
  * on a capped free month with no paid plan (the caller gates it). A thin bar
  * fills toward the cap and turns red past 90 %, so the person sees the day
  * their free traffic runs out coming.
@@ -1529,7 +1531,8 @@ private fun VpnkaFreeTrafficPlaque(
     var showInfo by remember { mutableStateOf(false) }
     val limitBytes = limitGb.toLong() * 1_073_741_824L
     // Cap spent → bar is full and red; the number gives way to a plain-language
-    // "лимит исчерпан", since "50 из 50 ГБ" reads like an error, not a state.
+    // "скорость снижена", since "100 из 100 ГБ" reads like an error, and the
+    // traffic isn't cut off — the key is throttled to 0,5 Мбит/с.
     val fraction =
         if (throttled) 1f
         else if (limitBytes > 0) (usedBytes.toFloat() / limitBytes).coerceIn(0f, 1f)
@@ -1564,7 +1567,7 @@ private fun VpnkaFreeTrafficPlaque(
             modifier = Modifier.fillMaxWidth(),
         )
         Text(
-            text = if (throttled) "Лимит исчерпан · 0,5 Мбит"
+            text = if (throttled) "Скорость снижена · 0,5 Мбит/с"
             else "$usedGb из $limitGb ГБ",
             fontFamily = VpnkaFonts.manrope700,
             fontWeight = VpnkaWeight.Bold,
@@ -1752,6 +1755,9 @@ private fun VpnkaFreeMonthCard(
     /** Текущий бесплатный месяц ещё идёт: карточку показываем, но забрать
      *  следующий можно только после того, как он закончится. */
     waiting: Boolean,
+    /** Серверный лимит трафика бесплатного месяца, если он уже известен из
+     *  активного плана. До активации плана ещё нет — тогда показываем 100. */
+    trafficLimitGb: Int?,
     bgColor: androidx.compose.ui.graphics.Color,
     onClaim: () -> Unit,
 ) {
@@ -1803,6 +1809,20 @@ private fun VpnkaFreeMonthCard(
             fontSize = 12.sp,
             color = white.copy(alpha = 0.92f),
         )
+        // Условия месяца — до активации, а не после. Число ГБ берём из
+        // серверного лимита, если план уже известен; иначе показываем 100.
+        // Ограничение — это троттл, а не отключение: так и пишем.
+        if (!waiting) {
+            Spacer(Modifier.height(3.dp))
+            Text(
+                text = "До ${trafficLimitGb ?: 100} ГБ на полной скорости, дальше — " +
+                    "0,5 Мбит/с без отключения · 1 устройство",
+                fontFamily = VpnkaFonts.manrope600,
+                fontWeight = VpnkaWeight.Semi,
+                fontSize = 11.sp,
+                color = white.copy(alpha = 0.80f),
+            )
+        }
     }
 }
 
