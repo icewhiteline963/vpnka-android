@@ -98,6 +98,9 @@ object VpnkaAccount {
     data class Plan(
         @SerializedName("group_token") val groupToken: String? = null,
         @SerializedName("tariff") val tariff: String? = null,
+        // Начало действия — для периода «с … по …» на вкладке подписки.
+        // Для продлённой подписки это дата первой покупки (см. бэкенд).
+        @SerializedName("created_at") val createdAt: String? = null,
         @SerializedName("expires_at") val expiresAt: String? = null,
         @SerializedName("days_left") val daysLeft: Int? = null,
         @SerializedName("devices_used") val devicesUsed: Int? = null,

@@ -1995,6 +1995,30 @@ internal fun pluralHours(n: Int): String {
 }
 
 /**
+ * ISO-дата подписки («2026-10-19T…») → «19.10.2026» в локальной зоне.
+ * null/пусто/мусор → null (тогда падаем на дни-остаток). Даты с сервера в
+ * UTC; для показа переводим в зону устройства, чтобы у пользователя стоял
+ * его день, а не гринвичский.
+ */
+internal fun fmtSubDate(iso: String?): String? {
+    if (iso.isNullOrBlank()) return null
+    val fmt = java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy")
+    return try {
+        java.time.OffsetDateTime.parse(iso)
+            .atZoneSameInstant(java.time.ZoneId.systemDefault())
+            .format(fmt)
+    } catch (_: Exception) {
+        try {
+            java.time.Instant.parse(iso)
+                .atZone(java.time.ZoneId.systemDefault())
+                .format(fmt)
+        } catch (_: Exception) {
+            iso.take(10)
+        }
+    }
+}
+
+/**
  * The warm page every inner screen sits on.
  *
  * The connect screen got the design; the profile, shop, support and the rest
@@ -2312,9 +2336,19 @@ fun VpnkaPlansListScreen(
             plans.forEach { plan ->
                 val live = plan.groupToken != null && plan.groupToken == activeToken
                 val subtitle = buildString {
+                    // Период действия «с … по …» — то, что просил владелец.
+                    // start = created_at (для продлённой — дата первой
+                    // покупки), end = expires_at. Нет дат → падаем на
+                    // дни-остаток, чтобы строка не опустела на старом сервере.
+                    val start = fmtSubDate(plan.createdAt)
+                    val end = fmtSubDate(plan.expiresAt)
                     val days = plan.daysLeft
                     if (plan.frozen) {
                         append("заморожена")
+                    } else if (start != null && end != null) {
+                        append("с $start по $end")
+                    } else if (end != null) {
+                        append("до $end")
                     } else if (days != null) {
                         append("$days ${pluralDays(days)}")
                     }
