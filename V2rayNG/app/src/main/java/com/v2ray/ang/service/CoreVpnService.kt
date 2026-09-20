@@ -247,15 +247,25 @@ class CoreVpnService : VpnService(), ServiceControl {
             builder.addRoute("0.0.0.0", 0)
         }
 
-        // Configure IPv6 if enabled
+        // IPv6. Адрес на tun ставим ВСЕГДА (не только когда IPv6 включён),
+        // иначе на dual-stack сети IPv6-трафик не захватывается туннелем и
+        // уходит НАПРЯМУЮ — реальный IPv6 клиента светится мимо VPN (утечка).
+        builder.addAddress(vpnConfig.ipv6Client, 126)
         if (MmkvManager.decodeSettingsBool(AppConfig.PREF_IPV6_ENABLED) == true) {
-            builder.addAddress(vpnConfig.ipv6Client, 126)
+            // IPv6 включён — маршрутизируем его В туннель как раньше.
             if (bypassLan) {
                 builder.addRoute("2000::", 3) // Currently only 1/8 of total IPv6 is in use
                 builder.addRoute("fc00::", 18) // Xray-core default FakeIPv6 Pool
             } else {
                 builder.addRoute("::", 0)
             }
+        } else {
+            // IPv6 выключен пользователем: fail-closed. Затягиваем весь
+            // публичный IPv6 в tun, где без IPv6-выхода он гасится, а НЕ
+            // утекает напрямую. Приложения делают happy-eyeballs fallback на
+            // IPv4 (который полностью туннелирован). Link-local (fe80::/10)
+            // маршрут ::/0 не затрагивает — локальная связность цела.
+            builder.addRoute("::", 0)
         }
 
         // Configure DNS servers
