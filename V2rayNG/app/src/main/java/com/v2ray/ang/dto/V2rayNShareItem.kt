@@ -148,11 +148,18 @@ data class V2rayNShareItem(
             portHoppingInterval = ProtoExtraObj?.HopInterval,
             bandwidthDown = ProtoExtraObj?.DownMbps?.takeIf { it > 0 }?.let { "${it}Mbps" },
             bandwidthUp = ProtoExtraObj?.UpMbps?.takeIf { it > 0 }?.let { "${it}Mbps" },
+            // ProfileItem.policyGroupType stores the NUMERIC value that
+            // BalancerStrategyType.from() matches on (`policyGroupTypeValue`),
+            // NOT the human-readable name (`policyGroupType`). Writing the name
+            // here made from() fall through to LEAST_PING for every imported
+            // «Авто» group — so a panel-set random/roundRobin/leastLoad was
+            // silently ignored and the balancer always single-winner-routed to
+            // the lowest-RTT node (one country). Store the numeric value.
             policyGroupType = when (ProtoExtraObj?.MultipleLoad) {
-                2 -> BalancerStrategyType.RANDOM.policyGroupType
-                3 -> BalancerStrategyType.ROUND_ROBIN.policyGroupType
-                4 -> BalancerStrategyType.LEAST_LOAD.policyGroupType
-                else -> BalancerStrategyType.LEAST_PING.policyGroupType
+                2 -> BalancerStrategyType.RANDOM.policyGroupTypeValue
+                3 -> BalancerStrategyType.ROUND_ROBIN.policyGroupTypeValue
+                4 -> BalancerStrategyType.LEAST_LOAD.policyGroupTypeValue
+                else -> BalancerStrategyType.LEAST_PING.policyGroupTypeValue
             },
             // NOTE: not safe, suggest converting and rewriting
             // policyGroupSubscriptionId = ProtoExtraObj?.SubChildItems,

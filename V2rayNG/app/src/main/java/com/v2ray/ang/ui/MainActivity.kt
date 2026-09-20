@@ -165,6 +165,7 @@ import com.v2ray.ang.handler.VpnkaAccount
 import androidx.compose.runtime.mutableIntStateOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyGridState
 import sh.calvin.reorderable.rememberReorderableLazyListState
@@ -1932,6 +1933,15 @@ class MainActivity : HelperBaseComponentActivity() {
                 val chosen = uiState.selectedGuid
                 val stillListed = options.any { it.guid == chosen }
                 val auto = options.firstOrNull { it.name.contains("Авто") }
+                // Свидетельство ручного выбора берём из СОХРАНЁННОГО ИМЕНИ, а
+                // НЕ из флага `wasServerPickedByUser()`. Тот флаг —
+                // глобальный last-write bool, и любой автопик
+                // `setSelectServer(guid)` (умолчание byUser=false) его гасит,
+                // после чего ветки ниже роняли ручной выбор на «Авто» →
+                // «выбрал Amsterdam, а по факту Швеция». `serverPickName`
+                // ставится ТОЛЬКО при ручном выборе (см. setSelectServer) и
+                // автопиком НЕ затирается, поэтому переживает ре-импорт.
+                val pickName = MmkvManager.serverPickName()?.takeIf { it.isNotBlank() }
                 when {
                     !stillListed && options.isNotEmpty() -> {
                         // Выбор по старому guid устарел после ре-импорта, но
@@ -1940,10 +1950,9 @@ class MainActivity : HelperBaseComponentActivity() {
                         // его, а не сбрасываем на «Авто»/Амстердам (из-за чего
                         // ручной выбор «перекидывало»). «Авто»/первый — только
                         // если такого имени в списке действительно нет.
-                        val byName = if (MmkvManager.wasServerPickedByUser())
-                            options.firstOrNull {
-                                it.name == MmkvManager.serverPickName()
-                            } else null
+                        val byName = pickName?.let { pn ->
+                            options.firstOrNull { it.name == pn }
+                        }
                         if (byName != null) setSelectServer(byName.guid, byUser = true)
                         else setSelectServer((auto ?: options.first()).guid)
                     }
@@ -1953,8 +1962,9 @@ class MainActivity : HelperBaseComponentActivity() {
                     // valid forever, so nothing revisits it and the app keeps
                     // opening on whichever city it grabbed back then. Move to
                     // «Авто» now that it exists; a real choice is left alone.
-                    auto != null && chosen != auto.guid &&
-                        !MmkvManager.wasServerPickedByUser() ->
+                    // Гейт по `pickName`, не по хрупкому bool: раз юзер хоть
+                    // раз выбирал сервер вручную, не перекидываем его на «Авто».
+                    auto != null && chosen != auto.guid && pickName == null ->
                         setSelectServer(auto.guid)
                 }
             }
@@ -2363,7 +2373,25 @@ class MainActivity : HelperBaseComponentActivity() {
 
     private fun restartV2Ray() {
         if (mainViewModel.uiState.value.isRunning) CoreServiceManager.stopVService(this)
-        lifecycleScope.launch { delay(500); startV2Ray() }
+        lifecycleScope.launch {
+            // Ждём ФАКТИЧЕСКОЙ остановки ядра, а не фиксированные 500 мс.
+            // Нативный stopLoop() крутится в отдельной корутине (см.
+            // CoreServiceManager.stopCoreLoop), и isRunning гаснет только по
+            // её завершении. При спидтесте (до 16 тестовых ядер) 500 мс не
+            // хватает: startContextService видит isRunning=true и молча
+            // выходит (`if (coreController.isRunning) return`) — старый конфиг
+            // (прежний сервер / «Авто») продолжает крутиться, смена сервера
+            // «не применяется». Поллим до остановки, максимум 5 с, затем
+            // стартуем в любом случае (не хуже прежнего фиксированного делея).
+            val stopped = withTimeoutOrNull(5000L) {
+                while (CoreServiceManager.isRunning()) delay(50)
+                true
+            }
+            if (stopped == null) {
+                LogUtil.w(AppConfig.TAG, "restartV2Ray: core still running after 5s, starting anyway")
+            }
+            startV2Ray()
+        }
     }
 
     private fun importManually(createConfigType: Int) {
