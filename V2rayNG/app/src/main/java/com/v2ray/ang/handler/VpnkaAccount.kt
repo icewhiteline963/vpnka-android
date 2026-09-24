@@ -220,14 +220,18 @@ object VpnkaAccount {
      * hash — so it is stored locally and shown to the user later, before the
      * first payment, when they finally have something to lose.
      */
-    suspend fun register(): Boolean = withContext(Dispatchers.IO) {
+    suspend fun register(referralCode: String? = null): Boolean = withContext(Dispatchers.IO) {
         if (MmkvManager.getAccountToken() != null) return@withContext true
         // A revoked session means an account already exists and someone
         // decided this device should not reach it. Making a new one hides
         // that decision and loses the account; the profile screen asks the
         // user to sign in again instead.
         if (MmkvManager.wasSessionRevoked()) return@withContext false
-        val body = JsonUtil.toJson(mapOf("label" to deviceLabel()))
+        // На первом запуске приложить реф-код из отсканированного QR (если был)
+        // — сервер привяжет реферера. Плохой/самореф-код рег не ломает.
+        val fields = mutableMapOf<String, Any?>("label" to deviceLabel())
+        if (!referralCode.isNullOrEmpty()) fields["referral_code"] = referralCode
+        val body = JsonUtil.toJson(fields)
             .toRequestBody("application/json".toMediaType())
         try {
             http().newCall(
@@ -482,6 +486,41 @@ object VpnkaAccount {
             LogUtil.w(AppConfig.TAG, "smartdesk ping failed: ${e.message}")
             false
         }
+    }
+
+    data class Referral(
+        @SerializedName("referral_code") val referralCode: String = "",
+        @SerializedName("link") val link: String = "",
+        @SerializedName("bonus_percent") val bonusPercent: Int = 0,
+        @SerializedName("invited_count") val invitedCount: Int = 0,
+        @SerializedName("paid_invited_count") val paidInvitedCount: Int = 0,
+        @SerializedName("total_reward_rub") val totalRewardRub: Int = 0,
+        @SerializedName("referrals") val referrals: List<ReferralItem> = emptyList(),
+    )
+
+    data class ReferralItem(
+        @SerializedName("name") val name: String = "",
+        @SerializedName("brought_rub") val broughtRub: Int = 0,
+        @SerializedName("date") val date: String = "",
+        @SerializedName("paid") val paid: Boolean = false,
+    )
+
+    private data class AttachResponse(@SerializedName("status") val status: String?)
+
+    /** Реф-код + ссылка + список приглашённых для экрана «Поделиться». */
+    suspend fun fetchReferral(): Referral? = withContext(Dispatchers.IO) {
+        call<Referral>(authed("/app/referral")?.get())
+    }
+
+    /**
+     * Привязать этот аккаунт к пригласившему — для УЖЕ установленных, кто
+     * отсканировал чужой QR (у новых привязка идёт через register на первом
+     * запуске). Идемпотентно; сервер вернёт status: attached/already/self/invalid.
+     */
+    suspend fun attachReferral(code: String): String? = withContext(Dispatchers.IO) {
+        val body = JsonUtil.toJson(mapOf("code" to code))
+            .toRequestBody("application/json".toMediaType())
+        call<AttachResponse>(authed("/app/referral/attach")?.post(body))?.status
     }
 
     suspend fun fetchSupport(): List<SupportMessage> = withContext(Dispatchers.IO) {

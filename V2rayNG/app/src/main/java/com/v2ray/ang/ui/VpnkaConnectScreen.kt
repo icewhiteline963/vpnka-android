@@ -191,6 +191,8 @@ fun VpnkaConnectScreen(
     /** «Войти через Телеграм» — открыть бота (с предложением поднять ВПН). */
     onLinkTelegram: () -> Unit,
     onLeaveReview: () -> Unit,
+    /** Открыть экран «Поделиться VPNкой» (QR реф-ссылки + статистика). */
+    onShare: () -> Unit = {},
 ) {
     // Подключение перекрашивает ВЕСЬ набор, а не один цветок.
     //
@@ -596,6 +598,15 @@ fun VpnkaConnectScreen(
                     accent = accent,
                     onAccent = onAccent,
                     onClick = onOpenDevices,
+                )
+                // «Поделиться VPNкой»: экран с QR реф-ссылки + статистика
+                // приглашённых. Скан другим = он реферал поделившегося.
+                VpnkaHomeRow(
+                    icon = "🎁",
+                    label = "Поделиться VPNкой",
+                    accent = accent,
+                    onAccent = onAccent,
+                    onClick = onShare,
                 )
                 // Браузер и YouTube-загрузчик — у ВСЕХ; остальные приложения
                 // сейфа (мессенджер/контакты/календарь/заметки/помощь) — только

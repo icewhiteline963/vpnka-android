@@ -261,6 +261,7 @@ class MainActivity : HelperBaseComponentActivity() {
         // Приложение уже было открыто, когда пришли по ссылке из бота.
         consumeLoginFromLink()
         consumeYouTubeShare()
+        consumeRefFromLink()
     }
 
     /**
@@ -361,6 +362,7 @@ class MainActivity : HelperBaseComponentActivity() {
         // vpnkaPendingLoginCode переживает паузу, а consume пустой — no-op.
         consumeLoginFromLink()
         consumeYouTubeShare()
+        consumeRefFromLink()
         // Вернулись из привязки Telegram: месяц мог активироваться на этом же
         // аккаунте на сервере. Перечитываем подписку, иначе на экране остаётся
         // старый суточный триал («кончается меньше чем через сутки»).
@@ -519,6 +521,7 @@ class MainActivity : HelperBaseComponentActivity() {
         }
         consumeLoginFromLink()
         consumeYouTubeShare()
+        consumeRefFromLink()
     }
 
     /**
@@ -547,6 +550,26 @@ class MainActivity : HelperBaseComponentActivity() {
         com.v2ray.ang.ui.SmartDeskChrome.pendingYtUrl = url
         clearOverlaysForDesk()
         showSmartDesk = true
+    }
+
+    /**
+     * Реф-код из отсканированного QR (`vpnka://ref?code=…`): привязываем этот
+     * аккаунт к пригласившему. Ждём появления токена (на первом запуске аккаунт
+     * создаётся фоном в AngApplication.register()), затем attach — идемпотентно,
+     * сервер режет самореф/повтор. Не спрашиваем ничего у пользователя.
+     */
+    private fun consumeRefFromLink() {
+        val code = AngApplication.vpnkaPendingRefCode ?: return
+        lifecycleScope.launch {
+            repeat(15) {
+                if (MmkvManager.getAccountToken() != null) {
+                    AngApplication.vpnkaPendingRefCode = null
+                    VpnkaAccount.attachReferral(code)
+                    return@launch
+                }
+                delay(1000)
+            }
+        }
     }
 
     // Which overlay is open, owned by the activity rather than by the
@@ -578,6 +601,7 @@ class MainActivity : HelperBaseComponentActivity() {
         }
         openedTicket != null -> { openedTicket = null; true }
         showTickets -> { showTickets = false; true }
+        showShare -> { showShare = false; true }
         showSupport -> { showSupport = false; true }
         showRecovery -> { showRecovery = false; true }
         showServerPicker -> { showServerPicker = false; true }
@@ -624,6 +648,7 @@ class MainActivity : HelperBaseComponentActivity() {
     private var vpnkaTelegramLinked by mutableStateOf(false)
     private var showSupport by mutableStateOf(false)
     private var showTickets by mutableStateOf(false)
+    private var showShare by mutableStateOf(false)
     // Telegram link the user asked for while the tunnel was down. Held until
     // the VPN reports itself up, then opened.
     private var askVpnForTelegram by mutableStateOf(false)
@@ -1245,7 +1270,7 @@ class MainActivity : HelperBaseComponentActivity() {
             showShop || showTopUp ||
             openedPlan != null || showSubscription ||
             showSettings || showNotificationSettings || showYouTubeSettings ||
-            showServers || showTickets || openedTicket != null
+            showServers || showTickets || showShare || openedTicket != null
         BackHandler(enabled = anyOverlay) { closeTopVpnkaScreen() }
 
         openedTicket?.let { ticket ->
@@ -1278,6 +1303,19 @@ class MainActivity : HelperBaseComponentActivity() {
                 tickets = tickets,
                 onOpen = { openedTicket = it },
                 onBack = { showTickets = false },
+            )
+            return
+        }
+
+        if (showShare) {
+            var shareData by remember {
+                mutableStateOf<VpnkaAccount.Referral?>(null)
+            }
+            LaunchedEffect(Unit) { shareData = VpnkaAccount.fetchReferral() }
+            VpnkaShareScreen(
+                referral = shareData,
+                onBack = { showShare = false },
+                onShareLink = { link -> shareTextIntent(link) },
             )
             return
         }
@@ -2183,6 +2221,7 @@ class MainActivity : HelperBaseComponentActivity() {
                     reviewPrompt = null
                     showReview = true
                 },
+                onShare = { showShare = true },
             )
                 // Hidden SmartDesk: 5 quick taps in the bottom-right corner
                 // reveal it. Active only while the entry is hidden.
@@ -2225,6 +2264,19 @@ class MainActivity : HelperBaseComponentActivity() {
             shareMethodEntries = resources.getStringArray(R.array.share_method).toList(),
             shareMethodMoreEntries = resources.getStringArray(R.array.share_method_more).toList()
         )
+    }
+
+    /** Системный «Поделиться» для реф-ссылки (экран «Поделиться VPNкой»). */
+    private fun shareTextIntent(text: String) {
+        try {
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, text)
+            }
+            startActivity(Intent.createChooser(intent, null))
+        } catch (e: Exception) {
+            LogUtil.w(AppConfig.TAG, "share intent failed: ${e.message}")
+        }
     }
 
     fun getShareQRCodeBitmap(guid: String): Bitmap? = AngConfigManager.share2QRCode(guid)

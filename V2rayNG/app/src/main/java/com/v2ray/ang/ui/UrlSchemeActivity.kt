@@ -81,6 +81,17 @@ class UrlSchemeActivity : BaseComponentActivity() {
                             }
                         }
 
+                        // Отсканировали чужой реф-QR (`vpnka://ref?code=…`).
+                        // Ничего не спрашиваем: MainActivity привяжет реферера
+                        // (на первом запуске — через register, иначе — attach).
+                        "ref" -> {
+                            val code = intent.data?.getQueryParameter("code")
+                                ?.trim()?.uppercase().orEmpty()
+                            if (code.isNotEmpty() && code.length <= 32) {
+                                AngApplication.vpnkaPendingRefCode = code
+                            }
+                        }
+
                         else -> {
                             toastError(R.string.toast_failure)
                         }

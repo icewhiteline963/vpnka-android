@@ -54,6 +54,14 @@ class AngApplication : Application() {
         var vpnkaPendingLoginCode: String? = null
 
         /**
+         * Реф-код из отсканированной QR-ссылки (`vpnka://ref?code=…`).
+         * UrlSchemeActivity кладёт его сюда; MainActivity привязывает: на
+         * первом запуске код уходит в /app/auth/register, у уже
+         * установленных — в /app/referral/attach. Потребляется однократно.
+         */
+        var vpnkaPendingRefCode: String? = null
+
+        /**
          * Ссылка на YouTube-ролик, пришедшая через «Поделиться → VPNka».
          * UrlSchemeActivity кладёт её сюда, MainActivity открывает раздел
          * «Видео» с этим роликом (готовым к скачиванию). Переживает паузу,
