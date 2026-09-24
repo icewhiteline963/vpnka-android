@@ -176,11 +176,6 @@ fun VpnkaConnectScreen(
      *  (тумблер в настройках приложения YouTube). */
     showDownloadsDonePlaque: Boolean = true,
     expiryDaysLeft: Int?,
-    /**
-     * План, который кончается РАНЬШЕ остальных, когда за ним есть другой:
-     * название и сколько дней. null — такого нет.
-     */
-    endingSoonPlan: Pair<String, Int>? = null,
     onRenew: () -> Unit,
     activeDaysLeft: Int?,
     activeDevicesUsed: Int?,
@@ -504,17 +499,6 @@ fun VpnkaConnectScreen(
                 }
                 if (expiryDaysLeft != null && expiryDaysLeft <= 3) {
                     VpnkaExpiryBanner(daysLeft = expiryDaysLeft, onRenew = onRenew)
-                }
-                // Отдельная строка про план, который кончается раньше других.
-                //
-                // Полоса выше говорит о том дне, когда доступ пропадёт совсем,
-                // — по самому дальнему плану. Но у человека с двумя планами
-                // может закончиться один, и это не потеря связи, а потеря
-                // того, что давал именно он (устройств, страны). Смешивать
-                // это в одну надпись значит пугать «подписка кончается» того,
-                // у кого впереди ещё месяц.
-                endingSoonPlan?.let { (name, days) ->
-                    VpnkaPlanEndingRow(name = name, days = days, onRenew = onRenew)
                 }
                 // Free month, right where the bot puts it: offered to anyone
                 // without an active paid plan. With a Telegram behind the
@@ -1276,41 +1260,6 @@ private fun VpnkaTrialBanner(
             )
         }
         Text(text = "›", fontSize = 18.sp, color = tint)
-    }
-}
-
-/** Один из планов кончается, но доступ остаётся — тон спокойный. */
-@Composable
-private fun VpnkaPlanEndingRow(name: String, days: Int, onRenew: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(VpnkaColors.CardSettings)
-            .clickable(onClick = onRenew)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("⏳", fontSize = 13.sp)
-        Spacer(Modifier.width(9.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = if (days <= 0) "«$name» кончается сегодня"
-                else "«$name» кончается через $days ${pluralDays(days)}",
-                fontFamily = VpnkaFonts.nunito800,
-                fontSize = 13.sp,
-                color = VpnkaColors.TextStrong,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(2.dp))
-            Text(
-                text = "Другая подписка продолжает работать — связь не прервётся.",
-                fontFamily = VpnkaFonts.manrope600,
-                fontSize = 11.sp,
-                color = VpnkaColors.TextMuted,
-            )
-        }
     }
 }
 
