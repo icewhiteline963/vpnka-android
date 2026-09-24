@@ -957,6 +957,19 @@ object MmkvManager {
         settingsStorage.encode("vpnka_update_ready_version", "")
     }
 
+    private const val KEY_REF_CLIPBOARD_CHECKED = "vpnka_ref_clipboard_checked"
+
+    /** Проверяли ли уже буфер обмена на отложенный реф-код (`vpnka-ref:…`).
+     *  Буфер читаем РОВНО ОДИН раз за установку (на первом запуске) — потом
+     *  флаг закрыт: ни повторных тостов «вставлено из буфера», ни чтения
+     *  чужого текста у вернувшихся. Страница /r/ кладёт код по тапу «Скачать»,
+     *  т.к. у сайдлоад-APK нет install-referrer. */
+    fun refClipboardChecked(): Boolean = decodeSettingsBool(KEY_REF_CLIPBOARD_CHECKED, false)
+
+    fun markRefClipboardChecked() {
+        settingsStorage.encode(KEY_REF_CLIPBOARD_CHECKED, true)
+    }
+
     private const val KEY_VPNKA_INSTALL_ID = "vpnka_install_id"
 
     /** «<id аккаунта>:<прежний отпечаток>» — см. [rememberInstallOwner]. */

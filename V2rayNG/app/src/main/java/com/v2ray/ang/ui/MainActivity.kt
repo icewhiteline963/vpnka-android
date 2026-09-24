@@ -1,6 +1,9 @@
 package com.v2ray.ang.ui
 
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.VpnService
@@ -363,6 +366,8 @@ class MainActivity : HelperBaseComponentActivity() {
         consumeLoginFromLink()
         consumeYouTubeShare()
         consumeRefFromLink()
+        // Буфер читаем в onResume: апка на переднем плане — Android даёт доступ.
+        consumeRefFromClipboard()
         // Вернулись из привязки Telegram: месяц мог активироваться на этом же
         // аккаунте на сервере. Перечитываем подписку, иначе на экране остаётся
         // старый суточный триал («кончается меньше чем через сутки»).
@@ -565,6 +570,43 @@ class MainActivity : HelperBaseComponentActivity() {
                 if (MmkvManager.getAccountToken() != null) {
                     AngApplication.vpnkaPendingRefCode = null
                     VpnkaAccount.attachReferral(code)
+                    return@launch
+                }
+                delay(1000)
+            }
+        }
+    }
+
+    /**
+     * Отложенная привязка реферала через буфер обмена. Сайдлоад-APK не имеет
+     * install-referrer, поэтому страница /r/<code> (get.vpnka.io) по тапу
+     * «Скачать» кладёт в буфер `vpnka-ref:<код>`. На ПЕРВОМ запуске (апка на
+     * переднем плане — тогда Android даёт читать буфер) забираем код, ждём
+     * токен и привязываем (attachReferral идемпотентен), затем чистим буфер.
+     * Читаем РОВНО ОДИН раз за установку — флаг закрывает буфер от повторного
+     * чтения (тосты «вставлено из буфера», чужой текст у вернувшихся). Кнопка
+     * «Открыть в приложении» (vpnka://ref) и ручной код — та же привязка,
+     * страховка для тех, кто открыл апку не с рабочего стола.
+     */
+    private fun consumeRefFromClipboard() {
+        if (MmkvManager.refClipboardChecked()) return
+        MmkvManager.markRefClipboardChecked()
+        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
+        val clip = cm.primaryClip?.takeIf { it.itemCount > 0 } ?: return
+        val raw = clip.getItemAt(0).text?.toString()?.trim() ?: return
+        val prefix = "vpnka-ref:"
+        if (!raw.startsWith(prefix)) return
+        val code = raw.removePrefix(prefix).trim()
+        if (code.isEmpty() || code.length > 32 ||
+            !code.all { it.isLetterOrDigit() || it == '-' || it == '_' }
+        ) return
+        lifecycleScope.launch {
+            repeat(15) {
+                if (MmkvManager.getAccountToken() != null) {
+                    VpnkaAccount.attachReferral(code)
+                    try {
+                        cm.setPrimaryClip(ClipData.newPlainText("", ""))
+                    } catch (_: Exception) { /* очистка не критична */ }
                     return@launch
                 }
                 delay(1000)
