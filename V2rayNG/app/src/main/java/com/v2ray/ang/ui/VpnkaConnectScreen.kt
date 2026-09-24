@@ -583,13 +583,15 @@ fun VpnkaConnectScreen(
                     onAccent = onAccent,
                     onClick = onOpenDevices,
                 )
-                // «Поделиться VPNкой»: заметная карточка-призыв (не рядовая
-                // строка — решение владельца 24.09), открывает экран с QR
-                // реф-ссылки + статистикой. Скан другим = он реферал.
-                VpnkaInviteCard(
+                // «Пригласить друга» — обычная строка списка, как «Устройства»
+                // и «Подписка» (карточка выбивалась из дизайна). Открывает
+                // экран с QR реф-ссылки + статистикой. Скан другим = он реферал.
+                VpnkaHomeRow(
+                    icon = "🎁",
+                    label = "Пригласить друга",
                     accent = accent,
                     onAccent = onAccent,
-                    onShare = onShare,
+                    onClick = onShare,
                 )
                 // Браузер и YouTube-загрузчик — у ВСЕХ; остальные приложения
                 // сейфа (мессенджер/контакты/календарь/заметки/помощь) — только
@@ -1786,63 +1788,6 @@ private fun VpnkaFreeMonthCard(
                 fontWeight = VpnkaWeight.Semi,
                 fontSize = 11.sp,
                 color = white.copy(alpha = 0.80f),
-            )
-        }
-    }
-}
-
-/**
- * Заметная карточка-призыв «Пригласи друга» на главной. Тап (по карточке или
- * кнопке) открывает экран «Поделиться VPNкой» (QR реф-ссылки + статистика).
- * Мягкая подложка + акцентная кнопка — чтобы выделяться, но не спорить с
- * акцентной карточкой бесплатного месяца, если та рядом.
- */
-@Composable
-private fun VpnkaInviteCard(
-    accent: androidx.compose.ui.graphics.Color,
-    onAccent: androidx.compose.ui.graphics.Color,
-    onShare: () -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(VpnkaColors.BgOffCentre)
-            .clickable(onClick = onShare)
-            .padding(horizontal = 16.dp, vertical = 14.dp),
-    ) {
-        Text(
-            text = "🎁 Пригласи друга",
-            fontFamily = VpnkaFonts.nunito800,
-            fontWeight = VpnkaWeight.Extra,
-            fontSize = 16.sp,
-            color = VpnkaColors.TextStrong,
-        )
-        Spacer(Modifier.height(3.dp))
-        // 30% захардкожен так же, как в боте и на лендинге referral.html
-        // (backend config.py: referral_bonus_percent). Менять в синхроне.
-        Text(
-            text = "30% с каждой его оплаты — тебе на баланс. Поделись ссылкой или QR.",
-            fontFamily = VpnkaFonts.manrope600,
-            fontWeight = VpnkaWeight.Semi,
-            fontSize = 12.sp,
-            color = VpnkaColors.TextMuted,
-        )
-        Spacer(Modifier.height(10.dp))
-        Row(
-            modifier = Modifier
-                .clip(RoundedCornerShape(12.dp))
-                .background(accent)
-                .clickable(onClick = onShare)
-                .padding(horizontal = 18.dp, vertical = 9.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "Поделиться",
-                fontFamily = VpnkaFonts.nunito800,
-                fontWeight = VpnkaWeight.Extra,
-                fontSize = 14.sp,
-                color = onAccent,
             )
         }
     }
