@@ -62,8 +62,9 @@ fun VpnkaShareScreen(
 
         Spacer(Modifier.height(8.dp))
         Text(
-            "Отсканируйте — и человек станет вашим рефералом. За каждого, кто " +
-                "оплатит подписку, вам ${referral.bonusPercent}% на баланс.",
+            "Отсканируйте или отправьте ссылку — человек откроет Телеграм, " +
+                "получит приложение и станет вашим рефералом. За каждую его " +
+                "оплату — ${referral.bonusPercent}% вам на баланс.",
             color = VpnkaColors.TextMuted,
             fontSize = 14.sp,
         )
