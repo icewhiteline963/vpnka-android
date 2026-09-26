@@ -184,6 +184,8 @@ object VpnkaAccount {
                     )
                 MmkvManager.setAccountToken(token)
                 MmkvManager.setSessionRevoked(false)
+                // Вошли — «С возвращением» больше не показываем.
+                MmkvManager.clearReturningUser()
                 // Вернулись в СВОЙ аккаунт — возвращаем и прежний отпечаток
                 // установки: иначе телефон считается новым устройством и
                 // занимает ещё одно место в пуле подписки.
@@ -208,6 +210,43 @@ object VpnkaAccount {
         @SerializedName("recovery_code") val recoveryCode: String?,
     )
 
+    private data class InstallStatusResponse(
+        @SerializedName("has_account") val hasAccount: Boolean = false,
+        @SerializedName("telegram_linked") val telegramLinked: Boolean = false,
+    )
+
+    data class InstallStatus(val hasAccount: Boolean, val telegramLinked: Boolean)
+
+    /**
+     * Есть ли у этого устройства (по install_id) аккаунт, в который стоит
+     * ВОЙТИ, — спрашиваем ДО того как register() заведёт новую пустышку.
+     *
+     * Сервер отдаёт только два булева и НИКОГДА токен: install_id не секрет
+     * (ездит в заголовке Hwid и логах), выдавать по нему аккаунт нельзя. null
+     * при оффлайне/ошибке — тогда register() ведёт себя как раньше, первый
+     * запуск не блокируем.
+     */
+    suspend fun installStatus(): InstallStatus? = withContext(Dispatchers.IO) {
+        try {
+            http().newCall(
+                Request.Builder()
+                    .url("$BASE/app/auth/install-status")
+                    .header("Hwid", MmkvManager.getOrCreateInstallId())
+                    .get()
+                    .build()
+            ).execute().use { resp ->
+                if (!resp.isSuccessful) return@withContext null
+                val r = JsonUtil.fromJsonSafe(
+                    resp.body?.string().orEmpty(), InstallStatusResponse::class.java
+                ) ?: return@withContext null
+                InstallStatus(r.hasAccount, r.telegramLinked)
+            }
+        } catch (e: Exception) {
+            LogUtil.w(AppConfig.TAG, "install-status failed: ${e.message}")
+            null
+        }
+    }
+
     /**
      * Create this install's account. Called once, on first launch.
      *
@@ -220,13 +259,30 @@ object VpnkaAccount {
      * hash — so it is stored locally and shown to the user later, before the
      * first payment, when they finally have something to lose.
      */
-    suspend fun register(referralCode: String? = null): Boolean = withContext(Dispatchers.IO) {
+    suspend fun register(
+        referralCode: String? = null, checkReturning: Boolean = true,
+    ): Boolean = withContext(Dispatchers.IO) {
         if (MmkvManager.getAccountToken() != null) return@withContext true
         // A revoked session means an account already exists and someone
         // decided this device should not reach it. Making a new one hides
         // that decision and loses the account; the profile screen asks the
         // user to sign in again instead.
         if (MmkvManager.wasSessionRevoked()) return@withContext false
+        // «С возвращением»: если данные стёрлись (переустановка/очистка), но у
+        // этого устройства на сервере уже есть НЕ-пустой аккаунт — не заводим
+        // тихо новую пустышку. Помечаем возвращение, экран предложит войти
+        // (Telegram / код восстановления). Токен по install_id сервер НЕ
+        // отдаёт — только булев хинт. checkReturning=false у логаута и кнопки
+        // «это не мой аккаунт», где свежий аккаунт нужен намеренно.
+        if (checkReturning) {
+            val st = installStatus()
+            if (st?.hasAccount == true) {
+                MmkvManager.setReturningUser(true, st.telegramLinked)
+                return@withContext false
+            }
+        }
+        // Идём заводить новый аккаунт — снимаем возможный старый флаг возврата.
+        MmkvManager.setReturningUser(false)
         // На первом запуске приложить реф-код из отсканированного QR (если был)
         // — сервер привяжет реферера. Плохой/самореф-код рег не ломает.
         val fields = mutableMapOf<String, Any?>("label" to deviceLabel())
@@ -289,6 +345,8 @@ object VpnkaAccount {
                     )
                 MmkvManager.setAccountToken(token)
                 MmkvManager.setSessionRevoked(false)
+                // Вошли — «С возвращением» больше не показываем.
+                MmkvManager.clearReturningUser()
                 Result.success(Unit)
             }
         } catch (e: Exception) {

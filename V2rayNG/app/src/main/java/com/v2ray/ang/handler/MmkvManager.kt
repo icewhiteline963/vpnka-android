@@ -1065,6 +1065,8 @@ object MmkvManager {
 
     private const val KEY_VPNKA_ACCOUNT_TOKEN = "vpnka_account_token"
     private const val KEY_VPNKA_SESSION_REVOKED = "vpnka_session_revoked"
+    private const val KEY_VPNKA_RETURNING = "vpnka_returning_user"
+    private const val KEY_VPNKA_RETURNING_TG = "vpnka_returning_tg"
 
     /**
      * True when the backend refused this device's token.
@@ -1080,6 +1082,33 @@ object MmkvManager {
 
     fun setSessionRevoked(value: Boolean) {
         settingsStorage.encode(KEY_VPNKA_SESSION_REVOKED, value)
+    }
+
+    /**
+     * «С возвращением»: сервер по install_id сообщил, что у этого устройства
+     * уже есть НЕ-пустой аккаунт (см. /app/auth/install-status).
+     *
+     * Ставится в register() ПЕРЕД тем как НЕ заводить новую пустышку. Экран
+     * показывает вход (Telegram / код восстановления) вместо тихого нового
+     * аккаунта. Снимается при успешном входе или явном «это не мой аккаунт».
+     * Отдельно от revoked: тот про «этот девайс отрезали», этот — про «данные
+     * стёрлись, но аккаунт на устройстве был».
+     */
+    fun isReturningUser(): Boolean =
+        settingsStorage.decodeBool(KEY_VPNKA_RETURNING, false)
+
+    /** Был ли у вернувшегося аккаунта привязан Telegram — каким путём звать войти. */
+    fun returningTelegramLinked(): Boolean =
+        settingsStorage.decodeBool(KEY_VPNKA_RETURNING_TG, false)
+
+    fun setReturningUser(returning: Boolean, telegramLinked: Boolean = false) {
+        settingsStorage.encode(KEY_VPNKA_RETURNING, returning)
+        settingsStorage.encode(KEY_VPNKA_RETURNING_TG, telegramLinked)
+    }
+
+    fun clearReturningUser() {
+        settingsStorage.removeValueForKey(KEY_VPNKA_RETURNING)
+        settingsStorage.removeValueForKey(KEY_VPNKA_RETURNING_TG)
     }
 
     private const val KEY_VPNKA_RECOVERY = "vpnka_recovery_code"

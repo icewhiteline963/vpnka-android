@@ -703,6 +703,10 @@ class MainActivity : HelperBaseComponentActivity() {
     private var awaitTelegramReturn = false
     private var openedTicket by mutableStateOf<VpnkaAccount.SupportTicket?>(null)
     private var showRecovery by mutableStateOf(false)
+    /** «С возвращением»: данные стёрлись, но у устройства на сервере есть
+     *  аккаунт (см. VpnkaAccount.register / install-status). Показываем вход
+     *  вместо тихого нового пустого аккаунта. */
+    private var showWelcomeBack by mutableStateOf(false)
     // The rating sheet, and the server's own words when it was raised by a
     // `review_request` notice rather than by the home-screen row.
     private var showReview by mutableStateOf(false)
@@ -812,6 +816,23 @@ class MainActivity : HelperBaseComponentActivity() {
         var signedIn by remember { mutableStateOf(VpnkaAccount.isSignedIn()) }
         var signingIn by remember { mutableStateOf(false) }
         var signInError by remember { mutableStateOf<String?>(null) }
+
+        // «С возвращением». Если токена нет — доводим решение register() до
+        // экрана. register() идемпотентен: с токеном сразу true; на свежей
+        // установке заводит новый аккаунт; а если данные стёрлись, но у
+        // устройства на сервере уже есть НЕ-пустой аккаунт — ставит флаг
+        // возврата и НЕ регистрирует пустышку. Тогда показываем вход, а не
+        // молча оставляем человека в новом пустом аккаунте.
+        LaunchedEffect(Unit) {
+            if (!VpnkaAccount.isSignedIn()) {
+                VpnkaAccount.register()
+                if (VpnkaAccount.isSignedIn()) {
+                    signedIn = true
+                } else {
+                    showWelcomeBack = MmkvManager.isReturningUser()
+                }
+            }
+        }
         var supportMessages by remember {
             mutableStateOf<List<VpnkaAccount.SupportMessage>>(emptyList())
         }
@@ -1182,6 +1203,47 @@ class MainActivity : HelperBaseComponentActivity() {
                         // page that might not load.
                         openTelegramLink()
                     }) { Text("Открыть без VPN") }
+                },
+            )
+        }
+
+        if (showWelcomeBack) {
+            AlertDialog(
+                // Тапом вне не закрываем: выбор обязателен — иначе человек
+                // молча остался бы в пустом новом аккаунте, ровно то, от чего
+                // уходим.
+                onDismissRequest = { },
+                title = { Text("С возвращением") },
+                text = {
+                    Text(
+                        "На этом устройстве уже был ваш аккаунт с подпиской. " +
+                            "Войдите в него, чтобы вернуть подписку, а не " +
+                            "начинать заново."
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        showWelcomeBack = false
+                        // Существующий экран входа: код из бота (6 знаков) или
+                        // код восстановления (16), плюс привязка Telegram.
+                        showSubscription = true
+                    }) { Text("Войти") }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        // «Это не мой аккаунт» (напр. б/у-телефон с чужим
+                        // ANDROID_ID): заводим свежий, хинт выключаем. Доступа
+                        // к чужому аккаунту не даём — просто новый.
+                        showWelcomeBack = false
+                        lifecycleScope.launch {
+                            VpnkaAccount.register(checkReturning = false)
+                            MmkvManager.clearReturningUser()
+                            if (VpnkaAccount.isSignedIn()) {
+                                signedIn = true
+                                subReload++
+                            }
+                        }
+                    }) { Text("Это не мой аккаунт") }
                 },
             )
         }
@@ -1586,7 +1648,10 @@ class MainActivity : HelperBaseComponentActivity() {
                         // back as a new user who can claim a month. Clear any
                         // stale revoked flag first or register() refuses.
                         MmkvManager.setSessionRevoked(false)
-                        VpnkaAccount.register()
+                        // Выход = намеренно свежий аккаунт, а не «С возвращением»:
+                        // хинт по install_id тут выключаем (иначе тут же
+                        // предложили бы войти обратно в только что покинутый).
+                        VpnkaAccount.register(checkReturning = false)
                         // Выход = новый триал-контекст. Счётчики ретраев
                         // session-global и сбрасываются лишь при появлении
                         // серверов/плана — а у триала плана нет, так что к
