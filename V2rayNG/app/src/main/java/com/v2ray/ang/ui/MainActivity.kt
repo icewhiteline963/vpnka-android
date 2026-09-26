@@ -2666,13 +2666,23 @@ class MainActivity : HelperBaseComponentActivity() {
                 // Сервер прислал причину вместо серверов («Лимит устройств
                 // 3/3») — показываем её словами, а не счётчиком «0 конфигов».
                 val notice = result.notice.orEmpty()
+                // Заглушка «❗ Нет активной подписки» — ТРАНЗИЕНТНАЯ: свежий
+                // аккаунт (первый запуск / сразу после логаута) ещё не получил
+                // триал, он доедет за секунды. Её ретраим, как пустой ответ.
+                // «Лимит устройств» — честный стоп (не крутим, регресс 3.0.34.14).
+                // Обе строки — наши (router.py notice_stub), отличаем по тексту.
+                val trialPending = notice.contains("Нет активной подписк")
+                val willRetryTrial = trialPending && trialImportRetries < 4
                 // Тихий заход — это наш собственный поход за подпиской перед
                 // подключением, а не нажатие «обновить». Итог вроде
                 // «обновлено профилей 0» человек в этот момент читает как
                 // ответ на «подключить Телеграм» — то есть как ошибку, хотя
                 // он ничего не обновлял. Молчим обо всём, кроме причины
                 // отказа: она объясняет, почему подключения не будет.
-                when {
+                // Во время транзиентного ретрая (триал едет) молчим совсем —
+                // иначе «Нет активной подписки» мигал бы тостом на каждой из
+                // попыток; причину покажем на финальной, если триал не доедет.
+                if (!willRetryTrial) when {
                     silent && notice.isNotBlank() -> toast(notice)
                     silent -> Unit
                     notice.isNotBlank() -> toast(notice)
@@ -2716,7 +2726,7 @@ class MainActivity : HelperBaseComponentActivity() {
                 val stillEmpty = withContext(Dispatchers.IO) {
                     MmkvManager.decodeAllServerList().isEmpty()
                 }
-                if (stillEmpty && notice.isBlank() && trialImportRetries < 4) {
+                if (stillEmpty && (notice.isBlank() || trialPending) && trialImportRetries < 4) {
                     trialImportRetries++
                     if (startWhenReady) pendingStartAfterImport = true
                     delay(2500)
