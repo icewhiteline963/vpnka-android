@@ -126,7 +126,11 @@ object AppConfig {
     const val GITHUB_RAW_URL = "https://raw.githubusercontent.com"
     const val GITHUB_DOWNLOAD_URL = "$GITHUB_URL/%s/releases/latest/download"
     const val ANDROID_PACKAGE_NAME_LIST_URL = "$GITHUB_RAW_URL/2dust/androidpackagenamelist/master/proxy.txt"
-    const val APP_URL = "$GITHUB_URL/icewhiteline963/vpnka-android"
+    // Раньше тут был github.com/<ник>/vpnka-android — ник светился в строках
+    // APK (даже простым `strings`) и сшивал сборку с GitHub-аккаунтом владельца
+    // (деанон, аудит 26.09). Указываем на бренд-сайт, ника в APK больше нет.
+    // APP_ISSUES_URL/APP_WIKI_MODE ниже наследуются отсюда.
+    const val APP_URL = "https://vpnka.io"
 
     // Update manifests are served from our own mirror, not GitHub's API.
     // GitHub is throttled by RU ISPs — that's why dl.vpnka.io exists in the
