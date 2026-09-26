@@ -1117,6 +1117,14 @@ class MainActivity : HelperBaseComponentActivity() {
         // tunnel is up, the same as the main screen.
         VpnkaColors.connected = uiState.isRunning
 
+        // Крошка на смену реального состояния VPN — по ней в отчёте видно,
+        // был ли туннель поднят/опущен перед зависанием (Фаза 1 отчётов).
+        LaunchedEffect(uiState.isRunning) {
+            com.v2ray.ang.handler.Breadcrumbs.add(
+                if (uiState.isRunning) "vpn:up" else "vpn:down"
+            )
+        }
+
         // The link was asked for before the VPN was up. Open it the moment
         // it is — waiting for the user to tap again would lose the thread
         // of what they were doing.
@@ -2459,8 +2467,10 @@ class MainActivity : HelperBaseComponentActivity() {
 
     private fun handleFabAction() {
         if (mainViewModel.uiState.value.isRunning) {
+            com.v2ray.ang.handler.Breadcrumbs.add("connect:tap стоп")
             CoreServiceManager.stopVService(this)
         } else if (SettingsManager.isVpnMode()) {
+            com.v2ray.ang.handler.Breadcrumbs.add("connect:tap старт")
             val intent = VpnService.prepare(this)
             if (intent == null) startV2Ray() else requestVpnPermission.launch(intent)
         } else {

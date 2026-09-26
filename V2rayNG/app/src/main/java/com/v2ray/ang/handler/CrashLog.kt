@@ -29,7 +29,12 @@ import java.util.concurrent.TimeUnit
 object CrashLog {
 
     private const val KEY = "vpnka_last_crash"
+    // Не-фатальные отчёты (зависание/рассинхрон от watchdog), не ушедшие
+    // сразу: досылаются при следующем запуске. Отдельный слот, чтобы не
+    // затирать краш и наоборот.
+    private const val KEY_PENDING = "vpnka_pending_diag"
     private const val MAX_STACK = 7500
+    private const val MAX_CRUMBS = 4000
 
     /** Поставить перехватчик. Зовётся из Application для каждого процесса. */
     fun install() {
@@ -53,6 +58,7 @@ object CrashLog {
             .put("at", System.currentTimeMillis())
             .put("kind", (error.toString()).take(256))
             .put("stack", sw.toString().take(MAX_STACK))
+            .put("breadcrumbs", Breadcrumbs.snapshot().take(MAX_CRUMBS))
         MmkvManager.encodeSettings(KEY, obj.toString())
     }
 
@@ -64,16 +70,40 @@ object CrashLog {
      */
     fun flush(context: android.content.Context? = null) {
         context?.let { runCatching { flushSystemExits(it) } }
-        val raw = MmkvManager.decodeSettingsString(KEY) ?: return
-        if (raw.isBlank()) return
-        // Стираем ТОЛЬКО после успешной отправки.
+        // Отложенный краш. Стираем ТОЛЬКО после успешной отправки.
         //
         // Сначала было наоборот — «не дошло, потеряли один отчёт». Но именно
         // это и произошло бы в самом частом случае: приложение падает,
         // человек открывает его снова сразу, сети ещё нет — и единственная
         // трассировка, ради которой всё затевалось, исчезает молча. Не
         // ушло — попробуем при следующем запуске.
-        if (send(raw)) MmkvManager.encodeSettings(KEY, "")
+        val crash = MmkvManager.decodeSettingsString(KEY).orEmpty()
+        if (crash.isNotBlank() && send(crash)) MmkvManager.encodeSettings(KEY, "")
+        // Отложенный не-фатальный отчёт (зависание/рассинхрон от watchdog),
+        // который не ушёл сразу. Тот же приём: стираем только по успеху.
+        val pending = MmkvManager.decodeSettingsString(KEY_PENDING).orEmpty()
+        if (pending.isNotBlank() && send(pending)) MmkvManager.encodeSettings(KEY_PENDING, "")
+    }
+
+    /**
+     * Не-фатальный отчёт (зависание/рассинхрон от [AnrWatchdog]).
+     *
+     * Процесс ЖИВ — поэтому пробуем отправить сразу с фонового потока; не
+     * ушло — кладём в отдельный слот и дошлём при следующем запуске, как
+     * краш. Зовётся ТОЛЬКО с фонового потока: внутри сеть.
+     */
+    fun reportNow(kind: String, stack: String) {
+        runCatching {
+            val obj = JSONObject()
+                .put("version", BuildConfig.VERSION_NAME)
+                .put("android", Build.VERSION.RELEASE ?: "")
+                .put("device", "${Build.MANUFACTURER} ${Build.MODEL}".take(96))
+                .put("at", System.currentTimeMillis())
+                .put("kind", kind.take(256))
+                .put("stack", stack.take(MAX_STACK))
+                .put("breadcrumbs", Breadcrumbs.snapshot().take(MAX_CRUMBS))
+            if (!send(obj.toString())) MmkvManager.encodeSettings(KEY_PENDING, obj.toString())
+        }
     }
 
     private const val KEY_EXIT = "vpnka_last_exit_ts"

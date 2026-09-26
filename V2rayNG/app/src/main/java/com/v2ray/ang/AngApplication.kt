@@ -171,6 +171,11 @@ class AngApplication : Application() {
             // не успевает.
             vpnkaScope.launch { com.v2ray.ang.handler.CrashLog.flush(this@AngApplication) }
             vpnkaScope.launch { VpnkaAccount.register() }
+            // Сторож главного потока и рассинхрона зелёной кнопки (Фаза 1
+            // отчётов). Только главный процесс: ANR и состояние кнопки — про
+            // UI-процесс. Читает состояние и шлёт отчёт, ничего не меняет.
+            com.v2ray.ang.handler.Breadcrumbs.add("app:start ${BuildConfig.VERSION_NAME}")
+            com.v2ray.ang.handler.AnrWatchdog.start()
         }
 
         // Pull a new version down in the background so installing it later is
