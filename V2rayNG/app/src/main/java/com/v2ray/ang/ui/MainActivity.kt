@@ -817,20 +817,22 @@ class MainActivity : HelperBaseComponentActivity() {
         var signingIn by remember { mutableStateOf(false) }
         var signInError by remember { mutableStateOf<String?>(null) }
 
-        // «С возвращением». Если токена нет — доводим решение register() до
-        // экрана. register() идемпотентен: с токеном сразу true; на свежей
-        // установке заводит новый аккаунт; а если данные стёрлись, но у
-        // устройства на сервере уже есть НЕ-пустой аккаунт — ставит флаг
-        // возврата и НЕ регистрирует пустышку. Тогда показываем вход, а не
-        // молча оставляем человека в новом пустом аккаунте.
+        // «С возвращением». register() уже запускается ФОНОМ в
+        // AngApplication.onCreate — второй раз отсюда НЕ зовём (иначе гонка:
+        // два вызова на свежей установке заводят два аккаунта, второй пустой
+        // сирота). Просто ждём его решения: появится токен (свежая установка
+        // зарегистрировалась) ЛИБО флаг возврата (данные стёрлись, но аккаунт
+        // на устройстве уже есть → показываем вход, а не пустышку).
         LaunchedEffect(Unit) {
             if (!VpnkaAccount.isSignedIn()) {
-                VpnkaAccount.register()
-                if (VpnkaAccount.isSignedIn()) {
-                    signedIn = true
-                } else {
-                    showWelcomeBack = MmkvManager.isReturningUser()
+                var waited = 0
+                while (!VpnkaAccount.isSignedIn() &&
+                    !MmkvManager.isReturningUser() && waited < 8000
+                ) {
+                    kotlinx.coroutines.delay(300); waited += 300
                 }
+                if (VpnkaAccount.isSignedIn()) signedIn = true
+                else if (MmkvManager.isReturningUser()) showWelcomeBack = true
             }
         }
         var supportMessages by remember {
